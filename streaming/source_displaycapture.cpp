@@ -18,7 +18,8 @@ source_displaycapture::source_displaycapture(const media_session_t& session) :
 media_stream_t source_displaycapture::create_stream()
 {
     media_stream_t temp;
-    temp.Attach(new stream_displaycapture(this->shared_from_this()));
+    temp.Attach(new stream_displaycapture(
+        std::dynamic_pointer_cast<source_displaycapture>(this->shared_from_this())));
     return temp;
 }
 
@@ -70,12 +71,12 @@ media_sample_t source_displaycapture::capture_frame(UINT timeout)
     CComPtr<ID3D11Texture2D> screen_frame;
     media_sample_t sample(new media_sample);
 
-    // release the old frame
-    HRESULT hr = this->output_duplication->ReleaseFrame();
-    // capture a new frame
-    DXGI_OUTDUPL_FRAME_INFO frame_info;
-    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(timeout, &frame_info, &frame));
-    CHECK_HR(hr = frame->QueryInterface(&screen_frame));
+    //// release the old frame
+    //HRESULT hr = this->output_duplication->ReleaseFrame();
+    //// capture a new frame
+    //DXGI_OUTDUPL_FRAME_INFO frame_info;
+    //CHECK_HR(hr = this->output_duplication->AcquireNextFrame(timeout, &frame_info, &frame));
+    //CHECK_HR(hr = frame->QueryInterface(&screen_frame));
 
     // create a sample with the new frame
 
@@ -96,8 +97,8 @@ media_sample_t source_displaycapture::capture_frame(UINT timeout)
     sample->timestamp = nanosecond_100.QuadPart;
 
 done:
-    if(FAILED(hr))
-        std::cerr << "error occured when trying to acquire next frame" << std::endl;
+    /*if(FAILED(hr))
+        std::cerr << "error occured when trying to acquire next frame" << std::endl;*/
 
     return sample;
 }

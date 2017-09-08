@@ -30,6 +30,9 @@
     <ClCompile Include="sink_preview.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="presentation_clock.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -60,6 +63,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="media_sink.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="presentation_clock.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

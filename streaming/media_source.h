@@ -1,7 +1,8 @@
 #pragma once
 #include "media_session.h"
+#include <memory>
 
-class media_source
+class media_source : public std::enable_shared_from_this<media_source>
 {
 private:
 public:

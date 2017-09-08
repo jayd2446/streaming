@@ -3,12 +3,14 @@
 #include <vector>
 #include <stdint.h>
 
+// 100 nanosecond = 1 time_unit
+typedef int64_t time_unit;
+
 class media_sample
 {
 private:
 public:
-    // in 100 nanosecond units
-    int64_t timestamp;
+    time_unit timestamp;
 };
 
 typedef std::shared_ptr<media_sample> media_sample_t;

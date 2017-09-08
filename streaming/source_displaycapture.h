@@ -2,7 +2,6 @@
 #include "media_source.h"
 #include "media_stream.h"
 #include "media_sample.h"
-#include <memory>
 #include <mutex>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -24,9 +23,7 @@ start media session (media session calls media sink with time)
 */
 
 // must be managed by shared_ptr
-class source_displaycapture : 
-    public media_source, 
-    public std::enable_shared_from_this<source_displaycapture>
+class source_displaycapture : public media_source
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;

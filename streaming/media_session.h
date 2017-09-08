@@ -1,8 +1,10 @@
 #pragma once
 #include "media_sample.h"
 #include "media_topology.h"
+#include "presentation_clock.h"
 #include <memory>
 #include <vector>
+#include <map>
 
 // orchestrates the data flow between components in the media pipeline;
 // translates the source's media time to the presentation time
@@ -35,12 +37,31 @@ new request will be made)
 
 class media_stream;
 
+// TODO: move presentation clock details to separate class
+/*
+
+queue of timer callbacks;
+the queue is sorted from earliest to latest
+
+*/
+
 class media_session
 {
 private:
     media_topology_t current_topology, new_topology;
 public:
+    // clock can be NULL;
+    // returns the clock of the current topology;
+    // components shouldn't store the reference because it might
+    // create a cyclic dependency between clock and components
+    presentation_clock_t get_current_clock() const;
     void switch_topology(const media_topology_t& new_topology);
+
+    // returns false if any of the sinks couldn't be started or stopped
+    // TODO: make sure these cannot be called recursively
+    bool start_playback(time_unit time_start = 0);
+    // returns false if there's no current topology
+    bool stop_playback();
 
     // event firing functions will return true only if the media session isn't shutdown
     // and the node is added to the media session's topology and the request sample doesn't

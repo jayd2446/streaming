@@ -1,5 +1,9 @@
 #include "media_topology.h"
 
+media_topology::media_topology() : clock(new presentation_clock)
+{
+}
+
 bool media_topology::connect_streams(const media_stream_t& stream, const media_stream_t& stream2)
 {
     this->topology[stream].next.push_back(stream2);

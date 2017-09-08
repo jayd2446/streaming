@@ -25,6 +25,7 @@ int main()
         NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, NULL);
 
     media_session_t session(new media_session);
+    media_topology_t topology(new media_topology);
 
     // create and initialize the display capture source
     source_displaycapture_t displaycapture_source(new source_displaycapture(session));
@@ -40,16 +41,16 @@ int main()
     sink_preview_t preview_sink(new sink_preview(session));
     preview_sink->initialize(NULL);
 
-    // create and initialize the topology
-    media_topology_t topology(new media_topology);
-    media_stream_t sink_stream = preview_sink->create_stream();
+    // initialize the topology
+    media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
     topology->connect_streams(displaycapture_source->create_stream(), sink_stream);
 
     // add the topology to the media session
     session->switch_topology(topology);
 
-    // start the sink
-    preview_sink->start(*sink_stream);
+    // start the media session
+    session->start_playback();
+    /*preview_sink->start(*sink_stream);*/
     sink_stream = NULL;
 
     while(true)

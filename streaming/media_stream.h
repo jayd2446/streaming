@@ -14,7 +14,7 @@ class media_topology;
 // media stream must use com's reference counting so that it works correctly
 // with media foundation's async callbacks;
 // cannot be used in conjuction with shared_ptr
-class media_stream : IUnknownImpl
+class media_stream : public virtual IUnknownImpl
 {
 public:
     enum result_t
@@ -59,10 +59,11 @@ public:
     //virtual bool set_input_format(/*mediatype format,*/ bool test) = 0;
     //virtual bool set_output_format(/*mediatype format,*/ bool test) = 0;
 
+    // TODO: these must be moved to child class
     // IUnknown
-    ULONG STDMETHODCALLTYPE AddRef() {return IUnknownImpl::AddRef();}
+    /*ULONG STDMETHODCALLTYPE AddRef() {return IUnknownImpl::AddRef();}
     ULONG STDMETHODCALLTYPE Release() {return IUnknownImpl::Release();}
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) {return E_NOTIMPL;}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) {return E_NOTIMPL;}*/
 };
 
 typedef CComPtr<media_stream> media_stream_t;
