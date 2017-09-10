@@ -50,16 +50,16 @@ class media_session
 private:
     media_topology_t current_topology, new_topology;
 public:
-    // clock can be NULL;
     // returns the clock of the current topology;
     // components shouldn't store the reference because it might
-    // create a cyclic dependency between clock and components
-    presentation_clock_t get_current_clock() const;
+    // create a cyclic dependency between clock and components;
+    // returns false if the clock is NULL
+    bool get_current_clock(presentation_clock_t&) const;
     void switch_topology(const media_topology_t& new_topology);
 
     // returns false if any of the sinks couldn't be started or stopped
     // TODO: make sure these cannot be called recursively
-    bool start_playback(time_unit time_start = 0);
+    bool start_playback(time_unit time_start);
     // returns false if there's no current topology
     bool stop_playback();
 

@@ -15,11 +15,11 @@ source_displaycapture::source_displaycapture(const media_session_t& session) :
     this->start_time.QuadPart = 0;
 }
 
-media_stream_t source_displaycapture::create_stream()
+media_stream_t source_displaycapture::create_stream(presentation_clock_t& clock)
 {
     media_stream_t temp;
     temp.Attach(new stream_displaycapture(
-        std::dynamic_pointer_cast<source_displaycapture>(this->shared_from_this())));
+        std::dynamic_pointer_cast<source_displaycapture>(this->shared_from_this()), clock));
     return temp;
 }
 
@@ -61,45 +61,37 @@ done:
     return hr;
 }
 
-media_sample_t source_displaycapture::capture_frame(UINT timeout)
+media_sample_t source_displaycapture::capture_frame(UINT timeout, LARGE_INTEGER& device_time_stamp)
 {
-    scoped_lock lock(this->mutex);
+    LARGE_INTEGER in;
+    QueryPerformanceCounter(&in);
+    device_time_stamp = in;
+
+    /*scoped_lock lock(this->mutex);*/
     // TODO: release frame must be implemented in another way
     // TODO: query the current time for the frame if it wasn't updated
 
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;
+    CComPtr<IDXGISurface> surface;
     media_sample_t sample(new media_sample);
 
     //// release the old frame
-    //HRESULT hr = this->output_duplication->ReleaseFrame();
-    //// capture a new frame
-    //DXGI_OUTDUPL_FRAME_INFO frame_info;
-    //CHECK_HR(hr = this->output_duplication->AcquireNextFrame(timeout, &frame_info, &frame));
-    //CHECK_HR(hr = frame->QueryInterface(&screen_frame));
-
-    // create a sample with the new frame
-
-    // time stamp the sample
-    LARGE_INTEGER nanosecond_100;
-    if(this->start_time.QuadPart == 0)
-    {
-        nanosecond_100.QuadPart = 0;
-        QueryPerformanceCounter(&this->start_time);
-    }
+    HRESULT hr = this->output_duplication->ReleaseFrame();
+    // capture a new frame
+    DXGI_OUTDUPL_FRAME_INFO frame_info;
+    // check that there's a new frame available
+    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
+    /*if(SUCCEEDED(hr))
+        CHECK_HR(hr = this->output_duplication->AcquireNextFrame(timeout, &frame_info, &frame))
     else
-    {
-        QueryPerformanceCounter(&nanosecond_100);
-        nanosecond_100.QuadPart -= this->start_time.QuadPart;
-        nanosecond_100.QuadPart *= 1000000 * 10;
-        nanosecond_100.QuadPart /= pc_frequency.QuadPart;
-    }
-    sample->timestamp = nanosecond_100.QuadPart;
+        goto done;*/
+    CHECK_HR(hr = frame->QueryInterface(&screen_frame));
+    sample->frame = screen_frame;
+    /*hr = screen_frame->QueryInterface(&surface);
+    sample->frame = screen_frame;*/
 
 done:
-    /*if(FAILED(hr))
-        std::cerr << "error occured when trying to acquire next frame" << std::endl;*/
-
     return sample;
 }
 
@@ -109,8 +101,27 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-stream_displaycapture::stream_displaycapture(const source_displaycapture_t& source) : 
-    source(source), callback(this, &stream_displaycapture::capture_cb)
+stream_displaycapture::stream_displaycapture(
+    const source_displaycapture_t& source, presentation_clock_t& clock) : 
+    source(source), 
+    callback(this, &stream_displaycapture::capture_cb),
+    start_time(0),
+    presentation_clock_sink(clock)
+{
+}
+
+bool stream_displaycapture::on_clock_start(time_unit t)
+{
+    QueryPerformanceCounter(&this->device_start_time);
+    this->start_time = t;
+    return true;
+}
+
+void stream_displaycapture::on_clock_stop(time_unit t)
+{
+}
+
+void stream_displaycapture::scheduled_callback(time_unit)
 {
 }
 
@@ -120,10 +131,23 @@ HRESULT stream_displaycapture::capture_cb(IMFAsyncResult*)
 
     media_sample_t sample;
     // request a new frame until a valid frame is returned
-    do sample = this->source->capture_frame(INFINITE); while(!sample);
+    LARGE_INTEGER device_timestamp;
+    do sample = this->source->capture_frame(INFINITE, device_timestamp); while(!sample);
+
+    // transform the device's time stamp to session's time stamp
+    device_timestamp.QuadPart -= this->device_start_time.QuadPart;
+    device_timestamp.QuadPart *= 1000000 * 10;
+    device_timestamp.QuadPart /= pc_frequency.QuadPart;
+    sample->timestamp = device_timestamp.QuadPart;
+    sample->timestamp += this->start_time;
 
     this->process_sample(sample);
     return S_OK;
+}
+
+bool stream_displaycapture::get_clock(presentation_clock_t& clock)
+{
+    return this->source->session->get_current_clock(clock);
 }
 
 media_stream::result_t stream_displaycapture::request_sample()

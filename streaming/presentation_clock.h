@@ -15,6 +15,11 @@
 class presentation_clock;
 typedef std::shared_ptr<presentation_clock> presentation_clock_t;
 
+void ticks_to_time_unit(LARGE_INTEGER&);
+
+// TODO: scheduling assumes clock increments based on real time(the time source should 
+// implement scheduling)
+// TODO: decouple this class to sink and scheduling
 // TODO: scheduled callback should be canceled if the clock stops
 class presentation_clock_sink : public virtual IUnknownImpl
 {
@@ -26,21 +31,20 @@ private:
     AsyncCallback<presentation_clock_sink> callback;
     sorted_set_t callbacks;
     std::recursive_mutex mutex_callbacks;
-    //CHandle wait_timer;
+    CHandle wait_timer;
     MFWORKITEM_KEY callback_key;
     time_unit scheduled_time;
 
     // schedules the next callback in the list
-    bool schedule_callback();
+    bool schedule_callback(time_unit due_time);
     HRESULT callback_cb(IMFAsyncResult*);
 protected:
-    void clear_queue();
-
-    CHandle wait_timer;
+    // returns false if mfcancelworkitem fails
+    bool clear_queue();
 
     // returns false if the time has already passed;
     // adds a new callback time to the list
-    bool schedule_callback(time_unit due_time);
+    bool schedule_new_callback(time_unit due_time);
 
     // called from media session's start and stop functions
     virtual bool on_clock_start(time_unit) = 0;
@@ -53,7 +57,9 @@ public:
     explicit presentation_clock_sink(presentation_clock_t&);
     virtual ~presentation_clock_sink() {}
 
-    virtual presentation_clock_t get_clock() = 0;
+    // can be NULL;
+    // get_clock must be an atomic operation
+    virtual bool get_clock(presentation_clock_t&) = 0;
 };
 
 typedef CComPtr<presentation_clock_sink> presentation_clock_sink_t;
@@ -68,10 +74,12 @@ private:
     std::mutex mutex_sinks;
 
     LARGE_INTEGER start_time;
+    mutable LARGE_INTEGER current_time_ticks;
     mutable time_unit current_time;
     bool running;
 public:
     presentation_clock();
+    ~presentation_clock();
 
     time_unit get_current_time() const;
     void set_current_time(time_unit t) {this->current_time = t;}
@@ -80,8 +88,10 @@ public:
     // calls clock_stop if one of the sinks returned false
     // and returns false;
     // starts the timer aswell
-    bool clock_start();
+    bool clock_start(time_unit start_time);
     // returns false if any of the sinks returns false;
     // stops the timer
     void clock_stop();
+
+    void clear_clock_sinks();
 };

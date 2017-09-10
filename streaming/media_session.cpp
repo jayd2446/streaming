@@ -1,36 +1,43 @@
 #include "media_session.h"
 #include "media_sink.h"
 
-presentation_clock_t media_session::get_current_clock() const
+bool media_session::get_current_clock(presentation_clock_t& clock) const
 {
-    if(!this->current_topology)
-        return NULL;
-    return this->current_topology->clock;
+    media_topology_t topology;
+    std::atomic_exchange(&topology, std::atomic_load(&this->current_topology));
+
+    if(!topology)
+        return false;
+
+    std::atomic_exchange(&clock, topology->clock);
+    return true;
 }
 
 void media_session::switch_topology(const media_topology_t& topology)
 {
     // TODO: implement topology switching(includes copying the current time from the old topology);
     // (includes stopping the current topology)
+    // (includes clearing the clock sink from the old clock)
     std::atomic_exchange(&this->current_topology, topology);
 }
 
 bool media_session::start_playback(time_unit time_start)
 {
-    presentation_clock_t clock = this->get_current_clock();
-    if(!clock)
+    presentation_clock_t clock;
+    if(!this->get_current_clock(clock))
         return false;
 
-    return clock->clock_start();
+    return clock->clock_start(time_start);
 }
 
 bool media_session::stop_playback()
 {
-    presentation_clock_t clock = this->get_current_clock();
-    if(!clock)
+    presentation_clock_t clock;
+    if(!this->get_current_clock(clock))
         return false;
 
     clock->clock_stop();
+    return true;
 }
 
 bool media_session::request_sample(const media_stream* stream, bool is_sink) const
@@ -39,7 +46,7 @@ bool media_session::request_sample(const media_stream* stream, bool is_sink) con
 
     // take reference of the current topology because the topology switch might happen here
     media_topology_t topology;
-    std::atomic_exchange(&topology, this->current_topology);
+    std::atomic_exchange(&topology, std::atomic_load(&this->current_topology));
 
     if(!topology)
         return false;
@@ -62,7 +69,7 @@ bool media_session::give_sample(
 
     // take reference of the current topology because the topology switch might happen here
     media_topology_t topology;
-    std::atomic_exchange(&topology, this->current_topology);
+    std::atomic_exchange(&topology, std::atomic_load(&this->current_topology));
 
     if(!topology)
         return false;
@@ -80,5 +87,7 @@ bool media_session::give_sample(
 
 void media_session::shutdown()
 {
-    this->current_topology = this->new_topology = NULL;
+    media_topology_t topology;
+    std::atomic_exchange(&this->current_topology, topology);
+    std::atomic_exchange(&this->new_topology, topology);
 }
