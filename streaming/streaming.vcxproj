@@ -77,6 +77,7 @@
     <ClCompile Include="presentation_clock.cpp" />
     <ClCompile Include="sink_preview.cpp" />
     <ClCompile Include="source_displaycapture.cpp" />
+    <ClCompile Include="source_displaycapture2.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AsyncCallback.h" />
@@ -90,6 +91,7 @@
     <ClInclude Include="presentation_clock.h" />
     <ClInclude Include="sink_preview.h" />
     <ClInclude Include="source_displaycapture.h" />
+    <ClInclude Include="source_displaycapture2.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

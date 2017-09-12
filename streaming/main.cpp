@@ -3,6 +3,7 @@
 #include <mfapi.h>
 #include <d3d11.h>
 #include "source_displaycapture.h"
+#include "source_displaycapture2.h"
 #include "sink_preview.h"
 #include "media_session.h"
 #include "media_topology.h"
@@ -12,8 +13,8 @@
 
 LARGE_INTEGER pc_frequency;
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH 1200
+#define WINDOW_HEIGHT 800
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND create_window();
@@ -39,14 +40,14 @@ int main()
         hr = D3D11CreateDevice(
             NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
             D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
-            NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, NULL);
+            NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, &d3d11devctx);
 
         media_session_t session(new media_session);
         media_topology_t topology(new media_topology);
 
         // create and initialize the display capture source
-        source_displaycapture_t displaycapture_source(new source_displaycapture(session));
-        hr = displaycapture_source->initialize(d3d11dev);
+        source_displaycapture2_t displaycapture_source(new source_displaycapture2(session));
+        hr = displaycapture_source->initialize(d3d11dev, d3d11devctx);
         if(FAILED(hr))
         {
             std::cerr << "could not initialize display capture source" << std::endl;
@@ -57,6 +58,7 @@ int main()
         // create and initialize the preview window sink
         sink_preview_t preview_sink(new sink_preview(session));
         preview_sink->initialize(
+            displaycapture_source.get(),
             WINDOW_WIDTH, WINDOW_HEIGHT,
             hwnd, d3d11dev, d3d11devctx, swapchain);
 

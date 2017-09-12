@@ -23,7 +23,9 @@ media_stream_t source_displaycapture::create_stream(presentation_clock_t& clock)
     return temp;
 }
 
-HRESULT source_displaycapture::initialize(ID3D11Device* d3d11dev)
+HRESULT source_displaycapture::initialize(
+    CComPtr<ID3D11Device>& d3d11dev,
+    CComPtr<ID3D11DeviceContext>& devctx)
 {
     scoped_lock lock(this->mutex);
 
@@ -58,40 +60,69 @@ done:
         return hr;
     }
 
+    this->d3d11devctx = devctx;
+    this->d3d11 = d3d11dev;
+
     return hr;
 }
 
 media_sample_t source_displaycapture::capture_frame(UINT timeout, LARGE_INTEGER& device_time_stamp)
 {
-    LARGE_INTEGER in;
-    QueryPerformanceCounter(&in);
-    device_time_stamp = in;
-
     /*scoped_lock lock(this->mutex);*/
     // TODO: release frame must be implemented in another way
-    // TODO: query the current time for the frame if it wasn't updated
 
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;
     CComPtr<IDXGISurface> surface;
     media_sample_t sample(new media_sample);
 
-    //// release the old frame
-    HRESULT hr = this->output_duplication->ReleaseFrame();
+    LARGE_INTEGER in;
+    QueryPerformanceCounter(&in);
+    device_time_stamp = in;
+
+    // release the old frame
+    HRESULT hr;
     // capture a new frame
-    DXGI_OUTDUPL_FRAME_INFO frame_info;
-    // check that there's a new frame available
-    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
-    /*if(SUCCEEDED(hr))
-        CHECK_HR(hr = this->output_duplication->AcquireNextFrame(timeout, &frame_info, &frame))
-    else
-        goto done;*/
+    DXGI_OUTDUPL_FRAME_INFO frame_info = {0};
+    // capture a new frame if there's one
+    UINT t = timeout;
+    /*if(!this->screen_frame)*/
+        t = INFINITE;
+        hr = this->output_duplication->ReleaseFrame();
+
+    // acquire frame accumulates updates to the image while the
+    // image is released,
+    // so immediate releaseframe with 0 timeout is optimal;
+    // with timeout and minimal release time frame
+    // only the newest update will be acquired
+    hr = this->output_duplication->AcquireNextFrame(t, &frame_info, &frame);
+    /*std::cout << frame_info.LastPresentTime.QuadPart << std::endl;*/
+    if(!frame)
+        std::cout << "FRAME IS NULL------------------" << std::endl;
+    CHECK_HR(hr);
+
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
-    sample->frame = screen_frame;
-    /*hr = screen_frame->QueryInterface(&surface);
-    sample->frame = screen_frame;*/
+
+    // create texture
+    if(!this->screen_frame)
+    {
+        D3D11_TEXTURE2D_DESC screen_frame_desc;
+        screen_frame->GetDesc(&screen_frame_desc);
+        screen_frame_desc.MiscFlags = 0;
+        hr = this->d3d11->CreateTexture2D(&screen_frame_desc, NULL, &this->screen_frame);
+    }
+
+    // copy the contents of screen texture to the created texture
+    this->d3d11devctx->CopyResource(this->screen_frame, screen_frame);
 
 done:
+    sample->frame = this->screen_frame;
+    /*hr = this->output_duplication->ReleaseFrame();*/
+
+    /*LARGE_INTEGER in;
+    QueryPerformanceCounter(&in);
+    device_time_stamp = in;*/
+
     return sample;
 }
 
@@ -130,9 +161,10 @@ HRESULT stream_displaycapture::capture_cb(IMFAsyncResult*)
     // TODO: this should signal a fatal error in the topology instead
 
     media_sample_t sample;
-    // request a new frame until a valid frame is returned
     LARGE_INTEGER device_timestamp;
-    do sample = this->source->capture_frame(INFINITE, device_timestamp); while(!sample);
+    // imitates frame capturing at 120 fps because the pipeline
+    // will only have ~half of the 1/60 seconds to process the image
+    sample = this->source->capture_frame(16/2, device_timestamp);
 
     // transform the device's time stamp to session's time stamp
     device_timestamp.QuadPart -= this->device_start_time.QuadPart;

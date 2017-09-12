@@ -11,6 +11,8 @@
 #pragma comment(lib, "Dxgi.lib")
 
 class stream_preview;
+class source_displaycapture;
+class source_displaycapture2;
 
 class sink_preview : public media_sink
 {
@@ -23,8 +25,10 @@ private:
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<IDXGISwapChain1> swapchain;
     CComPtr<IDXGIDevice1> dxgidev;
+    CComPtr<IDXGIOutput> dxgioutput;
     CComPtr<ID2D1Bitmap1> d2dtarget_bitmap;
     bool drawn;
+    source_displaycapture2* displaycapture;
 
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
@@ -39,6 +43,7 @@ public:
 
     // initializes the window
     void initialize(
+        source_displaycapture2* displaycapture,
         UINT32 window_width, UINT32 window_height,
         HWND, 
         CComPtr<ID3D11Device>&, 

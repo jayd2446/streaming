@@ -26,10 +26,16 @@ start media session (media session calls media sink with time)
 // must be managed by shared_ptr
 class source_displaycapture : public media_source
 {
+    friend class stream_preview;
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
 private:
     CComPtr<IDXGIOutputDuplication> output_duplication;
+    CComPtr<ID3D11Texture2D> screen_frame;
+    CComPtr<ID3D11Device> d3d11;
+    CComPtr<ID3D11DeviceContext> d3d11devctx;
+    CComPtr<ID3D11ShaderResourceView> shader_resource_view;
+
     std::mutex mutex;
     LARGE_INTEGER start_time;
 public:
@@ -37,9 +43,7 @@ public:
 
     media_stream_t create_stream(presentation_clock_t& clock);
 
-    HRESULT initialize(ID3D11Device*);
-    // frame capturing is synchronized;
-    // may return NULL
+    HRESULT initialize(CComPtr<ID3D11Device>&, CComPtr<ID3D11DeviceContext>&);
     media_sample_t capture_frame(UINT timeout, LARGE_INTEGER& device_time_stamp);
 
     //// the source must be started beforehand
