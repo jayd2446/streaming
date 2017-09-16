@@ -88,14 +88,14 @@ media_sample_t source_displaycapture::capture_frame(UINT timeout, LARGE_INTEGER&
     UINT t = timeout;
     /*if(!this->screen_frame)*/
         t = INFINITE;
-        hr = this->output_duplication->ReleaseFrame();
+        /*hr = this->output_duplication->ReleaseFrame();*/
 
     // acquire frame accumulates updates to the image while the
     // image is released,
     // so immediate releaseframe with 0 timeout is optimal;
     // with timeout and minimal release time frame
     // only the newest update will be acquired
-    hr = this->output_duplication->AcquireNextFrame(t, &frame_info, &frame);
+    hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame);
     /*std::cout << frame_info.LastPresentTime.QuadPart << std::endl;*/
     if(!frame)
         std::cout << "FRAME IS NULL------------------" << std::endl;
@@ -117,7 +117,7 @@ media_sample_t source_displaycapture::capture_frame(UINT timeout, LARGE_INTEGER&
 
 done:
     sample->frame = this->screen_frame;
-    /*hr = this->output_duplication->ReleaseFrame();*/
+    hr = this->output_duplication->ReleaseFrame();
 
     /*LARGE_INTEGER in;
     QueryPerformanceCounter(&in);

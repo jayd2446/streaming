@@ -6,6 +6,7 @@
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "Avrt.lib")
+#pragma comment(lib, "D3D11.lib")
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 extern LARGE_INTEGER pc_frequency;
 
@@ -15,6 +16,7 @@ source_displaycapture2::source_displaycapture2(const media_session_t& session) :
     buffered_frame(1),
     new_available(false)
 {
+    this->screen_frame_handle[0] = this->screen_frame_handle[1] = 0;
     this->start_time.QuadPart = 0;
 }
 
@@ -36,14 +38,20 @@ HRESULT source_displaycapture2::initialize(
     CComPtr<IDXGIOutput> output;
     CComPtr<IDXGIOutput1> output1;
 
+    // create d3d11 device
+    hr = D3D11CreateDevice(
+        NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+        NULL, 0, D3D11_SDK_VERSION, &this->d3d11dev, NULL, &this->d3d11devctx);
+
     // get dxgi dev
-    CHECK_HR(hr = d3d11dev->QueryInterface(&dxgidev));
+    CHECK_HR(hr = this->d3d11dev->QueryInterface(&dxgidev));
 
     // get dxgi adapter
     CHECK_HR(hr = dxgidev->GetParent(__uuidof(IDXGIAdapter), (void**)&dxgiadapter));
 
     // get the primary output
-    CHECK_HR(hr = dxgiadapter->EnumOutputs(0, &output));
+    CHECK_HR(hr = dxgiadapter->EnumOutputs(1, &output));
     DXGI_OUTPUT_DESC desc;
     CHECK_HR(hr = output->GetDesc(&desc));
 
@@ -52,7 +60,7 @@ HRESULT source_displaycapture2::initialize(
 
     // create the desktop duplication
     this->output_duplication = NULL;
-    CHECK_HR(hr = output1->DuplicateOutput(d3d11dev, &this->output_duplication));
+    CHECK_HR(hr = output1->DuplicateOutput(this->d3d11dev, &this->output_duplication));
 
 done:
     if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
@@ -60,9 +68,6 @@ done:
         std::cerr << "maximum number of desktop duplication api applications running" << std::endl;
         return hr;
     }
-
-    this->d3d11devctx = devctx;
-    this->d3d11 = d3d11dev;
 
     return hr;
 }
@@ -74,11 +79,12 @@ void source_displaycapture2::capture_frame()
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;
     CComPtr<IDXGISurface> surface;
+    CComPtr<IDXGIKeyedMutex> frame_mutex;
     DXGI_OUTDUPL_FRAME_INFO frame_info = {0};
 
-    HRESULT hr;
+    HRESULT hr = S_OK;
     hr = this->output_duplication->ReleaseFrame();
-    CHECK_HR(this->output_duplication->AcquireNextFrame(INFINITE, &frame_info, &frame));
+    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(INFINITE, &frame_info, &frame));
    /* std::cout << frame_info.LastPresentTime.QuadPart << std::endl;*/
 
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
@@ -86,21 +92,30 @@ void source_displaycapture2::capture_frame()
     // TODO: add mutexes for the buffered frames
 
     // buffer the screen frame
+    UINT64 key = 1;
     if(!this->screen_frame[this->active_frame])
     {
         // allocate buffer
         D3D11_TEXTURE2D_DESC screen_frame_desc;
         screen_frame->GetDesc(&screen_frame_desc);
-        screen_frame_desc.MiscFlags = 0;
-        CHECK_HR(hr = this->d3d11->CreateTexture2D(
+        screen_frame_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+        CHECK_HR(hr = this->d3d11dev->CreateTexture2D(
             &screen_frame_desc, 
             NULL, 
             &this->screen_frame[this->active_frame]));
+
+        CComPtr<IDXGIResource> idxgiresource;
+        CHECK_HR(hr = this->screen_frame[this->active_frame]->QueryInterface(&idxgiresource));
+        CHECK_HR(hr = idxgiresource->GetSharedHandle(&this->screen_frame_handle[this->active_frame]));
+        key = 0;
     }
 
-    mutex_.lock();
+    CHECK_HR(hr = this->screen_frame[this->active_frame]->QueryInterface(&frame_mutex));
+    CHECK_HR(hr = frame_mutex->AcquireSync(key, INFINITE));
     this->d3d11devctx->CopyResource(this->screen_frame[this->active_frame], screen_frame);
-    mutex_.unlock();
+    if(key == 0)
+        key = 1;
+    CHECK_HR(hr = frame_mutex->ReleaseSync(key));
     this->new_available = true;
     /*this->active_frame = (this->active_frame + 1) % 2;*/
 
@@ -109,9 +124,9 @@ done:
         throw std::exception();
 }
 
-CComPtr<ID3D11Texture2D> source_displaycapture2::give_texture()
+HANDLE source_displaycapture2::give_texture()
 {
-    CComPtr<ID3D11Texture2D> ret(this->screen_frame[this->active_frame]);
+    HANDLE ret(this->screen_frame_handle[this->active_frame]);
     if(this->new_available)
         this->active_frame = (this->active_frame + 1) % 2;
     return ret;
@@ -253,14 +268,23 @@ HRESULT stream_displaycapture2::capture_cb(IMFAsyncResult*)
     /*DWORD task_index = 0;
     HANDLE h;
     if(!task_index)
-        h = AvSetMmThreadCharacteristics(L"Capture", &task_index);
+        h = AvSetMmThreadCharacteristics(L"Pro Audio", &task_index);
     else
-        h = AvSetMmThreadCharacteristics(L"Capture", &task_index);
+        h = AvSetMmThreadCharacteristics(L"Pro Audio", &task_index);
     if(!h)
     {
         DWORD d = GetLastError();
         throw std::exception();
     }*/
+    /*BOOL b = AvSetMmThreadPriority(h, AVRT_PRIORITY_CRITICAL);
+    if(!b)
+        throw std::exception();*/
+
+
+    /*int priority = GetThreadPriority(GetCurrentThread());
+    BOOL b = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    if(!b)
+        throw std::exception();*/
 
     presentation_clock_t clock;
     if(this->get_clock(clock) && this->running)
@@ -271,6 +295,10 @@ HRESULT stream_displaycapture2::capture_cb(IMFAsyncResult*)
         /*this->scheduled_callback(clock->get_current_time());*/
     }
 
+    /*b = SetThreadPriority(GetCurrentThread(), priority);
+    if(!b)
+        throw std::exception();*/
+
 
     /*AvRevertMmThreadCharacteristics(h);*/
 
@@ -280,7 +308,7 @@ HRESULT stream_displaycapture2::capture_cb(IMFAsyncResult*)
 media_stream::result_t stream_displaycapture2::request_sample()
 {
     // return the oldest buffered sample and add the timestamp
-    CComPtr<ID3D11Texture2D> screen_frame = this->source->give_texture();
+    HANDLE screen_frame = this->source->give_texture();
     presentation_clock_t clock;
     if(!this->get_clock(clock))
         return FATAL_ERROR;

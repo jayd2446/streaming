@@ -13,7 +13,7 @@ class media_sample
 private:
 public:
     time_unit timestamp;
-    CComPtr<ID3D11Texture2D> frame;
+    HANDLE frame;
 };
 
 typedef std::shared_ptr<media_sample> media_sample_t;

@@ -1,6 +1,7 @@
 #include "sink_preview.h"
 #include "source_displaycapture.h"
 #include "source_displaycapture2.h"
+#include "source_displaycapture3.h"
 #include <iostream>
 #include <mutex>
 #include <avrt.h>
@@ -17,7 +18,6 @@ sink_preview::sink_preview(const media_session_t& session) :
 }
 
 void sink_preview::initialize(
-    source_displaycapture2* displaycapture,
     UINT32 window_width, UINT32 window_height,
     HWND hwnd, 
     CComPtr<ID3D11Device>& d3d11dev, 
@@ -27,7 +27,6 @@ void sink_preview::initialize(
     /*this->displaycapture = d;*/
     this->hwnd = hwnd;
     this->d3d11dev = d3d11dev;
-    this->displaycapture = displaycapture;
     /*this->d3d11dev = d3d11dev;
     this->d3d11devctx = d3d11devctx;
     this->swapchain = swapchain;*/
@@ -201,13 +200,18 @@ media_stream::result_t stream_preview::process_sample(const media_sample_t& samp
     do not queue a new acquire if new request happens while acquiring
     */
 
+    static HANDLE last_frame;
+    HRESULT hr = S_OK;
     if(sample->frame)
     {
         this->sink->drawn = true;
         CComPtr<IDXGISurface> surface;
-        HRESULT hr = sample->frame->QueryInterface(&surface);
+        hr = this->sink->d3d11dev->OpenSharedResource(
+            sample->frame, __uuidof(IDXGISurface), (void**)&surface);
         CComPtr<ID2D1Bitmap1> frame;
-        mutex_.lock();
+        CComPtr<IDXGIKeyedMutex> frame_mutex;
+        hr = surface->QueryInterface(&frame_mutex);
+        frame_mutex->AcquireSync(1, INFINITE);
         hr = this->sink->d2d1devctx->CreateBitmapFromDxgiSurface(
             surface,
             D2D1::BitmapProperties1(
@@ -215,13 +219,19 @@ media_stream::result_t stream_preview::process_sample(const media_sample_t& samp
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
             &frame);
 
+        // 10000000
+
         this->sink->d2d1devctx->BeginDraw();
         this->sink->d2d1devctx->DrawBitmap(frame);
         hr = this->sink->d2d1devctx->EndDraw();
-        mutex_.unlock();
+        frame_mutex->ReleaseSync(1);
+
+        /*this->sink->drawn = false;*/
     }
     else
         this->sink->drawn = false;
+    
+    last_frame = sample->frame;
     /*if(this->sink->displaycapture->new_available)
     {
         this->sink->displaycapture->give_back_texture();
@@ -233,17 +243,44 @@ media_stream::result_t stream_preview::process_sample(const media_sample_t& samp
     this->get_clock(t);
     if(t)
     {
-        const time_unit pull_interval = 166666; // ~60 fps
-        const time_unit current_time = t->get_current_time();
-        time_unit scheduled_time = sample->timestamp;
-        scheduled_time += pull_interval;
-        scheduled_time -= scheduled_time % pull_interval;
+        // 60 fps
+        static int counter = 0;
+        static int numbers = 0;
+        static time_unit last_scheduled_time = 0;
+        time_unit pull_interval = 166667;
+        counter++;
+        /*if((counter % 3) == 0)
+            pull_interval -= 1;*/
 
+        // x = scheduled_time, 17 = pull_interval
+        // (x+17) - floor(((3 * (x+17)) mod 50) / 3), x from 0 to 1
+        const time_unit current_time = t->get_current_time();
+        time_unit scheduled_time = max(sample->timestamp, last_scheduled_time);
+
+        /*scheduled_time += 500000;
+        scheduled_time -= scheduled_time % 500000;
+        if(sample->timestamp < (scheduled_time - 166667 - 166666))
+            scheduled_time = scheduled_time - 166667 - 166666;
+        else if(sample->timestamp < (scheduled_time - 166666))
+            scheduled_time = scheduled_time - 166666;*/
+        scheduled_time += pull_interval;
+        // scheduled_time % pull_interval
+        scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+
+        numbers++;
+        if((scheduled_time % 10000000) == 0)
+        {
+            std::cout << numbers << std::endl;
+            numbers = 0;
+        }
+
+        /*std::cout << numbers << ". ";*/
+
+        last_scheduled_time = scheduled_time;
         if(!this->schedule_new_callback(scheduled_time))
         {
             if(scheduled_time > current_time)
             {
-                const time_unit current_time2 = t->get_current_time();
                 // the scheduled time is so close to current time that the callback cannot be set
                 std::cout << "VERY CLOSE" << std::endl;
                 /*std::cout << sample->timestamp << std::endl;*/
@@ -255,18 +292,29 @@ media_stream::result_t stream_preview::process_sample(const media_sample_t& samp
                 std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
                 /*this->sink->drawn = false;*/
 
-                scheduled_time = t->get_current_time();
+                
                 do
                 {
+                    const time_unit current_time2 = t->get_current_time();
+                    scheduled_time = current_time2;
+
+                    /*scheduled_time += 500000;
+                    scheduled_time -= scheduled_time % 500000;
+                    if(current_time2 < (scheduled_time - 166667 - 166666))
+                        scheduled_time = scheduled_time - 166667 - 166666;
+                    else if(current_time2 < (scheduled_time - 166666))
+                        scheduled_time = scheduled_time - 166666;*/
                     scheduled_time += pull_interval;
-                    scheduled_time -= scheduled_time % pull_interval;
+                    // scheduled_time % pull_interval
+                    scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+
+                    last_scheduled_time = scheduled_time;
                 }
                 while(!this->schedule_new_callback(scheduled_time));
-                
             }
         }
         else
-            std::cout << sample->timestamp << std::endl;
+            /*std::cout << scheduled_time << std::endl*/;
     }
 
     return OK;

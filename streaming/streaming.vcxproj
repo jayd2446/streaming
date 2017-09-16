@@ -78,6 +78,7 @@
     <ClCompile Include="sink_preview.cpp" />
     <ClCompile Include="source_displaycapture.cpp" />
     <ClCompile Include="source_displaycapture2.cpp" />
+    <ClCompile Include="source_displaycapture3.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AsyncCallback.h" />
@@ -92,6 +93,7 @@
     <ClInclude Include="sink_preview.h" />
     <ClInclude Include="source_displaycapture.h" />
     <ClInclude Include="source_displaycapture2.h" />
+    <ClInclude Include="source_displaycapture3.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

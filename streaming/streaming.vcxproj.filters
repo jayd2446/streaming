@@ -36,6 +36,9 @@
     <ClCompile Include="source_displaycapture2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source_displaycapture3.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -72,6 +75,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="source_displaycapture2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_displaycapture3.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

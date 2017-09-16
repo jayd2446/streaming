@@ -4,6 +4,7 @@
 #include <d3d11.h>
 #include "source_displaycapture.h"
 #include "source_displaycapture2.h"
+#include "source_displaycapture3.h"
 #include "sink_preview.h"
 #include "media_session.h"
 #include "media_topology.h"
@@ -46,7 +47,7 @@ int main()
         media_topology_t topology(new media_topology);
 
         // create and initialize the display capture source
-        source_displaycapture2_t displaycapture_source(new source_displaycapture2(session));
+        source_displaycapture3_t displaycapture_source(new source_displaycapture3(session));
         hr = displaycapture_source->initialize(d3d11dev, d3d11devctx);
         if(FAILED(hr))
         {
@@ -58,14 +59,13 @@ int main()
         // create and initialize the preview window sink
         sink_preview_t preview_sink(new sink_preview(session));
         preview_sink->initialize(
-            displaycapture_source.get(),
             WINDOW_WIDTH, WINDOW_HEIGHT,
             hwnd, d3d11dev, d3d11devctx, swapchain);
 
         // initialize the topology
         media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
         topology->connect_streams(
-            displaycapture_source->create_stream(topology->get_clock()), sink_stream);
+            displaycapture_source->create_stream(), sink_stream);
 
         // add the topology to the media session
         session->switch_topology(topology);
