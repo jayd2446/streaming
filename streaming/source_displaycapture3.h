@@ -7,8 +7,16 @@
 #include <dxgi.h>
 #include <dxgi1_2.h>
 #include <memory>
+#include <queue>
+#include <mutex>
 
 #pragma comment(lib, "dxgi")
+
+#define QUEUE_MAX_SIZE 6
+
+// TODO: multithread aware
+// TODO: source capturing threads should have a priority of Capture class;
+// sinks have the playback priority which is a bit lower
 
 class source_displaycapture3 : public media_source
 {
@@ -20,6 +28,7 @@ private:
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11Texture2D> screen_frame;
     HANDLE screen_frame_handle;
+    std::mutex mutex;
 public:
     explicit source_displaycapture3(const media_session_t& session);
 
@@ -35,6 +44,8 @@ class stream_displaycapture3 : public media_stream
 private:
     AsyncCallback<stream_displaycapture3> callback;
     source_displaycapture3_t source;
+    std::queue<time_unit> requests;
+    std::mutex mutex;
 
     HRESULT capture_cb(IMFAsyncResult*);
 public:
@@ -42,7 +53,7 @@ public:
     bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
 
     // called by media session
-    result_t request_sample();
+    result_t request_sample(time_unit request_time);
     // called by source_displaycapture
-    result_t process_sample(const media_sample_t&);
+    result_t process_sample(const media_sample_t&, time_unit request_time);
 };

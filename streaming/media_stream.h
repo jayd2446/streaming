@@ -42,10 +42,10 @@ public:
     // requests samples from media session or processes processes
     // samples if there are any;
     // implements input stream functionality
-    virtual result_t request_sample() = 0;
+    virtual result_t request_sample(time_unit request_time) = 0;
     // processes the new sample and optionally calls media_session::give_sample;
     // implements output stream functionality
-    virtual result_t process_sample(const media_sample_t&) = 0;
+    virtual result_t process_sample(const media_sample_t&, time_unit request_time) = 0;
 
     // TODO: return a list of available formats for the stream
     // (media session will use these to set valid formats for the streams between components)

@@ -2,9 +2,10 @@
 #include <Windows.h>
 #include <mfapi.h>
 #include <d3d11.h>
-#include "source_displaycapture.h"
-#include "source_displaycapture2.h"
+//#include "source_displaycapture.h"
+//#include "source_displaycapture2.h"
 #include "source_displaycapture3.h"
+#include "source_displaycapture4.h"
 #include "sink_preview.h"
 #include "media_session.h"
 #include "media_topology.h"
@@ -25,14 +26,21 @@ int main()
     HRESULT hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY);
     hr = MFStartup(MFSTARTUP_NOSOCKET);
 
-    /*Sleep(5000);*/
+    //// register all media foundation standard work queues as playback
+    //DWORD taskgroup_id = 0;
+    //if(FAILED(MFRegisterPlatformWithMMCSS(L"Playback", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
+    //    throw std::exception();
+
+    HWND hwnd = create_window();
+
+    /*Sleep(10000);*/
 
     /*for(int i = 0; i < (2000 / 50); i)*/
     {
         QueryPerformanceFrequency(&pc_frequency);
 
         // create window, direct3d 11 device, context and swap chain
-        HWND hwnd = create_window();
+        /*HWND hwnd = create_window();*/
 
         CComPtr<IDXGISwapChain> swapchain;
         CComPtr<ID3D11Device> d3d11dev;
@@ -47,7 +55,7 @@ int main()
         media_topology_t topology(new media_topology);
 
         // create and initialize the display capture source
-        source_displaycapture3_t displaycapture_source(new source_displaycapture3(session));
+        source_displaycapture4_t displaycapture_source(new source_displaycapture4(session));
         hr = displaycapture_source->initialize(d3d11dev, d3d11devctx);
         if(FAILED(hr))
         {

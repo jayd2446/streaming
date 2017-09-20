@@ -68,6 +68,8 @@ done:
 
 HANDLE source_displaycapture3::capture_frame()
 {
+    std::lock_guard<std::mutex> lock(this->mutex);
+
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;
     CComPtr<IDXGIKeyedMutex> frame_mutex;
@@ -126,13 +128,32 @@ HRESULT stream_displaycapture3::capture_cb(IMFAsyncResult*)
 {
     media_sample_t sample(new media_sample);
     sample->frame = this->source->capture_frame();
-    this->process_sample(sample);
+
+    time_unit request_time;
+    {
+        std::lock_guard<std::mutex> lock(this->mutex);
+        request_time = this->requests.front();
+        this->requests.pop();
+    }
+    this->process_sample(sample, request_time);
     
     return S_OK;
 }
 
-media_stream::result_t stream_displaycapture3::request_sample()
+media_stream::result_t stream_displaycapture3::request_sample(time_unit request_time)
 {
+    {
+        std::lock_guard<std::mutex> lock(this->mutex);
+        if(this->requests.size() >= QUEUE_MAX_SIZE)
+        {
+            // do not assign a new work item for this request since the queue is already full
+            /*this->requests.pop();*/
+            std::cout << "SAMPLE REQUEST DROPPED" << std::endl;
+            return OK;
+        }
+        this->requests.push(request_time);
+    }
+
     const HRESULT hr = MFPutWorkItem(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &this->callback, NULL);
     if(hr != S_OK)
         return FATAL_ERROR;
@@ -143,16 +164,17 @@ media_stream::result_t stream_displaycapture3::request_sample()
     return OK;
 }
 
-media_stream::result_t stream_displaycapture3::process_sample(const media_sample_t& sample)
+media_stream::result_t stream_displaycapture3::process_sample(
+    const media_sample_t& sample, time_unit request_time)
 {
     // add the timestamp
     presentation_clock_t clock;
     if(!this->get_clock(clock))
         return FATAL_ERROR;
 
-    sample->timestamp = clock->get_current_time();
+    sample->timestamp = request_time;/*clock->get_current_time();*/
 
     // pass the sample to downstream
-    this->source->session->give_sample(this, sample, true);
+    this->source->session->give_sample(this, sample, request_time, true);
     return OK;
 }

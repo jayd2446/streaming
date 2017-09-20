@@ -1,7 +1,8 @@
 #include "sink_preview.h"
-#include "source_displaycapture.h"
-#include "source_displaycapture2.h"
+//#include "source_displaycapture.h"
+//#include "source_displaycapture2.h"
 #include "source_displaycapture3.h"
+#include <Mferror.h>
 #include <iostream>
 #include <mutex>
 #include <avrt.h>
@@ -10,7 +11,6 @@
 
 extern LARGE_INTEGER pc_frequency;
 
-std::recursive_mutex mutex_;
 
 sink_preview::sink_preview(const media_session_t& session) : 
     media_sink(session), drawn(false)
@@ -111,7 +111,8 @@ media_stream_t sink_preview::create_stream(presentation_clock_t& clock)
 
 
 stream_preview::stream_preview(const sink_preview_t& sink, presentation_clock_t& clock) : 
-    sink(sink), presentation_clock_sink(clock)
+    sink(sink), presentation_clock_sink(clock), running(false), 
+    callback(this, &stream_preview::request_cb)
 {
 }
 
@@ -128,7 +129,9 @@ bool stream_preview::on_clock_start(time_unit t)
     this->get_clock(t2);
     this->pipeline_latency = t2->get_current_time();
     this->start_time = t;
-    return (this->request_sample() != media_stream::FATAL_ERROR);
+    this->running = true;
+    this->schedule_new(t);
+    /*return (this->request_sample(t) != media_stream::FATAL_ERROR);*/
     /*this->scheduled_callback(t);*/
     return true;
 }
@@ -136,30 +139,134 @@ bool stream_preview::on_clock_start(time_unit t)
 void stream_preview::on_clock_stop(time_unit t)
 {
     /*std::cout << "playback stopped" << std::endl;*/
+    this->running = false;
     if(!this->clear_queue())
         /*std::cout << "MFCANCELWORKITEM FAILED" << std::endl*/;
 }
 
 DWORD task_index2 = 0;
+HANDLE ret = 0;
 
 void stream_preview::scheduled_callback(time_unit due_time)
 {
     /*this->sink->dxgioutput->WaitForVBlank();*/
-    //HANDLE ret;
-    //if(!task_index2)
-    //    ret = AvSetMmThreadCharacteristics(L"Playback", &task_index2);
-    //else
-    //    ret = AvSetMmThreadCharacteristics(L"Playback", &task_index2);
+    //if(!task_index2 || !ret)
+    //    ret = AvSetMmThreadCharacteristics(L"Capture", &task_index2);
+    ///*else
+    //    ret = AvSetMmThreadCharacteristics(L"Capture", &task_index2);*/
     //if(!ret)
     //{
-    //    /*DWORD d = GetLastError();*/
+    //    DWORD d = GetLastError();
     //    throw std::exception();
     //}
+
+    if(!this->running)
+        return;
     
+    // schedule a new time
+    this->schedule_new(due_time);
+
     if(this->sink->drawn)
         this->sink->swapchain->Present(0, 0);
     /*std::cout << "sample shown @ " << due_time << std::endl;*/
-    this->request_sample();
+
+    // request sample
+    const HRESULT hr = MFPutWorkItem(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &this->callback, NULL);
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        throw std::exception();
+    /*if(this->request_sample(due_time) == FATAL_ERROR)
+        this->running = false;*/
+}
+
+void stream_preview::schedule_new(time_unit due_time)
+{
+    presentation_clock_t t;
+    this->get_clock(t);
+    if(t)
+    {
+        {
+            std::lock_guard<std::recursive_mutex> lock(this->mutex);
+            if(this->requests.size() >= QUEUE_MAX_SIZE)
+            {
+                std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_PREVIEW--" << std::endl;
+                return;
+            }
+        }
+
+        // 60 fps
+        static int counter = 0;
+        /*static time_unit last_scheduled_time = 0;*/
+        time_unit pull_interval = 166667;
+        counter++;
+        /*if((counter % 3) == 0)
+            pull_interval -= 1;*/
+
+        // x = scheduled_time, 17 = pull_interval
+        // (x+17) - floor(((3 * (x+17)) mod 50) / 3), x from 0 to 1
+        const time_unit current_time = t->get_current_time();
+        time_unit scheduled_time = due_time;
+
+        scheduled_time += pull_interval;
+        scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+
+        /*std::cout << numbers << ". ";*/
+
+        /*last_scheduled_time = scheduled_time;*/
+        if(!this->schedule_new_callback(scheduled_time))
+        {
+            if(scheduled_time > current_time)
+            {
+                // the scheduled time is so close to current time that the callback cannot be set
+                std::cout << "VERY CLOSE" << std::endl;
+                /*std::cout << sample->timestamp << std::endl;*/
+                {
+                    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+                    this->requests.push(scheduled_time);
+                }
+                this->scheduled_callback(scheduled_time);
+            }
+            else
+            {
+                //// at least one frame was late
+                //std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
+                
+                // TODO: calculate here how many frame requests missed
+                do
+                {
+                    // this commented line will skip the loop and calculate the
+                    // next frame
+                    /*const time_unit current_time2 = t->get_current_time();
+                    scheduled_time = current_time2;*/
+
+                    // frame request was late
+                    std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
+
+                    scheduled_time += pull_interval;
+                    scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+                }
+                while(!this->schedule_new_callback(scheduled_time));
+            }
+        }
+        else
+            /*std::cout << scheduled_time << std::endl*/;
+
+        std::lock_guard<std::recursive_mutex> lock(this->mutex);
+        this->requests.push(scheduled_time);
+    }
+}
+
+HRESULT stream_preview::request_cb(IMFAsyncResult*)
+{
+    time_unit request_time;
+    {
+        std::lock_guard<std::recursive_mutex> lock(this->mutex);
+        request_time = this->requests.front();
+        this->requests.pop();
+    }
+
+    if(this->request_sample(request_time) == FATAL_ERROR)
+        this->running = false;
+    return S_OK;
 }
 
 bool stream_preview::get_clock(presentation_clock_t& clock)
@@ -167,9 +274,9 @@ bool stream_preview::get_clock(presentation_clock_t& clock)
     return this->sink->session->get_current_clock(clock);
 }
 
-media_stream::result_t stream_preview::request_sample()
+media_stream::result_t stream_preview::request_sample(time_unit request_time)
 {
-    if(!this->sink->session->request_sample(this, true))
+    if(!this->sink->session->request_sample(this, request_time, true))
         return FATAL_ERROR;
 
     //presentation_clock_t t;
@@ -182,7 +289,8 @@ media_stream::result_t stream_preview::request_sample()
     return OK;
 }
 
-media_stream::result_t stream_preview::process_sample(const media_sample_t& sample)
+media_stream::result_t stream_preview::process_sample(
+    const media_sample_t& sample, time_unit request_time)
 {
     // schedule the sample
     // 5000000 = half a second
@@ -201,9 +309,11 @@ media_stream::result_t stream_preview::process_sample(const media_sample_t& samp
     */
 
     static HANDLE last_frame;
+    static time_unit last_request_time = 0;
     HRESULT hr = S_OK;
     if(sample->frame)
     {
+        std::lock_guard<std::mutex> lock(this->render_mutex);
         this->sink->drawn = true;
         CComPtr<IDXGISurface> surface;
         hr = this->sink->d3d11dev->OpenSharedResource(
@@ -231,7 +341,34 @@ media_stream::result_t stream_preview::process_sample(const media_sample_t& samp
     else
         this->sink->drawn = false;
     
+    if(last_request_time > request_time)
+    {
+        std::cout << "OUT OF ORDER FRAME" << std::endl;
+    }
+
     last_frame = sample->frame;
+    last_request_time = request_time;
+
+    // unlock the frame
+    sample->mutex.unlock();
+
+    // calculate fps
+    // (fps under 60 means that the frames are coming out of order
+    // or that the pipeline is becoming increasingly saturated)
+    static int numbers = 0;
+    numbers++;
+    /*if(numbers == 60)
+    {
+        std::cout << "last frame time: " << request_time << std::endl;
+        numbers = 0;
+    }*/
+    if((request_time % 10000000) == 0)
+    {
+        std::cout << numbers << std::endl;
+        numbers = 0;
+    }
+    /*std::cout << "frame time: " << request_time << std::endl;*/
+
     /*if(this->sink->displaycapture->new_available)
     {
         this->sink->displaycapture->give_back_texture();
@@ -239,83 +376,87 @@ media_stream::result_t stream_preview::process_sample(const media_sample_t& samp
     }*/
     /*this->sink->displaycapture->output_duplication->ReleaseFrame();*/
 
-    presentation_clock_t t;
-    this->get_clock(t);
-    if(t)
-    {
-        // 60 fps
-        static int counter = 0;
-        static int numbers = 0;
-        static time_unit last_scheduled_time = 0;
-        time_unit pull_interval = 166667;
-        counter++;
-        /*if((counter % 3) == 0)
-            pull_interval -= 1;*/
+    // TODO: keep track of latest request time
 
-        // x = scheduled_time, 17 = pull_interval
-        // (x+17) - floor(((3 * (x+17)) mod 50) / 3), x from 0 to 1
-        const time_unit current_time = t->get_current_time();
-        time_unit scheduled_time = max(sample->timestamp, last_scheduled_time);
 
-        /*scheduled_time += 500000;
-        scheduled_time -= scheduled_time % 500000;
-        if(sample->timestamp < (scheduled_time - 166667 - 166666))
-            scheduled_time = scheduled_time - 166667 - 166666;
-        else if(sample->timestamp < (scheduled_time - 166666))
-            scheduled_time = scheduled_time - 166666;*/
-        scheduled_time += pull_interval;
-        // scheduled_time % pull_interval
-        scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+    // SCHEDULING A NEW TIME
+    //presentation_clock_t t;
+    //this->get_clock(t);
+    //if(t)
+    //{
+    //    // 60 fps
+    //    static int counter = 0;
+    //    static int numbers = 0;
+    //    static time_unit last_scheduled_time = 0;
+    //    time_unit pull_interval = 166667;
+    //    counter++;
+    //    /*if((counter % 3) == 0)
+    //        pull_interval -= 1;*/
 
-        numbers++;
-        if((scheduled_time % 10000000) == 0)
-        {
-            std::cout << numbers << std::endl;
-            numbers = 0;
-        }
+    //    // x = scheduled_time, 17 = pull_interval
+    //    // (x+17) - floor(((3 * (x+17)) mod 50) / 3), x from 0 to 1
+    //    const time_unit current_time = t->get_current_time();
+    //    time_unit scheduled_time = max(sample->timestamp, last_scheduled_time);
 
-        /*std::cout << numbers << ". ";*/
+    //    /*scheduled_time += 500000;
+    //    scheduled_time -= scheduled_time % 500000;
+    //    if(sample->timestamp < (scheduled_time - 166667 - 166666))
+    //        scheduled_time = scheduled_time - 166667 - 166666;
+    //    else if(sample->timestamp < (scheduled_time - 166666))
+    //        scheduled_time = scheduled_time - 166666;*/
+    //    scheduled_time += pull_interval;
+    //    // scheduled_time % pull_interval
+    //    scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
 
-        last_scheduled_time = scheduled_time;
-        if(!this->schedule_new_callback(scheduled_time))
-        {
-            if(scheduled_time > current_time)
-            {
-                // the scheduled time is so close to current time that the callback cannot be set
-                std::cout << "VERY CLOSE" << std::endl;
-                /*std::cout << sample->timestamp << std::endl;*/
-                this->scheduled_callback(scheduled_time);
-            }
-            else
-            {
-                // frame was late
-                std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
-                /*this->sink->drawn = false;*/
+    //    numbers++;
+    //    if((scheduled_time % 10000000) == 0)
+    //    {
+    //        std::cout << numbers << std::endl;
+    //        numbers = 0;
+    //    }
 
-                
-                do
-                {
-                    const time_unit current_time2 = t->get_current_time();
-                    scheduled_time = current_time2;
+    //    /*std::cout << numbers << ". ";*/
 
-                    /*scheduled_time += 500000;
-                    scheduled_time -= scheduled_time % 500000;
-                    if(current_time2 < (scheduled_time - 166667 - 166666))
-                        scheduled_time = scheduled_time - 166667 - 166666;
-                    else if(current_time2 < (scheduled_time - 166666))
-                        scheduled_time = scheduled_time - 166666;*/
-                    scheduled_time += pull_interval;
-                    // scheduled_time % pull_interval
-                    scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+    //    last_scheduled_time = scheduled_time;
+    //    if(!this->schedule_new_callback(scheduled_time))
+    //    {
+    //        if(scheduled_time > current_time)
+    //        {
+    //            // the scheduled time is so close to current time that the callback cannot be set
+    //            std::cout << "VERY CLOSE" << std::endl;
+    //            /*std::cout << sample->timestamp << std::endl;*/
+    //            this->scheduled_callback(scheduled_time);
+    //        }
+    //        else
+    //        {
+    //            // frame was late
+    //            std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
+    //            /*this->sink->drawn = false;*/
 
-                    last_scheduled_time = scheduled_time;
-                }
-                while(!this->schedule_new_callback(scheduled_time));
-            }
-        }
-        else
-            /*std::cout << scheduled_time << std::endl*/;
-    }
+    //            
+    //            do
+    //            {
+    //                const time_unit current_time2 = t->get_current_time();
+    //                scheduled_time = current_time2;
+
+    //                /*scheduled_time += 500000;
+    //                scheduled_time -= scheduled_time % 500000;
+    //                if(current_time2 < (scheduled_time - 166667 - 166666))
+    //                    scheduled_time = scheduled_time - 166667 - 166666;
+    //                else if(current_time2 < (scheduled_time - 166666))
+    //                    scheduled_time = scheduled_time - 166666;*/
+    //                scheduled_time += pull_interval;
+    //                // scheduled_time % pull_interval
+    //                scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+
+    //                last_scheduled_time = scheduled_time;
+    //            }
+    //            while(!this->schedule_new_callback(scheduled_time));
+    //        }
+    //    }
+    //    else
+    //        /*std::cout << scheduled_time << std::endl*/;
+    //}
 
     return OK;
 }

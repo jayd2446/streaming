@@ -40,7 +40,10 @@ bool media_session::stop_playback()
     return true;
 }
 
-bool media_session::request_sample(const media_stream* stream, bool is_sink) const
+bool media_session::request_sample(
+    const media_stream* stream, 
+    time_unit request_time,
+    bool is_sink) const
 {
     // is_sink is used for switching to a new topology
 
@@ -56,14 +59,17 @@ bool media_session::request_sample(const media_stream* stream, bool is_sink) con
         return false;
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        if((*jt)->request_sample() == media_stream::FATAL_ERROR)
+        if((*jt)->request_sample(request_time) == media_stream::FATAL_ERROR)
             return false;
 
     return true;
 }
 
 bool media_session::give_sample(
-    const media_stream* stream, const media_sample_t& sample, bool is_source) const
+    const media_stream* stream, 
+    const media_sample_t& sample, 
+    time_unit request_time,
+    bool is_source) const
 {
     // is_source is used for translating time stamps to presentation time
 
@@ -79,7 +85,7 @@ bool media_session::give_sample(
         return false;
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        if((*jt)->process_sample(sample) == media_stream::FATAL_ERROR)
+        if((*jt)->process_sample(sample, request_time) == media_stream::FATAL_ERROR)
             return false;
 
     return true;
@@ -87,7 +93,7 @@ bool media_session::give_sample(
 
 void media_session::shutdown()
 {
-    media_topology_t topology;
-    std::atomic_exchange(&this->current_topology, topology);
-    std::atomic_exchange(&this->new_topology, topology);
+    media_topology_t null_topology;
+    std::atomic_exchange(&this->current_topology, null_topology);
+    std::atomic_exchange(&this->new_topology, null_topology);
 }

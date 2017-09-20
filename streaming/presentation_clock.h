@@ -20,7 +20,6 @@ void ticks_to_time_unit(LARGE_INTEGER&);
 // TODO: scheduling assumes clock increments based on real time(the time source should 
 // implement scheduling)
 // TODO: decouple this class to sink and scheduling
-// TODO: scheduled callback should be canceled if the clock stops
 class presentation_clock_sink : public virtual IUnknownImpl
 {
     friend class presentation_clock;
@@ -28,7 +27,7 @@ public:
     typedef std::set<time_unit> sorted_set_t;
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    AsyncCallback<presentation_clock_sink> callback;
+    AsyncCallback<presentation_clock_sink> callback, callback2;
     sorted_set_t callbacks;
     std::recursive_mutex mutex_callbacks;
     CHandle wait_timer;
@@ -38,6 +37,7 @@ private:
     // schedules the next callback in the list
     bool schedule_callback(time_unit due_time);
     HRESULT callback_cb(IMFAsyncResult*);
+    HRESULT callback_cb2(IMFAsyncResult*) {return S_OK;}
 protected:
     // returns false if mfcancelworkitem fails
     bool clear_queue();
@@ -55,7 +55,7 @@ protected:
 public:
     // adds this sink to the list of sinks in the presentation clock
     explicit presentation_clock_sink(presentation_clock_t&);
-    virtual ~presentation_clock_sink() {}
+    virtual ~presentation_clock_sink();
 
     // can be NULL;
     // get_clock must be an atomic operation
@@ -80,6 +80,8 @@ private:
 public:
     presentation_clock();
     ~presentation_clock();
+
+    LARGE_INTEGER get_start_time() const {return this->start_time;}
 
     time_unit get_current_time() const;
     void set_current_time(time_unit t) {this->current_time = t;}

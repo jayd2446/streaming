@@ -14,7 +14,13 @@ private:
     T* parent;
     InvokeFn Fn;
 public:
-    AsyncCallback(T* parent, InvokeFn Fn) : parent(parent), Fn(Fn) {}
+    DWORD work_queue, flags;
+
+    AsyncCallback(
+        T* parent, 
+        InvokeFn Fn, 
+        DWORD work_queue = MFASYNC_CALLBACK_QUEUE_STANDARD,
+        DWORD flags = 0) : parent(parent), Fn(Fn), work_queue(work_queue), flags(flags) {}
 
     // IUnknown
     ULONG STDMETHODCALLTYPE AddRef() {return parent->AddRef();}
@@ -38,6 +44,16 @@ public:
     }
 
     // IMFAsyncCallback
-    HRESULT STDMETHODCALLTYPE GetParameters(DWORD*, DWORD*) {return E_NOTIMPL;} // optional
+    // optional
+    HRESULT STDMETHODCALLTYPE GetParameters(DWORD* pdwFlags, DWORD* pdwQueue) 
+    {
+        if(!pdwFlags || !pdwQueue)
+            return E_POINTER;
+
+        *pdwFlags = this->flags;
+        *pdwQueue = this->work_queue;
+
+        return S_OK;;
+    }
     HRESULT STDMETHODCALLTYPE Invoke(IMFAsyncResult* result) {return (this->parent->*Fn)(result);}
 };

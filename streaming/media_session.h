@@ -37,14 +37,6 @@ new request will be made)
 
 class media_stream;
 
-// TODO: move presentation clock details to separate class
-/*
-
-queue of timer callbacks;
-the queue is sorted from earliest to latest
-
-*/
-
 class media_session
 {
 private:
@@ -68,12 +60,16 @@ public:
     // return fatal_error;
     // the events won't have any effect if those conditions don't apply
 
-    bool request_sample(const media_stream* this_input_stream, bool is_sink) const;
+    bool request_sample(
+        const media_stream* this_input_stream, 
+        time_unit request_time, 
+        bool is_sink) const;
     // is_source flag is used for the media session to able to translate the sample times;
     // sample cannot be NULL
     bool give_sample(
         const media_stream* this_output_stream, 
         const media_sample_t& sample,
+        time_unit request_time,
         bool is_source) const;
     /*bool give_sample(
         const media_stream* this_output_stream,

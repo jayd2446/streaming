@@ -1,4 +1,5 @@
 #include "presentation_clock.h"
+#include <Mferror.h>
 #include <cassert>
 #include <limits>
 
@@ -15,17 +16,36 @@ void ticks_to_time_unit(LARGE_INTEGER& ticks)
     ticks.QuadPart /= pc_frequency.QuadPart;
 }
 
+DWORD wait_work_queue = 0;
+
 presentation_clock_sink::presentation_clock_sink(presentation_clock_t& clock) :
     callback(this, &presentation_clock_sink::callback_cb),
+    callback2(this, &presentation_clock_sink::callback_cb2),
     wait_timer(CreateWaitableTimer(NULL, FALSE, NULL)),
     callback_key(0),
     scheduled_time(std::numeric_limits<time_unit>::max())
 {
+    DWORD work_queue = wait_work_queue;
+    if(!wait_work_queue)
+        if(FAILED(MFAllocateWorkQueue(&work_queue)))
+            throw std::exception();
+    this->callback.work_queue = MFASYNC_CALLBACK_QUEUE_MULTITHREADED;
+    /*if(!wait_work_queue)
+        if(FAILED(MFBeginRegisterWorkQueueWithMMCSS(
+            this->callback.work_queue, L"Capture", AVRT_PRIORITY_NORMAL, &this->callback2, NULL)))
+            throw std::exception();*/
+    wait_work_queue = work_queue;
+
     if(!this->wait_timer)
         throw std::exception();
 
     ::scoped_lock lock(clock->mutex_sinks);
     clock->sinks.push_back(presentation_clock_sink_t(this));
+}
+
+presentation_clock_sink::~presentation_clock_sink()
+{
+    /*MFUnlockWorkQueue(this->callback.work_queue);*/
 }
 
 bool presentation_clock_sink::schedule_callback(time_unit due_time)
@@ -68,11 +88,20 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
         {
             // queue a waititem to wait for timer completion
             CComPtr<IMFAsyncResult> asyncresult;
+            HRESULT hr;
             // mfputwaitingworkitem 
-            if(FAILED(MFCreateAsyncResult(NULL, &this->callback, NULL, &asyncresult)))
+            if(FAILED(hr = MFCreateAsyncResult(NULL, &this->callback, NULL, &asyncresult)))
+            {
+                if(hr == MF_E_SHUTDOWN)
+                    return true;
                 throw std::exception();
-            if(FAILED(MFPutWaitingWorkItem(this->wait_timer, 0, asyncresult, &this->callback_key)))
+            }
+            if(FAILED(hr = MFPutWaitingWorkItem(this->wait_timer, 0, asyncresult, &this->callback_key)))
+            {
+                if(hr == MF_E_SHUTDOWN)
+                    return true;
                 throw std::exception();
+            }
         }
     }
 
