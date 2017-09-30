@@ -13,8 +13,6 @@
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
 
-#define QUEUE_MAX_SIZE 6
-
 class stream_preview;
 class source_displaycapture;
 class source_displaycapture2;

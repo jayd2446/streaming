@@ -4,7 +4,7 @@
 #include <d3d11.h>
 //#include "source_displaycapture.h"
 //#include "source_displaycapture2.h"
-#include "source_displaycapture3.h"
+//#include "source_displaycapture3.h"
 #include "source_displaycapture4.h"
 #include "sink_preview.h"
 #include "media_session.h"

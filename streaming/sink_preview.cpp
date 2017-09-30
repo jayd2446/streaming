@@ -1,14 +1,17 @@
 #include "sink_preview.h"
 //#include "source_displaycapture.h"
 //#include "source_displaycapture2.h"
-#include "source_displaycapture3.h"
+//#include "source_displaycapture3.h"
+#include "source_displaycapture4.h"
 #include <Mferror.h>
 #include <iostream>
 #include <mutex>
 #include <avrt.h>
 
 #pragma comment(lib, "Avrt.lib")
-
+// TODO: playback freezes with queue_max_size 3
+#define QUEUE_MAX_SIZE 6
+#define LAG_BEHIND (FPS60_INTERVAL * 2)
 extern LARGE_INTEGER pc_frequency;
 
 
@@ -166,8 +169,8 @@ void stream_preview::scheduled_callback(time_unit due_time)
     // schedule a new time
     this->schedule_new(due_time);
 
-    if(this->sink->drawn)
-        this->sink->swapchain->Present(0, 0);
+    /*if(this->sink->drawn)
+        this->sink->swapchain->Present(0, 0);*/
     /*std::cout << "sample shown @ " << due_time << std::endl;*/
 
     // request sample
@@ -260,7 +263,7 @@ HRESULT stream_preview::request_cb(IMFAsyncResult*)
     time_unit request_time;
     {
         std::lock_guard<std::recursive_mutex> lock(this->mutex);
-        request_time = this->requests.front();
+        request_time = this->requests.front() - LAG_BEHIND;
         this->requests.pop();
     }
 
@@ -268,6 +271,8 @@ HRESULT stream_preview::request_cb(IMFAsyncResult*)
         this->running = false;
     return S_OK;
 }
+
+//HRESULT stream_preview::rende
 
 bool stream_preview::get_clock(presentation_clock_t& clock)
 {
@@ -297,16 +302,10 @@ media_stream::result_t stream_preview::process_sample(
 
     // render the sample to the backbuffer here
 
-    /*
-    drawing = saving
-    presenting = loading
-    */
+    // TODO: drawing etc should be put to a work queue
 
-    /*
-    displaycapture2:
-    on request, give the buffered sample and begin acquiring a new sample;
-    do not queue a new acquire if new request happens while acquiring
-    */
+    // TODO: scheduling can be removed from the sink and replaced with
+    // a request each time a new sample arrives(that might hinder the concurrency a bit)
 
     static HANDLE last_frame;
     static time_unit last_request_time = 0;
@@ -367,6 +366,10 @@ media_stream::result_t stream_preview::process_sample(
         std::cout << numbers << std::endl;
         numbers = 0;
     }
+
+    if(this->sink->drawn)
+        this->sink->swapchain->Present(0, 0);
+
     /*std::cout << "frame time: " << request_time << std::endl;*/
 
     /*if(this->sink->displaycapture->new_available)

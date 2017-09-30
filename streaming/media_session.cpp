@@ -3,8 +3,7 @@
 
 bool media_session::get_current_clock(presentation_clock_t& clock) const
 {
-    media_topology_t topology;
-    std::atomic_exchange(&topology, std::atomic_load(&this->current_topology));
+    media_topology_t topology(std::atomic_load(&this->current_topology));
 
     if(!topology)
         return false;
@@ -48,8 +47,7 @@ bool media_session::request_sample(
     // is_sink is used for switching to a new topology
 
     // take reference of the current topology because the topology switch might happen here
-    media_topology_t topology;
-    std::atomic_exchange(&topology, std::atomic_load(&this->current_topology));
+    media_topology_t topology(std::atomic_load(&this->current_topology));
 
     if(!topology)
         return false;
@@ -74,8 +72,7 @@ bool media_session::give_sample(
     // is_source is used for translating time stamps to presentation time
 
     // take reference of the current topology because the topology switch might happen here
-    media_topology_t topology;
-    std::atomic_exchange(&topology, std::atomic_load(&this->current_topology));
+    media_topology_t topology(std::atomic_load(&this->current_topology));
 
     if(!topology)
         return false;
