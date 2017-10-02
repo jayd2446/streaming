@@ -77,11 +77,11 @@
     <ClCompile Include="transform_videoprocessor.cpp" />
     <ClCompile Include="presentation_clock.cpp" />
     <ClCompile Include="sink_preview.cpp" />
-    <ClCompile Include="source_displaycapture3.cpp" />
     <ClCompile Include="source_displaycapture4.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AsyncCallback.h" />
+    <ClInclude Include="async_callback.h" />
     <ClInclude Include="IUnknownImpl.h" />
     <ClInclude Include="media_sample.h" />
     <ClInclude Include="media_session.h" />
@@ -89,10 +89,10 @@
     <ClInclude Include="media_source.h" />
     <ClInclude Include="media_stream.h" />
     <ClInclude Include="media_topology.h" />
+    <ClInclude Include="enable_shared_from_this.h" />
     <ClInclude Include="transform_videoprocessor.h" />
     <ClInclude Include="presentation_clock.h" />
     <ClInclude Include="sink_preview.h" />
-    <ClInclude Include="source_displaycapture3.h" />
     <ClInclude Include="source_displaycapture4.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

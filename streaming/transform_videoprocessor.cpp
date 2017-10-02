@@ -14,29 +14,6 @@ HRESULT transform_videoprocessor::initialize(
 {
     HRESULT hr = S_OK;
 
-    UINT support;
-    hr = d3d11dev->CheckFormatSupport(DXGI_FORMAT_NV12, &support);
-    if(support & D3D11_FORMAT_SUPPORT_TEXTURE2D)
-    {
-        hr = S_OK;
-    }
-    if(support & D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_OUTPUT)
-    {
-        hr = S_OK;
-    }
-    if(support & D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_INPUT)
-    {
-        hr = S_OK;
-    }
-    if(support & D3D11_FORMAT_SUPPORT_VIDEO_ENCODER)
-    {
-        hr = S_OK;
-    }
-    if(support & D3D11_FORMAT_SUPPORT_RENDER_TARGET)
-    {
-        hr = S_OK;
-    }
-
     this->d3d11dev = d3d11dev;
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->videodevice));
     CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
@@ -81,10 +58,8 @@ done:
 
 media_stream_t transform_videoprocessor::create_stream()
 {
-    media_stream_t temp;
-    temp.Attach(new stream_videoprocessor(
-        std::dynamic_pointer_cast<transform_videoprocessor>(this->shared_from_this())));
-    return temp;
+    return media_stream_t(
+        new stream_videoprocessor(this->shared_from_this<transform_videoprocessor>()));
 }
 
 
@@ -95,12 +70,12 @@ media_stream_t transform_videoprocessor::create_stream()
 
 stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& transform) :
     transform(transform),
-    processing_callback(this, &stream_videoprocessor::processing_cb),
+    processing_callback(new async_callback_t(&stream_videoprocessor::processing_cb)),
     output_sample(new media_sample)
 {
 }
 
-HRESULT stream_videoprocessor::processing_cb(IMFAsyncResult*)
+void stream_videoprocessor::processing_cb()
 {
     HRESULT hr = S_OK;
     {
@@ -179,13 +154,10 @@ HRESULT stream_videoprocessor::processing_cb(IMFAsyncResult*)
         this->transform->session->give_sample(this, this->output_sample, this->current_rp, false);
     }
 
-    return S_OK;
-
+    return;
 done:
     if(FAILED(hr))
         throw std::exception();
-
-    return S_OK;
 }
 
 media_stream::result_t stream_videoprocessor::request_sample(request_packet& rp)
@@ -250,8 +222,9 @@ media_stream::result_t stream_videoprocessor::process_sample(
         scoped_lock lock(this->transform->videoprocessor_mutex);
         this->pending_sample = sample;
 
-        const HRESULT hr = MFPutWorkItem(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, 
-            &this->processing_callback, NULL);
+        const HRESULT hr = this->processing_callback->mf_put_work_item(
+            this->shared_from_this<stream_videoprocessor>(),
+            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
         if(FAILED(hr) && hr != MF_E_SHUTDOWN)
             throw std::exception();
         else if(hr == MF_E_SHUTDOWN)

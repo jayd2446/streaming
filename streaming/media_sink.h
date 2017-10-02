@@ -2,9 +2,9 @@
 #include "media_session.h"
 #include "media_sample.h"
 #include "presentation_clock.h"
-#include <memory>
+#include "enable_shared_from_this.h"
 
-class media_sink : public std::enable_shared_from_this<media_sink>
+class media_sink : public virtual enable_shared_from_this
 {
 public:
     media_session_t session;

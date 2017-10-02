@@ -18,7 +18,6 @@
 // TODO: probably should be renamed to scene
 class media_topology
 {
-    friend int main();
     friend class media_session;
 public:
     struct topology_node

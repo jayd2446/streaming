@@ -1,8 +1,6 @@
 #pragma once
 #include "media_sample.h"
-#include "AsyncCallback.h"
-#include "IUnknownImpl.h"
-#include <atlbase.h>
+#include "enable_shared_from_this.h"
 
 // media stream object is needed for stream type info;
 // mediatypehandler is used to check if the stream supports a format and to
@@ -12,10 +10,7 @@
 class media_topology;
 struct request_packet;
 
-// media stream must use com's reference counting so that it works correctly
-// with media foundation's async callbacks;
-// cannot be used in conjuction with shared_ptr
-class media_stream : public virtual IUnknownImpl
+class media_stream : public virtual enable_shared_from_this
 {
 public:
     enum result_t
@@ -67,4 +62,4 @@ public:
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) {return E_NOTIMPL;}*/
 };
 
-typedef CComPtr<media_stream> media_stream_t;
+typedef std::shared_ptr<media_stream> media_stream_t;

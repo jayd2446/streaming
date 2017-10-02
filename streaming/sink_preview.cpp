@@ -101,10 +101,10 @@ void sink_preview::initialize(
 
 media_stream_t sink_preview::create_stream(presentation_clock_t& clock)
 {
-    media_stream_t temp;
-    temp.Attach(new stream_preview(
-        std::dynamic_pointer_cast<sink_preview>(this->shared_from_this()), clock));
-    return temp;
+    stream_preview_t stream(new stream_preview(this->shared_from_this<sink_preview>()));
+    stream->register_sink(clock);
+    
+    return stream;
 }
 
 
@@ -113,18 +113,16 @@ media_stream_t sink_preview::create_stream(presentation_clock_t& clock)
 /////////////////////////////////////////////////////////////////
 
 
-stream_preview::stream_preview(const sink_preview_t& sink, presentation_clock_t& clock) : 
-    sink(sink), presentation_clock_sink(clock), running(false), 
-    callback(this, &stream_preview::request_cb),
+stream_preview::stream_preview(const sink_preview_t& sink) : 
+    sink(sink), running(false), 
+    callback(new async_callback_t(&stream_preview::request_cb)),
     requests_pending(0)
 {
 }
 
 stream_preview::~stream_preview()
 {
-    /*std::cout << "DESTRUCTOR" << std::endl;*/
-    int i = 0;
-    i++;
+    /*this->unregister_sink();*/
 }
 
 bool stream_preview::on_clock_start(time_unit t)
@@ -174,7 +172,8 @@ void stream_preview::scheduled_callback(time_unit due_time)
         this->sink->swapchain->Present(0, 0);*/
     /*std::cout << "sample shown @ " << due_time << std::endl;*/
 
-    const HRESULT hr = MFPutWorkItem(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &this->callback, NULL);
+    const HRESULT hr = this->callback->mf_put_work_item(
+        this->shared_from_this<stream_preview>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     /*}
@@ -257,7 +256,7 @@ void stream_preview::schedule_new(time_unit due_time)
     }
 }
 
-HRESULT stream_preview::request_cb(IMFAsyncResult*)
+void stream_preview::request_cb()
 {
     time_unit request_time;
     request_packet rp;
@@ -272,7 +271,7 @@ HRESULT stream_preview::request_cb(IMFAsyncResult*)
     if(this->requests_pending >= QUEUE_MAX_SIZE)
     {
         std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_PREVIEW--" << std::endl;
-        return S_OK;
+        return;
     }
 
     this->requests_pending++;
@@ -282,7 +281,6 @@ HRESULT stream_preview::request_cb(IMFAsyncResult*)
         this->requests_pending--;
         this->running = false;
     }
-    return S_OK;
 }
 
 bool stream_preview::get_clock(presentation_clock_t& clock)

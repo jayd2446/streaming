@@ -1,8 +1,7 @@
 #pragma once
-#include "IUnknownImpl.h"
-#include "AsyncCallback.h"
+#include "async_callback.h"
 #include "media_sample.h"
-#include <memory>
+#include "enable_shared_from_this.h"
 #include <map>
 #include <set>
 #include <vector>
@@ -20,14 +19,16 @@ void ticks_to_time_unit(LARGE_INTEGER&);
 // TODO: scheduling assumes clock increments based on real time(the time source should 
 // implement scheduling)
 // TODO: decouple this class to sink and scheduling
-class presentation_clock_sink : public virtual IUnknownImpl
+class presentation_clock_sink : public virtual enable_shared_from_this
 {
     friend class presentation_clock;
 public:
     typedef std::set<time_unit> sorted_set_t;
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef async_callback<presentation_clock_sink> async_callback_t;
 private:
-    AsyncCallback<presentation_clock_sink> callback, callback2;
+    bool unregistered;
+    CComPtr<async_callback_t> callback, callback2;
     sorted_set_t callbacks;
     std::recursive_mutex mutex_callbacks;
     CHandle wait_timer;
@@ -36,8 +37,7 @@ private:
 
     // schedules the next callback in the list
     bool schedule_callback(time_unit due_time);
-    HRESULT callback_cb(IMFAsyncResult*);
-    HRESULT callback_cb2(IMFAsyncResult*) {return S_OK;}
+    void callback_cb();
 protected:
     // returns false if mfcancelworkitem fails
     bool clear_queue();
@@ -53,21 +53,30 @@ protected:
     // a new callback shouldn't be scheduled if the topology isn't active anymore
     virtual void scheduled_callback(time_unit due_time) = 0;
 public:
-    // adds this sink to the list of sinks in the presentation clock
-    explicit presentation_clock_sink(presentation_clock_t&);
+    presentation_clock_sink();
     virtual ~presentation_clock_sink();
+
+    // adds this sink to the list of sinks in the presentation clock
+    bool register_sink(presentation_clock_t&);
+    // (not needed when using shared ptrs instead of weak ptrs)
+    //// returns false if clock wasn't found or sink wasn't found in clock;
+    //// this actually removes one invalid pointer from the sink list
+    //// TODO: rename this to something more fitting
+    //bool unregister_sink();
 
     // can be NULL;
     // get_clock must be an atomic operation
     virtual bool get_clock(presentation_clock_t&) = 0;
 };
 
-typedef CComPtr<presentation_clock_sink> presentation_clock_sink_t;
+typedef std::shared_ptr<presentation_clock_sink> presentation_clock_sink_t;
 
 class presentation_clock
 {
     friend class presentation_clock_sink;
 public:
+    // if clock is relocated to session, this vector should include weak ptrs
+    // to avoid circular dependency
     typedef std::vector<presentation_clock_sink_t> vector_t;
 private:
     vector_t sinks;
@@ -92,8 +101,9 @@ public:
     // starts the timer aswell
     bool clock_start(time_unit start_time);
     // returns false if any of the sinks returns false;
-    // stops the timer
-    void clock_stop();
+    // stops the timer at the time unit
+    void clock_stop(time_unit stop_time);
+    void clock_stop() {this->clock_stop(this->get_current_time());}
 
     void clear_clock_sinks();
 };

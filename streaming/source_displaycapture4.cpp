@@ -19,12 +19,10 @@ extern LARGE_INTEGER pc_frequency;
 #define MONITOR_INDEX 0
 #define MAX_DIFF std::numeric_limits<time_unit>::max()/*(FPS60_INTERVAL / 2 + FPS60_INTERVAL / 4)*/
 
-source_displaycapture4::thread_capture::thread_capture(source_displaycapture4_t& source,
-    presentation_clock_t& clock) : 
+source_displaycapture4::thread_capture::thread_capture(source_displaycapture4_t& source) : 
     source(source),
-    presentation_clock_sink(clock),
     running(false),
-    callback(this, &source_displaycapture4::thread_capture::capture_cb)
+    callback(new async_callback_t(&source_displaycapture4::thread_capture::capture_cb))
 {
     if(FAILED(MFAllocateWorkQueue(&this->work_queue)))
         throw std::exception();
@@ -32,6 +30,7 @@ source_displaycapture4::thread_capture::thread_capture(source_displaycapture4_t&
 
 source_displaycapture4::thread_capture::~thread_capture()
 {
+    /*this->unregister_sink();*/
     MFUnlockWorkQueue(this->work_queue);
 }
 
@@ -69,17 +68,18 @@ void source_displaycapture4::thread_capture::scheduled_callback(time_unit due_ti
 {
     this->due_time = due_time;
 
-    const HRESULT hr = MFPutWorkItem(this->work_queue, &this->callback, NULL);
+    const HRESULT hr = this->callback->mf_put_work_item(
+        this->shared_from_this<thread_capture>(), this->work_queue);
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
 }
 
-HRESULT source_displaycapture4::thread_capture::capture_cb(IMFAsyncResult*)
+void source_displaycapture4::thread_capture::capture_cb()
 {
     source_displaycapture4_t source;
 
     if(!this->running || !this->get_source(source))
-        return S_OK;
+        return;
 
     // do not schedule a new time until the old capture has succeeded,
     // because the capturing might exceed the next scheduled time;
@@ -94,7 +94,6 @@ HRESULT source_displaycapture4::thread_capture::capture_cb(IMFAsyncResult*)
     }
     else
         this->on_clock_stop(0);
-    return S_OK;
 }
 
 bool source_displaycapture4::thread_capture::get_source(source_displaycapture4_t& source)
@@ -163,12 +162,15 @@ source_displaycapture4::source_displaycapture4(const media_session_t& session) :
     }
 }
 
+source_displaycapture4::~source_displaycapture4()
+{
+    this->capture_thread->running = false;
+}
+
 media_stream_t source_displaycapture4::create_stream()
 {
-    media_stream_t temp;
-    temp.Attach(new stream_displaycapture4(
-        std::dynamic_pointer_cast<source_displaycapture4>(this->shared_from_this())));
-    return temp;
+    return media_stream_t(
+        new stream_displaycapture4(this->shared_from_this<source_displaycapture4>()));
 }
 
 HRESULT source_displaycapture4::initialize(ID3D11Device* d3d11dev, ID3D11DeviceContext* devctx)
@@ -216,9 +218,8 @@ done:
     assert(!this->capture_thread);
     assert(!this->capture_thread_clock);
     this->capture_thread_clock.reset(new presentation_clock);
-    this->capture_thread.Attach(new thread_capture(
-        std::dynamic_pointer_cast<source_displaycapture4>(
-        this->shared_from_this()), this->capture_thread_clock));
+    this->capture_thread.reset(new thread_capture(this->shared_from_this<source_displaycapture4>()));
+    this->capture_thread->register_sink(this->capture_thread_clock);
     this->capture_thread_clock->clock_start(0);
 
     return hr;
@@ -238,7 +239,8 @@ void source_displaycapture4::capture_frame(LARGE_INTEGER start_time)
     // when playing a fullscreen game the releaseframe can be here;
     // in desktop mode it must be at the end so that every change can be captured
     /*this->output_duplication->ReleaseFrame();*/
-    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(INFINITE, &frame_info, &frame));
+    // should not have a timeout here so that the component can be shutdown properly
+    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
 
     if(frame_info.LastPresentTime.QuadPart != 0)

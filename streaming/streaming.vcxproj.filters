@@ -30,9 +30,6 @@
     <ClCompile Include="presentation_clock.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source_displaycapture3.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="source_displaycapture4.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -71,13 +68,16 @@
     <ClInclude Include="presentation_clock.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source_displaycapture3.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="source_displaycapture4.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="transform_videoprocessor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="async_callback.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="enable_shared_from_this.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

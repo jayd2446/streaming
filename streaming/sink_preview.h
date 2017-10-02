@@ -1,5 +1,5 @@
 #pragma once
-#include "AsyncCallback.h"
+#include "async_callback.h"
 #include "media_sink.h"
 #include "media_stream.h"
 #include <Windows.h>
@@ -52,7 +52,7 @@ private:
 public:
     explicit sink_preview(const media_session_t& session);
 
-    media_stream_t create_stream(presentation_clock_t& clock);
+    media_stream_t create_stream(presentation_clock_t&);
 
     // (presentation clock can be accessed from media session)
     // set_presentation_clock
@@ -73,6 +73,8 @@ typedef std::shared_ptr<sink_preview> sink_preview_t;
 
 class stream_preview : public media_stream, public presentation_clock_sink
 {
+public:
+    typedef async_callback<stream_preview> async_callback_t;
 private:
     sink_preview_t sink;
     time_unit pipeline_latency;
@@ -84,16 +86,16 @@ private:
     
     std::recursive_mutex mutex;
     std::mutex render_mutex;
-    AsyncCallback<stream_preview> callback;
+    CComPtr<async_callback_t> callback;
 
     bool on_clock_start(time_unit);
     void on_clock_stop(time_unit);
     void scheduled_callback(time_unit due_time);
 
     void schedule_new(time_unit due_time);
-    HRESULT request_cb(IMFAsyncResult*);
+    void request_cb();
 public:
-    stream_preview(const sink_preview_t& sink, presentation_clock_t& clock);
+    explicit stream_preview(const sink_preview_t& sink);
     ~stream_preview();
 
     bool get_clock(presentation_clock_t&);
@@ -103,3 +105,5 @@ public:
     // called by media session
     result_t process_sample(const media_sample_t&, request_packet&);
 };
+
+typedef std::shared_ptr<stream_preview> stream_preview_t;

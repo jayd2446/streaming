@@ -18,18 +18,18 @@ void ticks_to_time_unit(LARGE_INTEGER& ticks)
 
 DWORD wait_work_queue = 0;
 
-presentation_clock_sink::presentation_clock_sink(presentation_clock_t& clock) :
-    callback(this, &presentation_clock_sink::callback_cb),
-    callback2(this, &presentation_clock_sink::callback_cb2),
+presentation_clock_sink::presentation_clock_sink() :
+    callback(new async_callback_t(&presentation_clock_sink::callback_cb)),
     wait_timer(CreateWaitableTimer(NULL, FALSE, NULL)),
     callback_key(0),
-    scheduled_time(std::numeric_limits<time_unit>::max())
+    scheduled_time(std::numeric_limits<time_unit>::max()),
+    unregistered(true)
 {
     DWORD work_queue = wait_work_queue;
     if(!wait_work_queue)
         if(FAILED(MFAllocateWorkQueue(&work_queue)))
             throw std::exception();
-    this->callback.work_queue = MFASYNC_CALLBACK_QUEUE_MULTITHREADED;
+    this->callback->native.work_queue = work_queue;
     /*if(!wait_work_queue)
         if(FAILED(MFBeginRegisterWorkQueueWithMMCSS(
             this->callback.work_queue, L"Capture", AVRT_PRIORITY_NORMAL, &this->callback2, NULL)))
@@ -38,15 +38,46 @@ presentation_clock_sink::presentation_clock_sink(presentation_clock_t& clock) :
 
     if(!this->wait_timer)
         throw std::exception();
-
-    ::scoped_lock lock(clock->mutex_sinks);
-    clock->sinks.push_back(presentation_clock_sink_t(this));
 }
 
 presentation_clock_sink::~presentation_clock_sink()
 {
+    /*assert(this->unregistered);*/
     /*MFUnlockWorkQueue(this->callback.work_queue);*/
 }
+
+bool presentation_clock_sink::register_sink(presentation_clock_t& clock)
+{
+    assert(this->unregistered);
+
+    ::scoped_lock lock(clock->mutex_sinks);
+    clock->sinks.push_back(presentation_clock_sink_t(this->shared_from_this<presentation_clock_sink>()));
+
+    this->unregistered = false;
+    return true;
+}
+
+//bool presentation_clock_sink::unregister_sink()
+//{
+//    assert(!this->unregistered);
+//
+//    presentation_clock_t clock;
+//    if(!this->get_clock(clock))
+//        return false;
+//
+//    ::scoped_lock lock(clock->mutex_sinks);
+//    for(auto it = clock->sinks.begin(); it != clock->sinks.end(); it++)
+//    {
+//        presentation_clock_sink_t sink((*it).lock());
+//        if(!sink)
+//        {
+//            this->unregistered = true;
+//            clock->sinks.erase(it);
+//            return true;
+//        }
+//    }
+//    return false;
+//}
 
 bool presentation_clock_sink::schedule_callback(time_unit due_time)
 {
@@ -89,14 +120,16 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
             // queue a waititem to wait for timer completion
             CComPtr<IMFAsyncResult> asyncresult;
             HRESULT hr;
-            // mfputwaitingworkitem 
-            if(FAILED(hr = MFCreateAsyncResult(NULL, &this->callback, NULL, &asyncresult)))
+
+            if(FAILED(hr = MFCreateAsyncResult(NULL, &this->callback->native, NULL, &asyncresult)))
             {
                 if(hr == MF_E_SHUTDOWN)
                     return true;
                 throw std::exception();
             }
-            if(FAILED(hr = MFPutWaitingWorkItem(this->wait_timer, 0, asyncresult, &this->callback_key)))
+            if(FAILED(hr = this->callback->mf_put_waiting_work_item(
+                this->shared_from_this<presentation_clock_sink>(),
+                this->wait_timer, 0, asyncresult, &this->callback_key)))
             {
                 if(hr == MF_E_SHUTDOWN)
                     return true;
@@ -108,7 +141,7 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
     return true;
 }
 
-HRESULT presentation_clock_sink::callback_cb(IMFAsyncResult*)
+void presentation_clock_sink::callback_cb()
 {
     time_unit due_time;
     {
@@ -117,7 +150,7 @@ HRESULT presentation_clock_sink::callback_cb(IMFAsyncResult*)
         // the callback might trigger even though the work item has been canceled
         // and the queue cleared
         if(this->callbacks.empty())
-            return S_OK;
+            return;
 
         assert(*this->callbacks.begin() == this->scheduled_time);
 
@@ -131,8 +164,6 @@ HRESULT presentation_clock_sink::callback_cb(IMFAsyncResult*)
 
     // invoke the callback
     this->scheduled_callback(due_time);
-
-    return S_OK;
 }
 
 bool presentation_clock_sink::clear_queue()
@@ -177,6 +208,7 @@ presentation_clock::presentation_clock() :
 
 presentation_clock::~presentation_clock()
 {
+    /*assert(this->sinks.empty());*/
 }
 
 time_unit presentation_clock::get_current_time() const
@@ -205,11 +237,13 @@ bool presentation_clock::clock_start(time_unit start_time)
         const time_unit t = start_time;
 
         for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
+        {
             if(!(*it)->on_clock_start(t))
             {
                 stop_all = true;
                 break;
-            };
+            }
+        }
     }
 
     if(stop_all)
@@ -224,10 +258,9 @@ bool presentation_clock::clock_start(time_unit start_time)
     return !stop_all;
 }
 
-void presentation_clock::clock_stop()
+void presentation_clock::clock_stop(time_unit t)
 {
     scoped_lock lock(this->mutex_sinks);
-    const time_unit t = this->get_current_time();
     for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
         (*it)->on_clock_stop(t);
 

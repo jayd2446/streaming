@@ -3,6 +3,7 @@
 #include "media_stream.h"
 #include "media_sample.h"
 #include "presentation_clock.h"
+#include "async_callback.h"
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dxgi1_2.h>
@@ -50,25 +51,26 @@ public:
     // captures a new frame in exact intervals
     struct thread_capture : public presentation_clock_sink
     {
+        typedef async_callback<thread_capture> async_callback_t;
+
         std::weak_ptr<source_displaycapture4> source;
-        presentation_clock_t real_time_clock;
         bool running;
-        AsyncCallback<thread_capture> callback;
+        CComPtr<async_callback<thread_capture>> callback;
         DWORD work_queue;
         time_unit due_time;
 
-        thread_capture(source_displaycapture4_t& source, presentation_clock_t&);
+        explicit thread_capture(source_displaycapture4_t& source);
         ~thread_capture();
         bool on_clock_start(time_unit);
         void on_clock_stop(time_unit);
         bool get_clock(presentation_clock_t&);
         void scheduled_callback(time_unit due_time);
-        HRESULT capture_cb(IMFAsyncResult*);
+        void capture_cb();
 
         bool get_source(source_displaycapture4_t&);
         void schedule_new(time_unit due_time);
     };
-    typedef CComPtr<thread_capture> thread_capture_t;
+    typedef std::shared_ptr<thread_capture> thread_capture_t;
 private:
     thread_capture_t capture_thread;
     presentation_clock_t capture_thread_clock;
@@ -86,6 +88,7 @@ private:
     void capture_frame(LARGE_INTEGER start_time);
 public:
     explicit source_displaycapture4(const media_session_t& session);
+    ~source_displaycapture4();
 
     media_stream_t create_stream();
     // after initializing starts the capturing
@@ -98,8 +101,6 @@ public:
     presentation_clock_t get_device_clock();
 };
 
-// TODO: use request packets that contain the request_time and additionally the packet number;
-// these request packets travel from sink to source to sink and optionally contain sample data
 // TODO: use weak pointer for source
 class stream_displaycapture4 : public media_stream
 {

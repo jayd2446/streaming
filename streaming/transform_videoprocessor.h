@@ -2,7 +2,7 @@
 
 #include "media_source.h"
 #include "media_stream.h"
-#include "AsyncCallback.h"
+#include "async_callback.h"
 #include <d3d11.h>
 #include <atlbase.h>
 #include <memory>
@@ -47,13 +47,15 @@ class stream_videoprocessor : public media_stream
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef async_callback<stream_videoprocessor> async_callback_t;
 private:
     transform_videoprocessor_t transform;
-    AsyncCallback<stream_videoprocessor> processing_callback;
+    CComPtr<async_callback_t> processing_callback;
+    /*AsyncCallback<stream_videoprocessor> processing_callback;*/
     media_sample_t pending_sample, output_sample;
     request_packet current_rp;
 
-    HRESULT processing_cb(IMFAsyncResult*);
+    void processing_cb();
 public:
     explicit stream_videoprocessor(const transform_videoprocessor_t& transform);
 
@@ -63,5 +65,3 @@ public:
     // called by the upstream from media session
     result_t process_sample(const media_sample_t&, request_packet&);
 };
-
-typedef CComPtr<stream_videoprocessor> stream_videoprocessor_t;

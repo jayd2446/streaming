@@ -34,23 +34,24 @@ int main()
 
     HWND hwnd = create_window();
 
+    QueryPerformanceFrequency(&pc_frequency);
+
+    // create window, direct3d 11 device, context and swap chain
+    /*HWND hwnd = create_window();*/
+
+    CComPtr<IDXGISwapChain> swapchain;
+    CComPtr<ID3D11Device> d3d11dev;
+    CComPtr<ID3D11DeviceContext> d3d11devctx;
+
+    hr = D3D11CreateDevice(
+        NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+        NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, &d3d11devctx);
+
     /*Sleep(10000);*/
 
-    /*for(int i = 0; i < (2000 / 50); i)*/
+    /*while(true)*/
     {
-        QueryPerformanceFrequency(&pc_frequency);
-
-        // create window, direct3d 11 device, context and swap chain
-        /*HWND hwnd = create_window();*/
-
-        CComPtr<IDXGISwapChain> swapchain;
-        CComPtr<ID3D11Device> d3d11dev;
-        CComPtr<ID3D11DeviceContext> d3d11devctx;
-
-        hr = D3D11CreateDevice(
-            NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
-            D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
-            NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, &d3d11devctx);
 
         // create the session and the topology
         media_session_t session(new media_session);
@@ -81,8 +82,9 @@ int main()
         media_stream_t source_stream = displaycapture_source->create_stream();
         media_stream_t transform_stream = videoprocessor_transform->create_stream();
         bool b = true;
-        b &= topology->connect_streams(source_stream, transform_stream);
-        b &= topology->connect_streams(transform_stream, sink_stream);
+        /*b &= topology->connect_streams(source_stream, transform_stream);
+        b &= topology->connect_streams(transform_stream, sink_stream);*/
+        b &= topology->connect_streams(source_stream, sink_stream);
 
         // add the topology to the media session
         session->switch_topology(topology);
@@ -114,8 +116,6 @@ int main()
         // shutdown the media session
         session->shutdown();
     }
-
-    /*Sleep(INFINITE);*/
 
 
     /*long c = topology.use_count();
