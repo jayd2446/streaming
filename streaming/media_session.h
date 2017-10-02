@@ -37,10 +37,23 @@ new request will be made)
 
 class media_stream;
 
+// request packet has a reference to the topology it belongs to;
+// request packets allow for seamless topology switching;
+// the old topology stays alive for as long as the request packet
+// is alive
+struct request_packet
+{
+    media_topology_t topology;
+    time_unit request_time;
+};
+
+// TODO: because the topology stays alive for as long as there's a request packet tied to it,
+// clock sinks for components can be fired twice because of 2 alive topologies;
+// presentation clock should be moved from the topology to session
 class media_session
 {
 private:
-    media_topology_t current_topology, new_topology;
+    media_topology_t current_topology;
 public:
     // returns the clock of the current topology;
     // components shouldn't store the reference because it might
@@ -62,14 +75,14 @@ public:
 
     bool request_sample(
         const media_stream* this_input_stream, 
-        time_unit request_time, 
+        request_packet&,
         bool is_sink) const;
     // is_source flag is used for the media session to able to translate the sample times;
     // sample cannot be NULL
     bool give_sample(
         const media_stream* this_output_stream, 
         const media_sample_t& sample,
-        time_unit request_time,
+        request_packet&,
         bool is_source) const;
     /*bool give_sample(
         const media_stream* this_output_stream,

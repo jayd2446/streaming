@@ -41,13 +41,14 @@ bool media_session::stop_playback()
 
 bool media_session::request_sample(
     const media_stream* stream, 
-    time_unit request_time,
+    request_packet& rp,
     bool is_sink) const
 {
-    // is_sink is used for switching to a new topology
-
-    // take reference of the current topology because the topology switch might happen here
-    media_topology_t topology(std::atomic_load(&this->current_topology));
+    // assign a new topology for the request packet if it's coming from the sink
+    media_topology_t topology;
+    if(is_sink)
+        rp.topology = std::atomic_load(&this->current_topology);
+    topology = rp.topology;
 
     if(!topology)
         return false;
@@ -57,7 +58,7 @@ bool media_session::request_sample(
         return false;
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        if((*jt)->request_sample(request_time) == media_stream::FATAL_ERROR)
+        if((*jt)->request_sample(rp) == media_stream::FATAL_ERROR)
             return false;
 
     return true;
@@ -66,13 +67,12 @@ bool media_session::request_sample(
 bool media_session::give_sample(
     const media_stream* stream, 
     const media_sample_t& sample, 
-    time_unit request_time,
+    request_packet& rp,
     bool is_source) const
 {
     // is_source is used for translating time stamps to presentation time
 
-    // take reference of the current topology because the topology switch might happen here
-    media_topology_t topology(std::atomic_load(&this->current_topology));
+    media_topology_t topology(rp.topology);
 
     if(!topology)
         return false;
@@ -82,7 +82,7 @@ bool media_session::give_sample(
         return false;
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        if((*jt)->process_sample(sample, request_time) == media_stream::FATAL_ERROR)
+        if((*jt)->process_sample(sample, rp) == media_stream::FATAL_ERROR)
             return false;
 
     return true;
@@ -92,5 +92,4 @@ void media_session::shutdown()
 {
     media_topology_t null_topology;
     std::atomic_exchange(&this->current_topology, null_topology);
-    std::atomic_exchange(&this->new_topology, null_topology);
 }

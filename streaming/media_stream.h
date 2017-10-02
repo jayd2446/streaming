@@ -10,6 +10,7 @@
 // format is represented as mediatype
 
 class media_topology;
+struct request_packet;
 
 // media stream must use com's reference counting so that it works correctly
 // with media foundation's async callbacks;
@@ -42,10 +43,10 @@ public:
     // requests samples from media session or processes processes
     // samples if there are any;
     // implements input stream functionality
-    virtual result_t request_sample(time_unit request_time) = 0;
+    virtual result_t request_sample(request_packet&) = 0;
     // processes the new sample and optionally calls media_session::give_sample;
     // implements output stream functionality
-    virtual result_t process_sample(const media_sample_t&, time_unit request_time) = 0;
+    virtual result_t process_sample(const media_sample_t&, request_packet&) = 0;
 
     // TODO: return a list of available formats for the stream
     // (media session will use these to set valid formats for the streams between components)

@@ -99,7 +99,7 @@ public:
     bool get_clock(presentation_clock_t&);
 
     // called by sink_preview
-    result_t request_sample(time_unit request_time);
+    result_t request_sample(request_packet&);
     // called by media session
-    result_t process_sample(const media_sample_t&, time_unit request_time);
+    result_t process_sample(const media_sample_t&, request_packet&);
 };

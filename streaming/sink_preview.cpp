@@ -260,6 +260,7 @@ void stream_preview::schedule_new(time_unit due_time)
 HRESULT stream_preview::request_cb(IMFAsyncResult*)
 {
     time_unit request_time;
+    request_packet rp;
     {
         std::lock_guard<std::recursive_mutex> lock(this->mutex);
         request_time = this->requests.front() - LAG_BEHIND;
@@ -275,7 +276,8 @@ HRESULT stream_preview::request_cb(IMFAsyncResult*)
     }
 
     this->requests_pending++;
-    if(this->request_sample(request_time) == FATAL_ERROR)
+    rp.request_time = request_time;
+    if(this->request_sample(rp) == FATAL_ERROR)
     {
         this->requests_pending--;
         this->running = false;
@@ -288,9 +290,9 @@ bool stream_preview::get_clock(presentation_clock_t& clock)
     return this->sink->session->get_current_clock(clock);
 }
 
-media_stream::result_t stream_preview::request_sample(time_unit request_time)
+media_stream::result_t stream_preview::request_sample(request_packet& rp)
 {
-    if(!this->sink->session->request_sample(this, request_time, true))
+    if(!this->sink->session->request_sample(this, rp, true))
         return FATAL_ERROR;
 
     //presentation_clock_t t;
@@ -304,7 +306,7 @@ media_stream::result_t stream_preview::request_sample(time_unit request_time)
 }
 
 media_stream::result_t stream_preview::process_sample(
-    const media_sample_t& sample, time_unit request_time)
+    const media_sample_t& sample, request_packet& rp)
 {
     // schedule the sample
     // 5000000 = half a second
@@ -350,13 +352,13 @@ media_stream::result_t stream_preview::process_sample(
     else
         this->sink->drawn = false;
     
-    if(last_request_time > request_time)
+    if(last_request_time > rp.request_time)
     {
         std::cout << "OUT OF ORDER FRAME" << std::endl;
     }
 
     last_frame = sample->frame;
-    last_request_time = request_time;
+    last_request_time = rp.request_time;
 
     // unlock the frame
     sample->mutex.unlock();
@@ -371,7 +373,7 @@ media_stream::result_t stream_preview::process_sample(
         std::cout << "last frame time: " << request_time << std::endl;
         numbers = 0;
     }*/
-    if((request_time % 10000000) == 0)
+    if((rp.request_time % 10000000) == 0)
     {
         std::cout << numbers << std::endl;
         numbers = 0;

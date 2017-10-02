@@ -328,7 +328,7 @@ stream_displaycapture4::stream_displaycapture4(const source_displaycapture4_t& s
 {
 }
 
-media_stream::result_t stream_displaycapture4::request_sample(time_unit request_time)
+media_stream::result_t stream_displaycapture4::request_sample(request_packet& rp)
 {
     // convert the topology's time to device time
     presentation_clock_t device_clock = this->source->get_device_clock();
@@ -336,16 +336,16 @@ media_stream::result_t stream_displaycapture4::request_sample(time_unit request_
     if(!this->get_clock(clock))
         return FATAL_ERROR;
     const time_unit time_diff = device_clock->get_current_time() - clock->get_current_time();
-    const time_unit device_time = request_time + time_diff;
+    const time_unit device_time = rp.request_time + time_diff;
 
     bool too_new;
     media_sample_t sample = this->source->capture_frame(device_time, too_new);
 
-    return this->process_sample(sample, request_time);
+    return this->process_sample(sample, rp);
 }
 
 media_stream::result_t stream_displaycapture4::process_sample(
-    const media_sample_t& sample, time_unit request_time)
+    const media_sample_t& sample, request_packet& rp)
 {
     // add the timestamp and lock the frame
     presentation_clock_t clock;
@@ -361,6 +361,6 @@ media_stream::result_t stream_displaycapture4::process_sample(
     sample->mutex.lock();
 
     // pass the sample to downstream
-    this->source->session->give_sample(this, sample, request_time, true);
+    this->source->session->give_sample(this, sample, rp, true);
     return OK;
 }

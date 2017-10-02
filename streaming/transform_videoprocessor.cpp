@@ -176,7 +176,7 @@ HRESULT stream_videoprocessor::processing_cb(IMFAsyncResult*)
         this->output_sample->frame = (HANDLE)this->transform->output_texture.p;
         this->output_sample->timestamp = this->pending_sample->timestamp;
         this->output_sample->mutex.lock();
-        this->transform->session->give_sample(this, this->output_sample, this->request_time, false);
+        this->transform->session->give_sample(this, this->output_sample, this->current_rp, false);
     }
 
     return S_OK;
@@ -188,9 +188,9 @@ done:
     return S_OK;
 }
 
-media_stream::result_t stream_videoprocessor::request_sample(time_unit request_time)
+media_stream::result_t stream_videoprocessor::request_sample(request_packet& rp)
 {
-    if(!this->transform->session->request_sample(this, request_time, false))
+    if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
     return OK;
 }
@@ -198,12 +198,12 @@ media_stream::result_t stream_videoprocessor::request_sample(time_unit request_t
 extern bool bb;
 
 media_stream::result_t stream_videoprocessor::process_sample(
-    const media_sample_t& sample, time_unit request_time)
+    const media_sample_t& sample, request_packet& rp)
 {
     // pass the null sample to downstream
     if(!sample->frame)
     {
-        if(!this->transform->session->give_sample(this, sample, request_time, false))
+        if(!this->transform->session->give_sample(this, sample, rp, false))
             return FATAL_ERROR;
         return OK;
     }
@@ -245,7 +245,7 @@ media_stream::result_t stream_videoprocessor::process_sample(
         }
     }
 
-    this->request_time = request_time;
+    this->current_rp = rp;
     {
         scoped_lock lock(this->transform->videoprocessor_mutex);
         this->pending_sample = sample;
