@@ -9,8 +9,8 @@
 #include <avrt.h>
 
 #pragma comment(lib, "Avrt.lib")
-// TODO: playback freezes with queue_max_size 3
-#define QUEUE_MAX_SIZE 6
+
+#define QUEUE_MAX_SIZE 3
 #define LAG_BEHIND (FPS60_INTERVAL * 2)
 extern LARGE_INTEGER pc_frequency;
 
@@ -115,7 +115,8 @@ media_stream_t sink_preview::create_stream(presentation_clock_t& clock)
 
 stream_preview::stream_preview(const sink_preview_t& sink, presentation_clock_t& clock) : 
     sink(sink), presentation_clock_sink(clock), running(false), 
-    callback(this, &stream_preview::request_cb)
+    callback(this, &stream_preview::request_cb),
+    requests_pending(0)
 {
 }
 
@@ -173,13 +174,17 @@ void stream_preview::scheduled_callback(time_unit due_time)
         this->sink->swapchain->Present(0, 0);*/
     /*std::cout << "sample shown @ " << due_time << std::endl;*/
 
-    // request sample
     const HRESULT hr = MFPutWorkItem(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &this->callback, NULL);
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
+    /*}
+    else
+        std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_PREVIEW--" << std::endl;*/
     /*if(this->request_sample(due_time) == FATAL_ERROR)
         this->running = false;*/
 }
+
+bool bb = true;
 
 void stream_preview::schedule_new(time_unit due_time)
 {
@@ -187,14 +192,8 @@ void stream_preview::schedule_new(time_unit due_time)
     this->get_clock(t);
     if(t)
     {
-        {
-            std::lock_guard<std::recursive_mutex> lock(this->mutex);
-            if(this->requests.size() >= QUEUE_MAX_SIZE)
-            {
-                std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_PREVIEW--" << std::endl;
-                return;
-            }
-        }
+        if(!bb)
+            return;
 
         // 60 fps
         static int counter = 0;
@@ -266,13 +265,23 @@ HRESULT stream_preview::request_cb(IMFAsyncResult*)
         request_time = this->requests.front() - LAG_BEHIND;
         this->requests.pop();
     }
+    
+    // TODO: there's still a chance that the requests queue will over saturate
+    // which implies a very massive lag
+    if(this->requests_pending >= QUEUE_MAX_SIZE)
+    {
+        std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_PREVIEW--" << std::endl;
+        return S_OK;
+    }
 
+    this->requests_pending++;
     if(this->request_sample(request_time) == FATAL_ERROR)
+    {
+        this->requests_pending--;
         this->running = false;
+    }
     return S_OK;
 }
-
-//HRESULT stream_preview::rende
 
 bool stream_preview::get_clock(presentation_clock_t& clock)
 {
@@ -312,6 +321,7 @@ media_stream::result_t stream_preview::process_sample(
     HRESULT hr = S_OK;
     if(sample->frame)
     {
+        // TODO: decide if the mutex is necessary here
         std::lock_guard<std::mutex> lock(this->render_mutex);
         this->sink->drawn = true;
         CComPtr<IDXGISurface> surface;
@@ -369,6 +379,8 @@ media_stream::result_t stream_preview::process_sample(
 
     if(this->sink->drawn)
         this->sink->swapchain->Present(0, 0);
+
+    this->requests_pending--;
 
     /*std::cout << "frame time: " << request_time << std::endl;*/
 

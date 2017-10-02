@@ -9,6 +9,7 @@
 #include <atlbase.h>
 #include <queue>
 #include <mutex>
+#include <atomic>
 
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
@@ -79,6 +80,8 @@ private:
     time_unit start_time;
     bool running;
     std::queue<time_unit> requests;
+    std::atomic_int32_t requests_pending;
+    
     std::recursive_mutex mutex;
     std::mutex render_mutex;
     AsyncCallback<stream_preview> callback;

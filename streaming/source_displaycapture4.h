@@ -42,10 +42,9 @@ struct stream_displaycapture4_cb
 // refresh rate
 class source_displaycapture4 : public media_source
 {
-public:
     friend class stream_preview;
     friend class stream_displaycapture4;
-
+public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 
     // captures a new frame in exact intervals
@@ -83,19 +82,15 @@ private:
     CComPtr<ID3D11Texture2D> screen_frame[SAMPLE_DEPTH];
     media_sample_t samples[SAMPLE_DEPTH];
     std::recursive_mutex mutex;
-    // pending requests(the stream is addref'ed)
-    std::recursive_mutex requests_mutex;
-    std::deque<stream_displaycapture4_cb> requests;
 
     void capture_frame(LARGE_INTEGER start_time);
-    void dispatch_requests();
 public:
     explicit source_displaycapture4(const media_session_t& session);
-    ~source_displaycapture4();
 
     media_stream_t create_stream();
     // after initializing starts the capturing
-    HRESULT initialize(CComPtr<ID3D11Device>&, CComPtr<ID3D11DeviceContext>&);
+    // TODO: remove these unused parameters
+    HRESULT initialize(ID3D11Device*, ID3D11DeviceContext*);
     // returns a frame closest to the requested time or NULL
     media_sample_t capture_frame(time_unit timestamp, bool& too_new);
 
@@ -111,17 +106,11 @@ class stream_displaycapture4 : public media_stream
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    AsyncCallback<stream_displaycapture4> callback;
     source_displaycapture4_t source;
-    std::deque<time_unit> requests;
-    std::recursive_mutex mutex;
-
-    // TODO: delet this
-    HRESULT capture_cb(IMFAsyncResult*);
 public:
     explicit stream_displaycapture4(const source_displaycapture4_t& source);
-    bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
 
+    bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
     // called by media session
     result_t request_sample(time_unit request_time);
     // called by source_displaycapture

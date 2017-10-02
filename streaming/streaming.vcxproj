@@ -74,6 +74,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="media_session.cpp" />
     <ClCompile Include="media_topology.cpp" />
+    <ClCompile Include="transform_videoprocessor.cpp" />
     <ClCompile Include="presentation_clock.cpp" />
     <ClCompile Include="sink_preview.cpp" />
     <ClCompile Include="source_displaycapture3.cpp" />
@@ -88,6 +89,7 @@
     <ClInclude Include="media_source.h" />
     <ClInclude Include="media_stream.h" />
     <ClInclude Include="media_topology.h" />
+    <ClInclude Include="transform_videoprocessor.h" />
     <ClInclude Include="presentation_clock.h" />
     <ClInclude Include="sink_preview.h" />
     <ClInclude Include="source_displaycapture3.h" />

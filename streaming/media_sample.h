@@ -9,6 +9,8 @@
 // 100 nanosecond = 1 time_unit
 typedef int64_t time_unit;
 
+// TODO: media sample must be refactored for a better access to the texture
+
 class media_sample
 {
 private:

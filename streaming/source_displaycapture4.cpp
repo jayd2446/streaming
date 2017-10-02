@@ -18,7 +18,6 @@ extern LARGE_INTEGER pc_frequency;
 
 #define MONITOR_INDEX 0
 #define MAX_DIFF std::numeric_limits<time_unit>::max()/*(FPS60_INTERVAL / 2 + FPS60_INTERVAL / 4)*/
-#define LAG_BEHIND (FPS60_INTERVAL * 3)
 
 source_displaycapture4::thread_capture::thread_capture(source_displaycapture4_t& source,
     presentation_clock_t& clock) : 
@@ -164,16 +163,6 @@ source_displaycapture4::source_displaycapture4(const media_session_t& session) :
     }
 }
 
-source_displaycapture4::~source_displaycapture4()
-{
-    scoped_lock lock(this->requests_mutex);
-    while(!this->requests.empty())
-    {
-        this->requests.front().cb->Release();
-        this->requests.pop_front();
-    }
-}
-
 media_stream_t source_displaycapture4::create_stream()
 {
     media_stream_t temp;
@@ -182,9 +171,7 @@ media_stream_t source_displaycapture4::create_stream()
     return temp;
 }
 
-HRESULT source_displaycapture4::initialize(
-    CComPtr<ID3D11Device>& d3d11dev,
-    CComPtr<ID3D11DeviceContext>& devctx)
+HRESULT source_displaycapture4::initialize(ID3D11Device* d3d11dev, ID3D11DeviceContext* devctx)
 {
     HRESULT hr;
     CComPtr<IDXGIDevice> dxgidev;
@@ -193,10 +180,10 @@ HRESULT source_displaycapture4::initialize(
     CComPtr<IDXGIOutput1> output1;
 
     // create d3d11 device
-    hr = D3D11CreateDevice(
+    CHECK_HR(hr = D3D11CreateDevice(
         NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
         D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-        NULL, 0, D3D11_SDK_VERSION, &this->d3d11dev, NULL, &this->d3d11devctx);
+        NULL, 0, D3D11_SDK_VERSION, &this->d3d11dev, NULL, &this->d3d11devctx));
 
     // get dxgi dev
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&dxgidev));
@@ -271,6 +258,7 @@ void source_displaycapture4::capture_frame(LARGE_INTEGER start_time)
         D3D11_TEXTURE2D_DESC screen_frame_desc;
         screen_frame->GetDesc(&screen_frame_desc);
         screen_frame_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+        screen_frame_desc.Usage = D3D11_USAGE_DEFAULT;
         CHECK_HR(hr = this->d3d11dev->CreateTexture2D(
             &screen_frame_desc, NULL, &this->screen_frame[this->current_frame]));
 
@@ -298,34 +286,7 @@ done:
     else if(FAILED(hr))
         throw std::exception();
 
-    // dispatch all pending requests
-    this->dispatch_requests();
-
     this->current_frame = (this->current_frame + 1) % SAMPLE_DEPTH;
-}
-
-void source_displaycapture4::dispatch_requests()
-{
-    stream_displaycapture4_cb callback;
-    media_sample_t sample;
-
-    scoped_lock lock(this->requests_mutex);
-    
-loop:
-    for(auto it = this->requests.begin(); it != this->requests.end(); it++)
-    {
-        callback = *it;
-        bool too_new;
-        sample = this->capture_frame(callback.device_request_time, too_new);
-        if(too_new)
-            continue;
-
-        this->requests.erase(it);
-
-        callback.cb->process_sample(sample, callback.request_time);
-        callback.cb->Release();
-        goto loop;
-    }
 }
 
 media_sample_t source_displaycapture4::capture_frame(time_unit timestamp, bool& too_new)
@@ -363,52 +324,8 @@ presentation_clock_t source_displaycapture4::get_device_clock()
 
 
 stream_displaycapture4::stream_displaycapture4(const source_displaycapture4_t& source) : 
-    source(source), 
-    callback(this, &stream_displaycapture4::capture_cb)
+    source(source)
 {
-}
-
-HRESULT stream_displaycapture4::capture_cb(IMFAsyncResult*)
-{
-    scoped_lock lock(this->mutex);
-
-    // TODO: this probably can be moved to request_sample function
-    while(!this->requests.empty())
-    {
-        const time_unit request_time = this->requests.front();
-
-        // convert the topology's time to device time
-        presentation_clock_t device_clock = this->source->get_device_clock();
-        presentation_clock_t clock;
-        if(!this->get_clock(clock))
-            return S_OK;
-        const time_unit time_diff = device_clock->get_current_time() - clock->get_current_time();
-        const time_unit device_time = request_time + time_diff;
-
-        bool too_new;
-        media_sample_t sample = this->source->capture_frame(device_time /*- LAG_BEHIND*/, too_new);
-        if(too_new)
-        {
-            // move this request to source's request queue
-            scoped_lock lock(this->source->requests_mutex);
-            stream_displaycapture4_cb callback = {this, device_time, request_time};
-            this->source->requests.push_back(callback);
-            this->AddRef();
-
-            /*std::cout << "--REQUEST WAS TOO NEW--" << std::endl;*/
-            return S_OK;
-        }
-
-        this->requests.pop_front();
-        if(!sample)
-        {
-            std::cout << "--SUITABLE FRAMES NOT FOUND--" << std::endl;
-            return S_OK;
-        }
-        this->process_sample(sample, request_time);
-    }
-    
-    return S_OK;
 }
 
 media_stream::result_t stream_displaycapture4::request_sample(time_unit request_time)
@@ -422,51 +339,9 @@ media_stream::result_t stream_displaycapture4::request_sample(time_unit request_
     const time_unit device_time = request_time + time_diff;
 
     bool too_new;
-    media_sample_t sample = this->source->capture_frame(device_time /*- LAG_BEHIND*/, too_new);
-    //if(too_new)
-    //{
-    //    // move the request to source's request queue
-    //    scoped_lock lock(this->source->requests_mutex);
-    //    if(this->source->requests.size() >= SAMPLE_DEPTH)
-    //    {
-    //        std::cout << "--SAMPLE REQUEST DROPPED--" << std::endl;
-    //        return OK;
-    //    }
-
-    //    stream_displaycapture4_cb callback = {this, device_time, request_time};
-    //    this->source->requests.push_back(callback);
-    //    this->AddRef();
-
-    //    return OK;
-    //}
+    media_sample_t sample = this->source->capture_frame(device_time, too_new);
 
     return this->process_sample(sample, request_time);
-
-    //{
-    //    scoped_lock lock(this->mutex);
-    //    if(this->requests.size() >= SAMPLE_DEPTH)
-    //    {
-    //        // do not assign a new work item for this request since the queue is already full
-    //        /*this->requests.pop();*/
-    //        std::cout << "--SAMPLE REQUEST DROPPED--" << std::endl;
-    //        return OK;
-    //    }
-    //    this->requests.push_back(request_time);
-    //}
-
-    //// TODO: in case of audio(and maybe webcams), if the request time is greater
-    //// than in the current queue, the request item should wait for the new samples to arrive;
-    //// this compensates for the sample lag that might happen in usb devices;
-    //// in that case the source should push the sample from the request queue to downstream
-    //// (assuming that the samples arrive in the source in chronological order);
-    //// (or not for the source's logic to stay relatively simple)
-
-    //// otherwise the samples are pulled from the source's queue
-    //const HRESULT hr = MFPutWorkItem(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &this->callback, NULL);
-    //if(hr != S_OK)
-    //    return FATAL_ERROR;
-
-    //return OK;
 }
 
 media_stream::result_t stream_displaycapture4::process_sample(

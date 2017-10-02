@@ -9,6 +9,7 @@
 #include "sink_preview.h"
 #include "media_session.h"
 #include "media_topology.h"
+#include "transform_videoprocessor.h"
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "D3D11.lib")
@@ -51,8 +52,13 @@ int main()
             D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
             NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, &d3d11devctx);
 
+        // create the session and the topology
         media_session_t session(new media_session);
         media_topology_t topology(new media_topology);
+
+        // create and initialize the video processor transform
+        transform_videoprocessor_t videoprocessor_transform(new transform_videoprocessor(session));
+        hr = videoprocessor_transform->initialize(d3d11dev, d3d11devctx);
 
         // create and initialize the display capture source
         source_displaycapture4_t displaycapture_source(new source_displaycapture4(session));
@@ -72,8 +78,11 @@ int main()
 
         // initialize the topology
         media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
-        topology->connect_streams(
-            displaycapture_source->create_stream(), sink_stream);
+        media_stream_t source_stream = displaycapture_source->create_stream();
+        media_stream_t transform_stream = videoprocessor_transform->create_stream();
+        bool b = true;
+        b &= topology->connect_streams(source_stream, transform_stream);
+        b &= topology->connect_streams(transform_stream, sink_stream);
 
         // add the topology to the media session
         session->switch_topology(topology);
