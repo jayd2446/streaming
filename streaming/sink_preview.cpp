@@ -11,7 +11,7 @@
 #pragma comment(lib, "Avrt.lib")
 
 #define QUEUE_MAX_SIZE 3
-#define LAG_BEHIND (FPS60_INTERVAL * 2)
+#define LAG_BEHIND (FPS60_INTERVAL * 6)
 extern LARGE_INTEGER pc_frequency;
 
 
@@ -115,9 +115,9 @@ media_stream_t sink_preview::create_stream(presentation_clock_t& clock)
 
 stream_preview::stream_preview(const sink_preview_t& sink) : 
     sink(sink), running(false), 
-    callback(new async_callback_t(&stream_preview::request_cb)),
     requests_pending(0)
 {
+    this->callback.Attach(new async_callback_t(&stream_preview::request_cb));
 }
 
 stream_preview::~stream_preview()
@@ -133,17 +133,17 @@ bool stream_preview::on_clock_start(time_unit t)
     this->start_time = t;
     this->running = true;
     this->schedule_new(t);
-    /*return (this->request_sample(t) != media_stream::FATAL_ERROR);*/
-    /*this->scheduled_callback(t);*/
-    return true;
+
+    request_packet rp;
+    rp.request_time = t - LAG_BEHIND;
+    return (this->request_sample(rp) != media_stream::FATAL_ERROR);
 }
 
 void stream_preview::on_clock_stop(time_unit t)
 {
     /*std::cout << "playback stopped" << std::endl;*/
     this->running = false;
-    if(!this->clear_queue())
-        /*std::cout << "MFCANCELWORKITEM FAILED" << std::endl*/;
+    this->clear_queue();
 }
 
 DWORD task_index2 = 0;
@@ -151,26 +151,11 @@ HANDLE ret = 0;
 
 void stream_preview::scheduled_callback(time_unit due_time)
 {
-    /*this->sink->dxgioutput->WaitForVBlank();*/
-    //if(!task_index2 || !ret)
-    //    ret = AvSetMmThreadCharacteristics(L"Capture", &task_index2);
-    ///*else
-    //    ret = AvSetMmThreadCharacteristics(L"Capture", &task_index2);*/
-    //if(!ret)
-    //{
-    //    DWORD d = GetLastError();
-    //    throw std::exception();
-    //}
-
     if(!this->running)
         return;
     
     // schedule a new time
     this->schedule_new(due_time);
-
-    /*if(this->sink->drawn)
-        this->sink->swapchain->Present(0, 0);*/
-    /*std::cout << "sample shown @ " << due_time << std::endl;*/
 
     const HRESULT hr = this->callback->mf_put_work_item(
         this->shared_from_this<stream_preview>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
@@ -359,7 +344,7 @@ media_stream::result_t stream_preview::process_sample(
     last_request_time = rp.request_time;
 
     // unlock the frame
-    sample->mutex.unlock();
+    sample->unlock_sample();
 
     // calculate fps
     // (fps under 60 means that the frames are coming out of order

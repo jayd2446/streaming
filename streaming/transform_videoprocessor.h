@@ -7,6 +7,8 @@
 #include <atlbase.h>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
+#include <queue>
 
 // color space converter
 
@@ -26,13 +28,18 @@ private:
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
     CComPtr<ID3D11VideoContext> videocontext;
 
+    HANDLE output_texture_handle;
     CComPtr<ID3D11Texture2D> output_texture;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
     bool view_initialized;
 
     // video context isn't multithreaded so the access must be serialized
     // TODO: this must be generalized to all d3d11 context accesses
-    std::recursive_mutex videoprocessor_mutex;
+    std::recursive_mutex videoprocessor_mutex, requests_mutex;
+
+    struct packet {request_packet rp; media_sample_t sample;};
+    std::unordered_map<time_unit, packet> requests;
+    std::queue<packet> requests_2;
 public:
     explicit transform_videoprocessor(const media_session_t& session);
 
@@ -52,8 +59,7 @@ private:
     transform_videoprocessor_t transform;
     CComPtr<async_callback_t> processing_callback;
     /*AsyncCallback<stream_videoprocessor> processing_callback;*/
-    media_sample_t pending_sample, output_sample;
-    request_packet current_rp;
+    media_sample_t output_sample;
 
     void processing_cb();
 public:

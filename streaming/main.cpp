@@ -18,6 +18,7 @@ LARGE_INTEGER pc_frequency;
 
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 800
+#define OUTPUT_MONITOR 0
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND create_window();
@@ -52,6 +53,7 @@ int main()
 
     /*while(true)*/
     {
+        UINT outputmonitor_index = OUTPUT_MONITOR;
 
         // create the session and the topology
         media_session_t session(new media_session);
@@ -63,7 +65,9 @@ int main()
 
         // create and initialize the display capture source
         source_displaycapture4_t displaycapture_source(new source_displaycapture4(session));
-        hr = displaycapture_source->initialize(d3d11dev, d3d11devctx);
+        source_displaycapture4_t displaycapture_source2(new source_displaycapture4(session));
+        hr = displaycapture_source->initialize(0);
+        hr |= displaycapture_source2->initialize(1);
         if(FAILED(hr))
         {
             std::cerr << "could not initialize display capture source" << std::endl;
@@ -80,35 +84,58 @@ int main()
         // initialize the topology
         media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
         media_stream_t source_stream = displaycapture_source->create_stream();
+        media_stream_t source_stream2 = displaycapture_source2->create_stream();
         media_stream_t transform_stream = videoprocessor_transform->create_stream();
         bool b = true;
-        /*b &= topology->connect_streams(source_stream, transform_stream);
-        b &= topology->connect_streams(transform_stream, sink_stream);*/
-        b &= topology->connect_streams(source_stream, sink_stream);
+        b &= topology->connect_streams(source_stream, transform_stream);
+        b &= topology->connect_streams(source_stream2, transform_stream);
+        b &= topology->connect_streams(transform_stream, sink_stream);
+        /*b &= topology->connect_streams(source_stream, sink_stream);*/
 
         // add the topology to the media session
         session->switch_topology(topology);
 
         // start the media session
-        //session->start_playback();
-        /*preview_sink->start(*sink_stream);*/
-        sink_stream = NULL;
-
         session->start_playback(0);
 
-        //for(int i = 0; i < 5; i++)
-        //{
-        //    session->start_playback();
-        //    Sleep(10);
-        //    session->stop_playback();
-        //    //Sleep(1000);
-        //}
-
+        bool switched_topology = false;
         MSG msg = {};
         while(GetMessage(&msg, NULL, 0, 0))
         {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
+            if(msg.message == WM_KEYDOWN)
+            {
+                /*for(int i = 0; i < 25000; i++)*/
+                {
+                    outputmonitor_index = (outputmonitor_index + 1) % 2;
+
+                    // switch topology
+                    topology.reset(new media_topology);
+
+                    sink_stream = preview_sink->create_stream(topology->get_clock());
+                    source_stream = displaycapture_source->create_stream();
+                    source_stream2 = displaycapture_source2->create_stream();
+                    transform_stream = videoprocessor_transform->create_stream();
+
+                    bool b = true;
+                    if(!outputmonitor_index)
+                    {
+                        b &= topology->connect_streams(source_stream, transform_stream);
+                        b &= topology->connect_streams(source_stream2, transform_stream);
+                    }
+                    else
+                    {
+                        b &= topology->connect_streams(source_stream2, transform_stream);
+                        b &= topology->connect_streams(source_stream, transform_stream);
+                    }
+                    b &= topology->connect_streams(transform_stream, sink_stream);
+                    session->switch_topology(topology);
+                }
+            }
+            else
+            {
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
         }
 
         session->stop_playback();

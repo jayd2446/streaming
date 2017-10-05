@@ -4,7 +4,7 @@
 #include <limits>
 
 extern LARGE_INTEGER pc_frequency;
-typedef std::lock_guard<std::mutex> scoped_lock;
+typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 
 #ifdef max
 #undef max
@@ -19,12 +19,13 @@ void ticks_to_time_unit(LARGE_INTEGER& ticks)
 DWORD wait_work_queue = 0;
 
 presentation_clock_sink::presentation_clock_sink() :
-    callback(new async_callback_t(&presentation_clock_sink::callback_cb)),
     wait_timer(CreateWaitableTimer(NULL, FALSE, NULL)),
     callback_key(0),
     scheduled_time(std::numeric_limits<time_unit>::max()),
     unregistered(true)
 {
+    this->callback.Attach(new async_callback_t(&presentation_clock_sink::callback_cb));
+    // TODO: make the work queue static
     DWORD work_queue = wait_work_queue;
     if(!wait_work_queue)
         if(FAILED(MFAllocateWorkQueue(&work_queue)))
@@ -50,7 +51,7 @@ bool presentation_clock_sink::register_sink(presentation_clock_t& clock)
 {
     assert(this->unregistered);
 
-    ::scoped_lock lock(clock->mutex_sinks);
+    scoped_lock lock(clock->mutex_sinks);
     clock->sinks.push_back(presentation_clock_sink_t(this->shared_from_this<presentation_clock_sink>()));
 
     this->unregistered = false;
@@ -201,7 +202,8 @@ bool presentation_clock_sink::schedule_new_callback(time_unit t)
 
 presentation_clock::presentation_clock() : 
     running(false),
-    current_time(0)
+    current_time(0),
+    time_off(0)
 {
     this->current_time_ticks.QuadPart = this->start_time.QuadPart = 0;
 }
@@ -223,9 +225,16 @@ time_unit presentation_clock::get_current_time() const
     this->current_time_ticks.QuadPart = current_time.QuadPart;
     current_time.QuadPart *= 1000000 * 10;
     current_time.QuadPart /= pc_frequency.QuadPart;
-    this->current_time = current_time.QuadPart;
+    this->current_time = current_time.QuadPart + this->time_off;
 
     return this->current_time;
+}
+
+void presentation_clock::set_current_time(time_unit t)
+{
+    this->current_time = this->time_off = t;
+    QueryPerformanceCounter(&this->start_time);
+    this->start_time.QuadPart -= this->current_time_ticks.QuadPart;
 }
 
 bool presentation_clock::clock_start(time_unit start_time)
@@ -234,11 +243,11 @@ bool presentation_clock::clock_start(time_unit start_time)
     {
         scoped_lock lock(this->mutex_sinks);
         this->set_current_time(start_time);
-        const time_unit t = start_time;
+        this->running = true;
 
         for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
         {
-            if(!(*it)->on_clock_start(t))
+            if(!(*it)->on_clock_start(start_time))
             {
                 stop_all = true;
                 break;
@@ -248,12 +257,6 @@ bool presentation_clock::clock_start(time_unit start_time)
 
     if(stop_all)
         this->clock_stop();
-    else
-    {
-        QueryPerformanceCounter(&this->start_time);
-        this->start_time.QuadPart -= this->current_time_ticks.QuadPart;
-        this->running = true;
-    }
 
     return !stop_all;
 }
@@ -261,10 +264,11 @@ bool presentation_clock::clock_start(time_unit start_time)
 void presentation_clock::clock_stop(time_unit t)
 {
     scoped_lock lock(this->mutex_sinks);
+    this->set_current_time(t);
+    this->running = false;
+
     for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
         (*it)->on_clock_stop(t);
-
-    this->running = false;
 }
 
 void presentation_clock::clear_clock_sinks()

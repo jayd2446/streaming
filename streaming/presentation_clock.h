@@ -71,6 +71,7 @@ public:
 
 typedef std::shared_ptr<presentation_clock_sink> presentation_clock_sink_t;
 
+// TODO: int access should be atomic
 class presentation_clock
 {
     friend class presentation_clock_sink;
@@ -80,8 +81,9 @@ public:
     typedef std::vector<presentation_clock_sink_t> vector_t;
 private:
     vector_t sinks;
-    std::mutex mutex_sinks;
+    std::recursive_mutex mutex_sinks;
 
+    time_unit time_off;
     LARGE_INTEGER start_time;
     mutable LARGE_INTEGER current_time_ticks;
     mutable time_unit current_time;
@@ -90,10 +92,11 @@ public:
     presentation_clock();
     ~presentation_clock();
 
-    LARGE_INTEGER get_start_time() const {return this->start_time;}
+    // returns the internal time which is used to calculate the current time
+    LARGE_INTEGER get_start_time_internal() const {return this->start_time;}
 
     time_unit get_current_time() const;
-    void set_current_time(time_unit t) {this->current_time = t;}
+    void set_current_time(time_unit t);
 
     bool clock_running() const {return this->running;}
     // calls clock_stop if one of the sinks returned false
@@ -101,7 +104,7 @@ public:
     // starts the timer aswell
     bool clock_start(time_unit start_time);
     // returns false if any of the sinks returns false;
-    // stops the timer at the time unit
+    // stops the timer at the stop time
     void clock_stop(time_unit stop_time);
     void clock_stop() {this->clock_stop(this->get_current_time());}
 

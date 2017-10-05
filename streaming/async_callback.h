@@ -11,7 +11,9 @@
 
 // wrapper for the com async callback
 
-// async_callback must be wrapped inside ccomptr
+// async_callback must be wrapped inside ccomptr;
+// ccomptr must be attached by Attach() call,
+// otherwise memory leak occurs
 template<class T>
 class async_callback : public IUnknownImpl
 {
@@ -34,7 +36,7 @@ public:
 
     async_callback(
         invoke_fn cb,
-        DWORD work_queue = MFASYNC_CALLBACK_QUEUE_STANDARD,
+        DWORD work_queue = MF_MULTITHREADED_WORKQUEUE,
         DWORD flags = 0) : 
         parent(parent), 
         cb(cb), 

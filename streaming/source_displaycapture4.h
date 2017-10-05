@@ -33,17 +33,10 @@ class source_displaycapture4;
 typedef std::shared_ptr<source_displaycapture4> source_displaycapture4_t;
 class stream_displaycapture4;
 
-struct stream_displaycapture4_cb
-{
-    stream_displaycapture4* cb;
-    time_unit device_request_time, request_time;
-};
-
 // TODO: frame capturing should be timed so that it begins at the middle of the
 // refresh rate
 class source_displaycapture4 : public media_source
 {
-    friend class stream_preview;
     friend class stream_displaycapture4;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
@@ -54,6 +47,7 @@ public:
         typedef async_callback<thread_capture> async_callback_t;
 
         std::weak_ptr<source_displaycapture4> source;
+        UINT monitor_index;
         bool running;
         CComPtr<async_callback<thread_capture>> callback;
         DWORD work_queue;
@@ -86,16 +80,16 @@ private:
     std::recursive_mutex mutex;
 
     void capture_frame(LARGE_INTEGER start_time);
+    // returns a frame closest to the requested time or NULL;
+    // also locks the returned frame
+    media_sample_t capture_frame(time_unit timestamp, bool& too_new);
 public:
     explicit source_displaycapture4(const media_session_t& session);
     ~source_displaycapture4();
 
     media_stream_t create_stream();
     // after initializing starts the capturing
-    // TODO: remove these unused parameters
-    HRESULT initialize(ID3D11Device*, ID3D11DeviceContext*);
-    // returns a frame closest to the requested time or NULL
-    media_sample_t capture_frame(time_unit timestamp, bool& too_new);
+    HRESULT initialize(UINT output_index);
 
     // returns a valid clock
     presentation_clock_t get_device_clock();
@@ -110,6 +104,7 @@ private:
     source_displaycapture4_t source;
 public:
     explicit stream_displaycapture4(const source_displaycapture4_t& source);
+    ~stream_displaycapture4();
 
     bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
     // called by media session

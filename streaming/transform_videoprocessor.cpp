@@ -1,11 +1,16 @@
 #include "transform_videoprocessor.h"
 #include <mfapi.h>
 #include <Mferror.h>
+#include <algorithm>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#ifdef min
+#undef min
+#endif
 
 transform_videoprocessor::transform_videoprocessor(const media_session_t& session) :
-    media_source(session), view_initialized(false)
+    media_source(session), view_initialized(false),
+    output_texture_handle(NULL)
 {
 }
 
@@ -70,88 +75,143 @@ media_stream_t transform_videoprocessor::create_stream()
 
 stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& transform) :
     transform(transform),
-    processing_callback(new async_callback_t(&stream_videoprocessor::processing_cb)),
     output_sample(new media_sample)
 {
+    this->processing_callback.Attach(new async_callback_t(&stream_videoprocessor::processing_cb));
 }
 
 void stream_videoprocessor::processing_cb()
 {
     HRESULT hr = S_OK;
     {
+        // TODO: video processing must be locked so that the context isnt
+        // modified in multiple threads
+
         // lock the processor so that only one processing task is performed at a time
         scoped_lock lock(this->transform->videoprocessor_mutex);
 
-        // create the input view for the sample to be converted
-        CComPtr<ID3D11VideoProcessorInputView> input_view;
-        CComPtr<ID3D11Texture2D> texture/*, texture2*/;
-        CComPtr<IDXGIKeyedMutex> mutex;
-        CComPtr<IDXGISurface> surface;
-        D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
+        HANDLE frame, frame2;
 
-        desc.FourCC = 0; // uses the same format the input resource has
-        desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-        desc.Texture2D.MipSlice = 0;
-        desc.Texture2D.ArraySlice = 0;
-        CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-            this->pending_sample->frame, __uuidof(ID3D11Texture2D), (void**)&texture));
+        this->transform->requests_mutex.lock();
+        transform_videoprocessor::packet p = this->transform->requests_2.front();
+        this->transform->requests_2.pop();
+        auto it = this->transform->requests.find(p.rp.request_time);
+        transform_videoprocessor::packet p2 = it->second;
+        this->transform->requests.erase(it);
+        this->transform->requests_mutex.unlock();
 
-        /*D3D11_TEXTURE2D_DESC texdesc;
-        texture->GetDesc(&texdesc);
-        texdesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-        texdesc.BindFlags = D3D11_BIND_RENDER_TARGET;
-        texdesc.Usage = D3D11_USAGE_DEFAULT;
-        texdesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;*/
+        frame = p2.sample->frame;
+        frame2 = p.sample->frame;
 
-        /*CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-            &texdesc, NULL, &texture2));*/
+        assert(frame != frame2 || !frame || !frame2);
+        if(frame && frame2)
+        {
+            // create the input view for the sample to be converted
+            CComPtr<ID3D11VideoProcessorInputView> input_view[2];
+            CComPtr<ID3D11Texture2D> texture, texture2;
+            CComPtr<IDXGIKeyedMutex> mutex, mutex2, mutex3;
+            CComPtr<IDXGISurface> surface, surface2, surface3;
 
-        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
-            texture, this->transform->enumerator, &desc, &input_view));
+            CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
+                frame, __uuidof(ID3D11Texture2D), (void**)&texture));
+            CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
+                frame2, __uuidof(ID3D11Texture2D), (void**)&texture2));
 
-        // convert
-        D3D11_VIDEO_PROCESSOR_STREAM stream;
-        RECT source_rect;
-        source_rect.top = source_rect.left = 0;
-        source_rect.right = 1920;
-        source_rect.bottom = 1080;
+            D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
+            desc.FourCC = 0; // uses the same format the input resource has
+            desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+            desc.Texture2D.MipSlice = 0;
+            desc.Texture2D.ArraySlice = 0;
+            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
+                texture, this->transform->enumerator, &desc, &input_view[0]));
+            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
+                texture2, this->transform->enumerator, &desc, &input_view[1]));
 
-        stream.Enable = TRUE;
-        stream.OutputIndex = 0;
-        stream.InputFrameOrField = 0;
-        stream.PastFrames = 0;
-        stream.FutureFrames = 0;
-        stream.ppPastSurfaces = NULL;
-        stream.pInputSurface = input_view;
-        stream.ppFutureSurfaces = NULL;
-        stream.ppPastSurfacesRight = NULL;
-        stream.pInputSurfaceRight = NULL;
-        stream.ppFutureSurfacesRight = NULL;
+            // convert
+            D3D11_VIDEO_PROCESSOR_STREAM stream[2];
+            RECT source_rect;
+            source_rect.top = source_rect.left = 0;
+            source_rect.right = 1920;
+            source_rect.bottom = 1080;
 
-        /*this->transform->videocontext->VideoProcessorSetStreamFrameFormat(
-            this->transform->videoprocessor, 0, D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
-        this->transform->videocontext->VideoProcessorSetStreamSourceRect(
-            this->transform->videoprocessor, 0, TRUE, &source_rect);*/
+            for(int i = 0; i < 2; i++)
+            {
+                stream[i].Enable = TRUE;
+                stream[i].OutputIndex = 0;
+                stream[i].InputFrameOrField = 0;
+                stream[i].PastFrames = 0;
+                stream[i].FutureFrames = 0;
+                stream[i].ppPastSurfaces = NULL;
+                stream[i].pInputSurface = input_view[i];
+                stream[i].ppFutureSurfaces = NULL;
+                stream[i].ppPastSurfacesRight = NULL;
+                stream[i].pInputSurfaceRight = NULL;
+                stream[i].ppFutureSurfacesRight = NULL;
+            }
 
-        // because the input texture uses shared keyed mutex the texture must be locked
-        // before operating it
-        CHECK_HR(hr = texture->QueryInterface(&surface));
-        CHECK_HR(hr = surface->QueryInterface(&mutex));
-        CHECK_HR(hr = mutex->AcquireSync(1, INFINITE));
+            // set the target rectangle for the output
+            // (sets the rectangle where the output blit on the output texture will appear)
+            this->transform->videocontext->VideoProcessorSetOutputTargetRect(
+                this->transform->videoprocessor, TRUE, &source_rect);
 
-        // dxva 2 and direct3d11 video seems to be similar
-        // https://msdn.microsoft.com/en-us/library/windows/desktop/cc307964(v=vs.85).aspx#Video_Process_Blit
-        // the video processor alpha blends the input streams to the target output
-        CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
-            this->transform->videoprocessor, this->transform->output_view,
-            0, 1, &stream));
+            // set the source rectangle of the streams
+            // (the part of the stream texture which will be included in the blit)
+            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+                this->transform->videoprocessor, 0, TRUE, &source_rect);
+            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+                this->transform->videoprocessor, 1, TRUE, &source_rect);
 
-        CHECK_HR(hr = mutex->ReleaseSync(1));
+            // set the destination rectangle of the streams
+            // (where the stream will appear in the output blit)
+            this->transform->videocontext->VideoProcessorSetStreamDestRect(
+                this->transform->videoprocessor, 0, TRUE, &source_rect);
+            RECT rect;
+            rect.top = rect.left = 0;
+            rect.right = 1920 / 3;
+            rect.bottom = 1080 / 3;
+            this->transform->videocontext->VideoProcessorSetStreamDestRect(
+                this->transform->videoprocessor, 1, TRUE, &rect);
 
-        this->output_sample->frame = (HANDLE)this->transform->output_texture.p;
-        this->output_sample->timestamp = this->pending_sample->timestamp;
-        this->output_sample->mutex.lock();
-        this->transform->session->give_sample(this, this->output_sample, this->current_rp, false);
+            // because the input texture uses shared keyed mutex the texture must be locked
+            // before operating it
+            CHECK_HR(hr = texture->QueryInterface(&surface));
+            CHECK_HR(hr = texture2->QueryInterface(&surface2));
+            CHECK_HR(hr = this->transform->output_texture->QueryInterface(&surface3));
+            CHECK_HR(hr = surface->QueryInterface(&mutex));
+            CHECK_HR(hr = surface2->QueryInterface(&mutex2));
+            CHECK_HR(hr = surface3->QueryInterface(&mutex3));
+            CHECK_HR(hr = mutex->AcquireSync(1, INFINITE));
+            CHECK_HR(hr = mutex2->AcquireSync(1, INFINITE));
+            CHECK_HR(hr = mutex3->AcquireSync(1, INFINITE));
+
+            // dxva 2 and direct3d11 video seems to be similar
+            // https://msdn.microsoft.com/en-us/library/windows/desktop/cc307964(v=vs.85).aspx#Video_Process_Blit
+            // the video processor alpha blends the input streams to the target output
+            const UINT stream_count = 2;
+            CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
+                this->transform->videoprocessor, this->transform->output_view,
+                0, stream_count, stream));
+
+            CHECK_HR(hr = mutex3->ReleaseSync(1));
+            CHECK_HR(hr = mutex2->ReleaseSync(1));
+            CHECK_HR(hr = mutex->ReleaseSync(1));
+        }
+
+        //// TODO: only the sink should drop request packets,
+        //// since packets should not be dropped inside the pipeline
+
+        // lock the output sample
+        this->output_sample->lock_sample();
+        this->output_sample->frame = this->transform->output_texture_handle;
+        // use the earliest timestamp
+        this->output_sample->timestamp = 
+            std::min(p2.sample->timestamp, p.sample->timestamp);
+
+        // unlock the frames
+        p2.sample->unlock_sample();
+        p.sample->unlock_sample();
+
+        this->transform->session->give_sample(this, this->output_sample, p.rp, false);
     }
 
     return;
@@ -166,46 +226,40 @@ media_stream::result_t stream_videoprocessor::request_sample(request_packet& rp)
         return FATAL_ERROR;
     return OK;
 }
-
-extern bool bb;
-
 media_stream::result_t stream_videoprocessor::process_sample(
     const media_sample_t& sample, request_packet& rp)
 {
-    // pass the null sample to downstream
-    if(!sample->frame)
-    {
-        if(!this->transform->session->give_sample(this, sample, rp, false))
-            return FATAL_ERROR;
-        return OK;
-    }
-
-    bb = false;
-
     // TODO: resources shouldn't be initialized here because of the multithreaded
     // nature they might be initialized more than once
 
     // create the output view if it hasn't been created
-    if(!this->transform->view_initialized)
+    if(!this->transform->view_initialized && sample->frame)
     {
         this->transform->view_initialized = true;
 
         HRESULT hr = S_OK;
-        CComPtr<ID3D11Texture2D> texture, texture2;
+        CComPtr<ID3D11Texture2D> texture;
         CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
             sample->frame, __uuidof(ID3D11Texture2D), (void**)&texture));
 
         {
             scoped_lock lock(this->transform->videoprocessor_mutex);
+            CComPtr<IDXGIResource> idxgiresource;
+            CComPtr<IDXGIKeyedMutex> mutex;
             // create output texture with nv12 color format
             D3D11_TEXTURE2D_DESC desc;
             texture->GetDesc(&desc);
-            desc.MiscFlags = 0;
-            desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+            desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+            /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
             desc.Usage = D3D11_USAGE_DEFAULT;
-            desc.Format = DXGI_FORMAT_NV12;
+            desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
             CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
                 &desc, NULL, &this->transform->output_texture));
+            CHECK_HR(hr = this->transform->output_texture->QueryInterface(&idxgiresource));
+            CHECK_HR(hr = idxgiresource->GetSharedHandle(&this->transform->output_texture_handle));
+            CHECK_HR(hr = this->transform->output_texture->QueryInterface(&mutex));
+            CHECK_HR(hr = mutex->AcquireSync(0, INFINITE));
+            CHECK_HR(hr = mutex->ReleaseSync(1));
 
             // create output view
             D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
@@ -217,22 +271,31 @@ media_stream::result_t stream_videoprocessor::process_sample(
         }
     }
 
-    this->current_rp = rp;
     {
-        scoped_lock lock(this->transform->videoprocessor_mutex);
-        this->pending_sample = sample;
+        scoped_lock lock(this->transform->requests_mutex);
 
-        const HRESULT hr = this->processing_callback->mf_put_work_item(
-            this->shared_from_this<stream_videoprocessor>(),
-            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw std::exception();
-        else if(hr == MF_E_SHUTDOWN)
-            return FATAL_ERROR;
+        auto it = this->transform->requests.find(rp.request_time);
+        if(it != this->transform->requests.end())
+        {
+            transform_videoprocessor::packet p = {rp, sample};
+            this->transform->requests_2.push(p);
+
+            const HRESULT hr = this->processing_callback->mf_put_work_item(
+                this->shared_from_this<stream_videoprocessor>(),
+                MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+            if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+                throw std::exception();
+            else if(hr == MF_E_SHUTDOWN)
+                return FATAL_ERROR;
+        }
+        else
+        {
+            this->transform->requests[rp.request_time].rp = rp;
+            this->transform->requests[rp.request_time].sample = sample;
+        }
     }
 
     return OK;
-
 done:
     this->transform->view_initialized = false;
     throw std::exception();

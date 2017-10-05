@@ -72,6 +72,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="media_sample.cpp" />
     <ClCompile Include="media_session.cpp" />
     <ClCompile Include="media_topology.cpp" />
     <ClCompile Include="transform_videoprocessor.cpp" />

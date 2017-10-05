@@ -2,6 +2,7 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <condition_variable>
 #include <stdint.h>
 #include <d3d11.h>
 #include <atlbase.h>
@@ -14,13 +15,21 @@ typedef int64_t time_unit;
 class media_sample
 {
 private:
+     volatile bool available;
+     std::condition_variable cv;
+     std::mutex mutex;
 public:
-    // mutex is locked while it's being passed around in the pipeline
-    std::recursive_mutex mutex;
+    media_sample();
+
+    // tries to lock the sample without blocking
+    bool try_lock_sample();
+    // waits for the sample to become available and sets it to unavailable
+    void lock_sample();
+    // makes the sample available
+    void unlock_sample();
+
     time_unit timestamp;
     HANDLE frame;
 };
 
 typedef std::shared_ptr<media_sample> media_sample_t;
-typedef std::vector<media_sample_t> media_samples;
-typedef std::shared_ptr<media_samples> media_samples_t;

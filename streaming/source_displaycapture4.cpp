@@ -16,14 +16,13 @@ extern LARGE_INTEGER pc_frequency;
 #undef min
 #endif
 
-#define MONITOR_INDEX 0
 #define MAX_DIFF std::numeric_limits<time_unit>::max()/*(FPS60_INTERVAL / 2 + FPS60_INTERVAL / 4)*/
 
 source_displaycapture4::thread_capture::thread_capture(source_displaycapture4_t& source) : 
     source(source),
-    running(false),
-    callback(new async_callback_t(&source_displaycapture4::thread_capture::capture_cb))
+    running(false)
 {
+    this->callback.Attach(new async_callback_t(&source_displaycapture4::thread_capture::capture_cb));
     if(FAILED(MFAllocateWorkQueue(&this->work_queue)))
         throw std::exception();
 }
@@ -88,8 +87,14 @@ void source_displaycapture4::thread_capture::capture_cb()
     presentation_clock_t clock;
     if(this->get_clock(clock))
     {
-        scoped_lock frame_lock(source->samples[source->current_frame]->mutex);
-        source->capture_frame(clock->get_start_time());
+        // wait until the sample has become available again
+        // TODO: sometimes the condition variable won't fire
+        const int current_frame = source->current_frame;
+        source->samples[current_frame]->lock_sample();
+        // TODO: sinks should request the oldest frame
+        source->capture_frame(clock->get_start_time_internal());
+        source->samples[current_frame]->unlock_sample();
+
         this->schedule_new(this->due_time);
     }
     else
@@ -133,7 +138,7 @@ void source_displaycapture4::thread_capture::schedule_new(time_unit due_time)
                     scheduled_time = current_time2;*/
 
                     // frame request was late
-                    std::cout << "--FRAME DROPPED--" << std::endl;
+                    std::cout << "--FRAME DROPPED-- @ monitor " << this->monitor_index << std::endl;
                     /*std::cout << "--FRAME CAPTURE THREAD WAS LATE--" << std::endl;*/
 
                     scheduled_time += pull_interval;
@@ -164,7 +169,8 @@ source_displaycapture4::source_displaycapture4(const media_session_t& session) :
 
 source_displaycapture4::~source_displaycapture4()
 {
-    this->capture_thread->running = false;
+    if(this->capture_thread)
+        this->capture_thread->running = false;
 }
 
 media_stream_t source_displaycapture4::create_stream()
@@ -173,7 +179,7 @@ media_stream_t source_displaycapture4::create_stream()
         new stream_displaycapture4(this->shared_from_this<source_displaycapture4>()));
 }
 
-HRESULT source_displaycapture4::initialize(ID3D11Device* d3d11dev, ID3D11DeviceContext* devctx)
+HRESULT source_displaycapture4::initialize(UINT output_index)
 {
     HRESULT hr;
     CComPtr<IDXGIDevice> dxgidev;
@@ -194,7 +200,7 @@ HRESULT source_displaycapture4::initialize(ID3D11Device* d3d11dev, ID3D11DeviceC
     CHECK_HR(hr = dxgidev->GetParent(__uuidof(IDXGIAdapter), (void**)&dxgiadapter));
 
     // get the primary output
-    CHECK_HR(hr = dxgiadapter->EnumOutputs(MONITOR_INDEX, &output));
+    CHECK_HR(hr = dxgiadapter->EnumOutputs(output_index, &output));
     DXGI_OUTPUT_DESC desc;
     CHECK_HR(hr = output->GetDesc(&desc));
 
@@ -219,6 +225,7 @@ done:
     assert(!this->capture_thread_clock);
     this->capture_thread_clock.reset(new presentation_clock);
     this->capture_thread.reset(new thread_capture(this->shared_from_this<source_displaycapture4>()));
+    this->capture_thread->monitor_index = output_index;
     this->capture_thread->register_sink(this->capture_thread_clock);
     this->capture_thread_clock->clock_start(0);
 
@@ -239,8 +246,8 @@ void source_displaycapture4::capture_frame(LARGE_INTEGER start_time)
     // when playing a fullscreen game the releaseframe can be here;
     // in desktop mode it must be at the end so that every change can be captured
     /*this->output_duplication->ReleaseFrame();*/
-    // should not have a timeout here so that the component can be shutdown properly
-    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
+    // TODO: this function should not block so that resource freeing is possible
+    CHECK_HR(hr = this->output_duplication->AcquireNextFrame(INFINITE, &frame_info, &frame));
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
 
     if(frame_info.LastPresentTime.QuadPart != 0)
@@ -294,17 +301,25 @@ done:
 media_sample_t source_displaycapture4::capture_frame(time_unit timestamp, bool& too_new)
 {
     time_unit diff = std::numeric_limits<time_unit>::max();
-    size_t index = 0;
+    size_t index = -1;
     too_new = true;
     // TODO: fetching 64 bit integer might not be an atomic operation
     for(size_t i = 0; i < SAMPLE_DEPTH; i++)
     {
+        // checks whether the sample is available and locks it
+        if(!this->samples[i]->try_lock_sample())
+            continue;
+
         const time_unit new_diff = timestamp - this->samples[i]->timestamp;
         if(diff > std::abs(new_diff))
         {
+            if(index != -1)
+                this->samples[index]->unlock_sample();
             index = i;
             diff = std::abs(new_diff);
         }
+        else
+            this->samples[i]->unlock_sample();
         if(new_diff < 0)
             too_new = false;
     }
@@ -330,6 +345,10 @@ stream_displaycapture4::stream_displaycapture4(const source_displaycapture4_t& s
 {
 }
 
+stream_displaycapture4::~stream_displaycapture4()
+{
+}
+
 media_stream::result_t stream_displaycapture4::request_sample(request_packet& rp)
 {
     // convert the topology's time to device time
@@ -341,6 +360,7 @@ media_stream::result_t stream_displaycapture4::request_sample(request_packet& rp
     const time_unit device_time = rp.request_time + time_diff;
 
     bool too_new;
+    // capture frame locks the sample
     media_sample_t sample = this->source->capture_frame(device_time, too_new);
 
     return this->process_sample(sample, rp);
@@ -357,10 +377,7 @@ media_stream::result_t stream_displaycapture4::process_sample(
     // TODO: the timestamp should have the presentation time instead of the
     // device time
 
-    /*sample->timestamp = request_time;*//*clock->get_current_time();*/
-
-    // TODO: the lock mechanism is converted to the request packet mechanism
-    sample->mutex.lock();
+    // (the sample is already locked when it comes here)
 
     // pass the sample to downstream
     this->source->session->give_sample(this, sample, rp, true);

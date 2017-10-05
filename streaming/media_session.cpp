@@ -9,7 +9,7 @@ bool media_session::get_current_clock(presentation_clock_t& clock) const
         return false;
 
     clock = topology->clock;
-    return true;
+    return !!clock;
 }
 
 void media_session::switch_topology(const media_topology_t& topology)
@@ -48,6 +48,8 @@ bool media_session::request_sample(
     media_topology_t topology;
     if(is_sink)
     {
+        // TODO: calls coming from sink should be blocked while
+        // switching is in process
         assert(!rp.topology);
 
         topology = std::atomic_load(&this->new_topology);
@@ -60,13 +62,13 @@ bool media_session::request_sample(
             std::atomic_exchange(&this->new_topology, rp.topology);
             // stop the current topology
             if(!this->get_current_clock(clock))
-                return false;
+                throw std::exception();
             clock->clock_stop();
             // switch to the new topology
             std::atomic_exchange(&this->current_topology, topology);
-            // start the current topology at the request time
+            // start the new topology at the request time
             if(!this->get_current_clock(clock))
-                return false;
+                throw std::exception();
             clock->clock_start(rp.request_time);
 
             return false;
