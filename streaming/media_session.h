@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <mutex>
 
 // orchestrates the data flow between components in the media pipeline;
 // translates the source's media time to the presentation time
@@ -45,13 +46,18 @@ struct request_packet
 {
     media_topology_t topology;
     time_unit request_time;
+    time_unit timestamp;
+    // cant be a negative number
     int packet_number;
 };
 
 class media_session
 {
+public:
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     media_topology_t current_topology, new_topology;
+    std::recursive_mutex mutex;
 public:
     // returns the clock of the current topology;
     // components shouldn't store the reference because it might
@@ -80,7 +86,7 @@ public:
     // sample cannot be NULL
     bool give_sample(
         const media_stream* this_output_stream, 
-        const media_sample_t& sample,
+        const media_sample_view& sample_view,
         request_packet&,
         bool is_source);
 

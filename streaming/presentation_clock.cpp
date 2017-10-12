@@ -142,7 +142,7 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
     return true;
 }
 
-void presentation_clock_sink::callback_cb()
+void presentation_clock_sink::callback_cb(void*)
 {
     time_unit due_time;
     {
@@ -237,17 +237,20 @@ void presentation_clock::set_current_time(time_unit t)
     this->start_time.QuadPart -= this->current_time_ticks.QuadPart;
 }
 
-bool presentation_clock::clock_start(time_unit start_time)
+bool presentation_clock::clock_start(time_unit time, bool set_time, int packet_number)
 {
+    assert(packet_number >= 0);
+
     bool stop_all = false;
     {
         scoped_lock lock(this->mutex_sinks);
-        this->set_current_time(start_time);
+        if(set_time)
+            this->set_current_time(time);
         this->running = true;
 
         for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
         {
-            if(!(*it)->on_clock_start(start_time))
+            if(!(*it)->on_clock_start(time, packet_number))
             {
                 stop_all = true;
                 break;
@@ -256,19 +259,20 @@ bool presentation_clock::clock_start(time_unit start_time)
     }
 
     if(stop_all)
-        this->clock_stop();
+        this->clock_stop(time, false);
 
     return !stop_all;
 }
 
-void presentation_clock::clock_stop(time_unit t)
+void presentation_clock::clock_stop(time_unit time, bool set_time)
 {
     scoped_lock lock(this->mutex_sinks);
-    this->set_current_time(t);
+    if(set_time)
+        this->set_current_time(time);
     this->running = false;
 
     for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
-        (*it)->on_clock_stop(t);
+        (*it)->on_clock_stop(time);
 }
 
 void presentation_clock::clear_clock_sinks()

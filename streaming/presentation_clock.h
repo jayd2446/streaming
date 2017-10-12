@@ -28,7 +28,7 @@ public:
     typedef async_callback<presentation_clock_sink> async_callback_t;
 private:
     bool unregistered;
-    CComPtr<async_callback_t> callback, callback2;
+    CComPtr<async_callback_t> callback;
     sorted_set_t callbacks;
     std::recursive_mutex mutex_callbacks;
     CHandle wait_timer;
@@ -37,7 +37,7 @@ private:
 
     // schedules the next callback in the list
     bool schedule_callback(time_unit due_time);
-    void callback_cb();
+    void callback_cb(void*);
 protected:
     // returns false if mfcancelworkitem fails
     bool clear_queue();
@@ -47,7 +47,7 @@ protected:
     bool schedule_new_callback(time_unit due_time);
 
     // called from media session's start and stop functions
-    virtual bool on_clock_start(time_unit) = 0;
+    virtual bool on_clock_start(time_unit, int packet_number) = 0;
     virtual void on_clock_stop(time_unit) = 0;
 
     // a new callback shouldn't be scheduled if the topology isn't active anymore
@@ -71,7 +71,7 @@ public:
 
 typedef std::shared_ptr<presentation_clock_sink> presentation_clock_sink_t;
 
-// TODO: int access should be atomic
+// TODO: multithreading safety needs to be ensured
 class presentation_clock
 {
     friend class presentation_clock_sink;
@@ -101,11 +101,13 @@ public:
     bool clock_running() const {return this->running;}
     // calls clock_stop if one of the sinks returned false
     // and returns false;
-    // starts the timer aswell
-    bool clock_start(time_unit start_time);
+    // starts the timer and calls sinks with the supplied time parameter;
+    // by default also sets the time to time parameter
+    bool clock_start(time_unit time, bool set_time = true, int packet_number = 0);
     // returns false if any of the sinks returns false;
-    // stops the timer at the stop time
-    void clock_stop(time_unit stop_time);
+    // stops the timer and calls sinks with the supplied time parameter;
+    // by default also sets the time to time parameter
+    void clock_stop(time_unit time, bool set_time = true);
     void clock_stop() {this->clock_stop(this->get_current_time());}
 
     void clear_clock_sinks();

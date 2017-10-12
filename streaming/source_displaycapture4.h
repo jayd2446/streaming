@@ -55,11 +55,11 @@ public:
 
         explicit thread_capture(source_displaycapture4_t& source);
         ~thread_capture();
-        bool on_clock_start(time_unit);
+        bool on_clock_start(time_unit, int packet_number);
         void on_clock_stop(time_unit);
         bool get_clock(presentation_clock_t&);
         void scheduled_callback(time_unit due_time);
-        void capture_cb();
+        void capture_cb(void*);
 
         bool get_source(source_displaycapture4_t&);
         void schedule_new(time_unit due_time);
@@ -77,6 +77,7 @@ private:
     int current_frame;
     CComPtr<ID3D11Texture2D> screen_frame[SAMPLE_DEPTH];
     media_sample_t samples[SAMPLE_DEPTH];
+    media_sample_t null_sample;
     std::recursive_mutex mutex;
 
     void capture_frame(LARGE_INTEGER start_time);

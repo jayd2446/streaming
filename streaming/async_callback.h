@@ -6,6 +6,7 @@
 #include <atlbase.h>
 #include <memory>
 #include <cassert>
+#include <atomic>
 
 #pragma comment(lib, "Mfplat.lib")
 
@@ -18,17 +19,19 @@ template<class T>
 class async_callback : public IUnknownImpl
 {
 public:
-    typedef void (T::*invoke_fn)();
+    typedef void (T::*invoke_fn)(void*);
     typedef T parent_t;
 private:
     std::weak_ptr<T> parent;
     invoke_fn cb;
 
-    HRESULT mf_cb(IMFAsyncResult*)
+    HRESULT mf_cb(IMFAsyncResult* res)
     {
         const std::shared_ptr<T> parent = this->parent.lock();
         if(parent)
-            (parent.get()->*cb)();
+            (parent.get()->*cb)((void*)res);
+        else
+            assert(this->RefCount == 1);
         return S_OK;
     }
 public:
@@ -42,12 +45,18 @@ public:
         cb(cb), 
         native(this, &async_callback<T>::mf_cb, work_queue, flags) {}
 
+    // TODO: these should be atomic operations
+    void set_callback(const std::weak_ptr<T>& parent) {this->parent = parent;}
+    void set_callback(
+        const std::weak_ptr<T>& parent,
+        invoke_fn cb) {this->set_callback(parent); std::atomic_exchange(&this->cb, cb);}
+
+    void invoke(void* unk) {this->mf_cb((IMFAsyncResult*)unk);}
+
     // the parent must be same for each call
     HRESULT mf_put_work_item(const std::weak_ptr<T>& parent, DWORD queue) 
     {
-        /*assert(!this->parent || this->parent == parent);*/
-        /*if(!this->parent)*/
-        this->parent = parent;
+        this->set_callback(parent);
         return MFPutWorkItem(queue, &this->native, NULL);
     }
     HRESULT mf_put_waiting_work_item(
@@ -57,9 +66,7 @@ public:
         IMFAsyncResult* result,
         MFWORKITEM_KEY* key)
     {
-        /*assert(!this->parent || this->parent == parent);*/
-        /*if(!this->parent)*/
-        this->parent = parent;
+        this->set_callback(parent);
         return MFPutWaitingWorkItem(hEvent, priority, result, key);
     }
 };

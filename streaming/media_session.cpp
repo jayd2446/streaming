@@ -48,31 +48,42 @@ bool media_session::request_sample(
     media_topology_t topology;
     if(is_sink)
     {
-        // TODO: calls coming from sink should be blocked while
-        // switching is in process
         assert(!rp.topology);
 
         topology = std::atomic_load(&this->new_topology);
         // check if there's a topology switch
         if(topology)
         {
-            presentation_clock_t clock;
+            // lock is here so that the message passing doesn't become a bottleneck
+            scoped_lock lock(this->mutex);
+            if(!(topology = std::atomic_load(&this->new_topology)))
+                return false;
+
+            presentation_clock_t clock, old_clock;
+
+            // TODO: for even more precise set_current_time,
+            // the old clock shouldnt be stopped at all
+            // (requires a temporary clock to be set)
 
             // rp.topology is null when it's coming from the sink
             std::atomic_exchange(&this->new_topology, rp.topology);
             // stop the current topology
-            if(!this->get_current_clock(clock))
+            if(!this->get_current_clock(old_clock))
                 throw std::exception();
-            clock->clock_stop();
+            old_clock->clock_stop();
             // switch to the new topology
             std::atomic_exchange(&this->current_topology, topology);
-            // start the new topology at the request time
+            // start the new topology at the previous clock time
             if(!this->get_current_clock(clock))
                 throw std::exception();
-            clock->clock_start(rp.request_time);
+            // sets the clock to old time and starts the timer
+            // with the request time stamp
+            clock->set_current_time(old_clock->get_current_time());
+            clock->clock_start(rp.timestamp, false, rp.packet_number);
 
             return false;
         }
+
         rp.topology = std::atomic_load(&this->current_topology);
     }
     topology = rp.topology;
@@ -93,7 +104,7 @@ bool media_session::request_sample(
 
 bool media_session::give_sample(
     const media_stream* stream, 
-    const media_sample_t& sample, 
+    const media_sample_view& sample_view, 
     request_packet& rp,
     bool is_source)
 {
@@ -109,7 +120,7 @@ bool media_session::give_sample(
         return false;
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        if((*jt)->process_sample(sample, rp) == media_stream::FATAL_ERROR)
+        if((*jt)->process_sample(sample_view, rp) == media_stream::FATAL_ERROR)
             return false;
 
     return true;

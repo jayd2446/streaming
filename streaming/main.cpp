@@ -10,6 +10,8 @@
 #include "media_session.h"
 #include "media_topology.h"
 #include "transform_videoprocessor.h"
+#include "transform_h264_encoder.h"
+#include "transform_color_converter.h"
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "D3D11.lib")
@@ -59,6 +61,14 @@ int main()
         media_session_t session(new media_session);
         media_topology_t topology(new media_topology);
 
+        //// create and initialize the h264 encoder transform
+        //transform_h264_encoder_t h264_encoder_transform(new transform_h264_encoder(session));
+        //hr = h264_encoder_transform->initialize(d3d11dev);
+
+        // create and initialize the color converter transform
+        transform_color_converter_t color_converter_transform(new transform_color_converter(session));
+        hr = color_converter_transform->initialize(d3d11dev, d3d11devctx);
+
         // create and initialize the video processor transform
         transform_videoprocessor_t videoprocessor_transform(new transform_videoprocessor(session));
         hr = videoprocessor_transform->initialize(d3d11dev, d3d11devctx);
@@ -86,10 +96,14 @@ int main()
         media_stream_t source_stream = displaycapture_source->create_stream();
         media_stream_t source_stream2 = displaycapture_source2->create_stream();
         media_stream_t transform_stream = videoprocessor_transform->create_stream();
+        /*media_stream_t color_converter_stream = color_converter_transform->create_stream();*/
+        /*media_stream_t h264_encoder_stream = h264_encoder_transform->create_stream();*/
         bool b = true;
         b &= topology->connect_streams(source_stream, transform_stream);
         b &= topology->connect_streams(source_stream2, transform_stream);
         b &= topology->connect_streams(transform_stream, sink_stream);
+        /*b &= topology->connect_streams(color_converter_stream, sink_stream);*/
+        /*b &= topology->connect_streams(h264_encoder_stream, sink_stream);*/
         /*b &= topology->connect_streams(source_stream, sink_stream);*/
 
         // add the topology to the media session
@@ -104,38 +118,42 @@ int main()
         {
             if(msg.message == WM_KEYDOWN)
             {
-                /*for(int i = 0; i < 25000; i++)*/
-                {
-                    outputmonitor_index = (outputmonitor_index + 1) % 2;
+                /*for(int i = 0; i < 25001; i++)*/
+                //{
+                //    outputmonitor_index = (outputmonitor_index + 1) % 2;
 
-                    // switch topology
-                    topology.reset(new media_topology);
+                //    // switch topology
+                //    topology.reset(new media_topology);
 
-                    sink_stream = preview_sink->create_stream(topology->get_clock());
-                    source_stream = displaycapture_source->create_stream();
-                    source_stream2 = displaycapture_source2->create_stream();
-                    transform_stream = videoprocessor_transform->create_stream();
+                //    sink_stream = preview_sink->create_stream(topology->get_clock());
+                //    source_stream = displaycapture_source->create_stream();
+                //    source_stream2 = displaycapture_source2->create_stream();
+                //    transform_stream = videoprocessor_transform->create_stream();
+                //    color_converter_stream = color_converter_transform->create_stream();
 
-                    bool b = true;
-                    if(!outputmonitor_index)
-                    {
-                        b &= topology->connect_streams(source_stream, transform_stream);
-                        b &= topology->connect_streams(source_stream2, transform_stream);
-                    }
-                    else
-                    {
-                        b &= topology->connect_streams(source_stream2, transform_stream);
-                        b &= topology->connect_streams(source_stream, transform_stream);
-                    }
-                    b &= topology->connect_streams(transform_stream, sink_stream);
-                    session->switch_topology(topology);
-                }
+                //    bool b = true;
+                //    if(!outputmonitor_index)
+                //    {
+                //        b &= topology->connect_streams(source_stream, transform_stream);
+                //        b &= topology->connect_streams(source_stream2, transform_stream);
+                //    }
+                //    else
+                //    {
+                //        b &= topology->connect_streams(source_stream2, transform_stream);
+                //        b &= topology->connect_streams(source_stream, transform_stream);
+                //    }
+                //    b &= topology->connect_streams(transform_stream, color_converter_stream);
+                //    b &= topology->connect_streams(color_converter_stream, sink_stream);
+                //    session->switch_topology(topology);
+                //}
             }
             else
             {
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
             }
+            /*Sleep(10000);
+            break;*/
         }
 
         session->stop_playback();
@@ -150,6 +168,7 @@ int main()
     c = 0;
     topology = NULL;*/
 
+    Sleep(1000);
     hr = MFShutdown();
 
     return 0;

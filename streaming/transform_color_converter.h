@@ -7,18 +7,15 @@
 #include <atlbase.h>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <queue>
 
-// source blender
+// color space converter
+// TODO: create a pool of textures that can be reused
+// (currently color converter creates a new texture each time)
 
-// TODO: the queue system for samples can be generalized;
-// the requests and samples are tied to work queues so generalizing them can include
-// those
-
-class transform_videoprocessor : public media_source
+class transform_color_converter : public media_source
 {
-    friend class stream_videoprocessor;
+    friend class stream_color_converter;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
@@ -33,36 +30,32 @@ private:
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
     bool view_initialized;
 
-    // video context isn't multithreaded so the access must be serialized
-    // TODO: this must be generalized to all d3d11 context accesses
     std::recursive_mutex videoprocessor_mutex, requests_mutex;
 
     struct packet {request_packet rp; media_sample_t sample;};
-    std::unordered_map<time_unit, packet> requests;
-    std::queue<packet> requests_2;
+    std::queue<packet> requests;
 public:
-    explicit transform_videoprocessor(const media_session_t& session);
+    explicit transform_color_converter(const media_session_t& session);
 
-    // TODO: access to device context must be synchronized
     HRESULT initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext*);
     media_stream_t create_stream();
 };
 
-typedef std::shared_ptr<transform_videoprocessor> transform_videoprocessor_t;
+typedef std::shared_ptr<transform_color_converter> transform_color_converter_t;
 
-class stream_videoprocessor : public media_stream
+class stream_color_converter : public media_stream
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef async_callback<stream_videoprocessor> async_callback_t;
+    typedef async_callback<stream_color_converter> async_callback_t;
 private:
-    transform_videoprocessor_t transform;
+    transform_color_converter_t transform;
     CComPtr<async_callback_t> processing_callback;
     media_sample_t output_sample;
 
     void processing_cb(void*);
 public:
-    explicit stream_videoprocessor(const transform_videoprocessor_t& transform);
+    explicit stream_color_converter(const transform_color_converter_t& transform);
 
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     // called by the downstream from media session

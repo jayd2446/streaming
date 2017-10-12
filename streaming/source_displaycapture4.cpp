@@ -33,7 +33,7 @@ source_displaycapture4::thread_capture::~thread_capture()
     MFUnlockWorkQueue(this->work_queue);
 }
 
-bool source_displaycapture4::thread_capture::on_clock_start(time_unit t)
+bool source_displaycapture4::thread_capture::on_clock_start(time_unit t, int packet_number)
 {
     if(this->running)
         return true;
@@ -73,7 +73,7 @@ void source_displaycapture4::thread_capture::scheduled_callback(time_unit due_ti
         throw std::exception();
 }
 
-void source_displaycapture4::thread_capture::capture_cb()
+void source_displaycapture4::thread_capture::capture_cb(void*)
 {
     source_displaycapture4_t source;
 
@@ -88,7 +88,6 @@ void source_displaycapture4::thread_capture::capture_cb()
     if(this->get_clock(clock))
     {
         // wait until the sample has become available again
-        // TODO: sometimes the condition variable won't fire
         const int current_frame = source->current_frame;
         source->samples[current_frame]->lock_sample();
         // TODO: sinks should request the oldest frame
@@ -139,7 +138,6 @@ void source_displaycapture4::thread_capture::schedule_new(time_unit due_time)
 
                     // frame request was late
                     std::cout << "--FRAME DROPPED-- @ monitor " << this->monitor_index << std::endl;
-                    /*std::cout << "--FRAME CAPTURE THREAD WAS LATE--" << std::endl;*/
 
                     scheduled_time += pull_interval;
                     scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
@@ -157,14 +155,14 @@ void source_displaycapture4::thread_capture::schedule_new(time_unit due_time)
 
 
 source_displaycapture4::source_displaycapture4(const media_session_t& session) : 
-    media_source(session), current_frame(0)
+    media_source(session), current_frame(0), null_sample(new media_sample)
 {
     for(size_t i = 0; i < SAMPLE_DEPTH; i++)
     {
         this->samples[i].reset(new media_sample);
-        this->samples[i]->frame = NULL;
         this->samples[i]->timestamp = 0;
     }
+    this->null_sample->timestamp = 0;
 }
 
 source_displaycapture4::~source_displaycapture4()
@@ -303,7 +301,7 @@ media_sample_t source_displaycapture4::capture_frame(time_unit timestamp, bool& 
     time_unit diff = std::numeric_limits<time_unit>::max();
     size_t index = -1;
     too_new = true;
-    // TODO: fetching 64 bit integer might not be an atomic operation
+
     for(size_t i = 0; i < SAMPLE_DEPTH; i++)
     {
         // checks whether the sample is available and locks it
@@ -326,7 +324,17 @@ media_sample_t source_displaycapture4::capture_frame(time_unit timestamp, bool& 
     if(diff > MAX_DIFF)
         return NULL;
 
-    return this->samples[index];
+    // TODO: this might happen
+    /*assert(index != -1);*/
+    // TODO: null sample should be implemented that don't have
+    // a locking mechanism
+    if(index == -1)
+    {
+        this->null_sample->lock_sample();
+        return this->null_sample;
+    }
+    else
+        return this->samples[index];
 }
 
 presentation_clock_t source_displaycapture4::get_device_clock()

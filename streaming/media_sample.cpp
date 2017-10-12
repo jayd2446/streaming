@@ -6,7 +6,7 @@ media_sample::media_sample() : available(true), frame(NULL)
 
 bool media_sample::try_lock_sample()
 {
-    std::unique_lock<std::mutex> lock(this->mutex);
+    scoped_lock lock(this->mutex);
     if(this->available)
     {
         this->available = false;
@@ -18,17 +18,27 @@ bool media_sample::try_lock_sample()
 
 void media_sample::lock_sample()
 {
-    std::unique_lock<std::mutex> lock(this->mutex);
+    scoped_lock lock(this->mutex);
     while(!this->available)
         // wait unlocks the mutex and reacquires the lock when it is notified
         this->cv.wait(lock);
     this->available = false;
-    lock.unlock();
 }
 
 void media_sample::unlock_sample()
 {
-    std::lock_guard<std::mutex> lock(this->mutex);
+    scoped_lock lock(this->mutex);
     this->available = true;
     this->cv.notify_all();
+}
+
+media_sample_view::media_sample_view(const media_sample_t& sample) :
+    sample(sample)
+{
+    this->sample->lock_sample();
+}
+
+media_sample_view::~media_sample_view()
+{
+    this->sample->unlock_sample();
 }

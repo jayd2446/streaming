@@ -4,20 +4,107 @@
 //#include "source_displaycapture3.h"
 #include "source_displaycapture4.h"
 #include <Mferror.h>
+#include <evr.h>
 #include <iostream>
 #include <mutex>
 #include <avrt.h>
 
+#pragma comment(lib, "Evr.lib")
+#pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "Avrt.lib")
 
+#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 #define QUEUE_MAX_SIZE 3
-#define LAG_BEHIND (FPS60_INTERVAL * 6)
+#define LAG_BEHIND 1000000/*(FPS60_INTERVAL * 6)*/
 extern LARGE_INTEGER pc_frequency;
 
 
 sink_preview::sink_preview(const media_session_t& session) : 
     media_sink(session), drawn(false)
 {
+}
+
+sink_preview::~sink_preview()
+{
+    HRESULT hr = this->sink_writer->Finalize();
+    if(FAILED(hr))
+        std::cout << "finalizing failed" << std::endl;
+}
+
+HRESULT sink_preview::create_output_media_type()
+{
+    HRESULT hr = S_OK;
+
+    CHECK_HR(hr = MFCreateMediaType(&this->mpeg_file_type));
+    CHECK_HR(hr = this->mpeg_file_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
+    CHECK_HR(hr = this->mpeg_file_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264));
+    CHECK_HR(hr = this->mpeg_file_type->SetUINT32(MF_MT_AVG_BITRATE, 6000*1000));
+    CHECK_HR(hr = MFSetAttributeRatio(this->mpeg_file_type, MF_MT_FRAME_RATE, 60, 1));
+    CHECK_HR(hr = MFSetAttributeSize(this->mpeg_file_type, MF_MT_FRAME_SIZE, 1920, 1080));
+    CHECK_HR(hr = this->mpeg_file_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
+    CHECK_HR(hr = this->mpeg_file_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
+    CHECK_HR(hr = MFSetAttributeRatio(this->mpeg_file_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
+
+done:
+    return hr;
+}
+
+HRESULT sink_preview::create_input_media_type()
+{
+    HRESULT hr = S_OK;
+
+    CHECK_HR(hr = MFCreateMediaType(&this->input_media_type));
+    CHECK_HR(hr = this->input_media_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
+    CHECK_HR(hr = this->input_media_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
+    CHECK_HR(hr = MFSetAttributeRatio(this->input_media_type, MF_MT_FRAME_RATE, 60, 1));
+    CHECK_HR(hr = MFSetAttributeSize(this->input_media_type, MF_MT_FRAME_SIZE, 1920, 1080));
+    CHECK_HR(hr = this->input_media_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
+    CHECK_HR(hr = this->input_media_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
+    CHECK_HR(hr = MFSetAttributeRatio(this->input_media_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
+
+done:
+    return hr;
+}
+
+HRESULT sink_preview::initialize_sink_writer()
+{
+    HRESULT hr = S_OK;
+
+    CComPtr<IMFAttributes> sink_writer_attributes;
+
+    // create output media type
+    CHECK_HR(hr = this->create_output_media_type());
+    // create input media type
+    CHECK_HR(hr = this->create_input_media_type());
+
+    // create file
+    CHECK_HR(hr = MFCreateFile(
+        MF_ACCESSMODE_READWRITE, MF_OPENMODE_DELETE_IF_EXIST, MF_FILEFLAGS_NONE, 
+        L"test.mp4", &this->byte_stream));
+
+    // configure the sink writer
+    CHECK_HR(hr = MFCreateAttributes(&sink_writer_attributes, 1));
+    CHECK_HR(hr = sink_writer_attributes->SetGUID(
+        MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4));
+    CHECK_HR(hr = sink_writer_attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE));
+    CHECK_HR(hr = sink_writer_attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, this->devmngr));
+
+    // create sink writer
+    CHECK_HR(hr = MFCreateSinkWriterFromURL(
+        NULL, this->byte_stream, sink_writer_attributes, &this->sink_writer));
+
+    // set the output stream format
+    CHECK_HR(hr = this->sink_writer->AddStream(this->mpeg_file_type, &this->stream_index));
+
+    // set the input stream format
+    // TODO: this function accepts an encoding parameter
+    CHECK_HR(hr = this->sink_writer->SetInputMediaType(this->stream_index, this->input_media_type, NULL));
+
+    // tell the sink writer to start accepting data
+    CHECK_HR(hr = this->sink_writer->BeginWriting());
+
+done:
+    return hr;
 }
 
 void sink_preview::initialize(
@@ -97,6 +184,17 @@ void sink_preview::initialize(
 
     // now we can set the direct2d render target
     this->d2d1devctx->SetTarget(this->d2dtarget_bitmap);
+
+    // initialize devmngr
+    CHECK_HR(hr = MFCreateDXGIDeviceManager(&this->reset_token, &this->devmngr));
+    CHECK_HR(hr = this->devmngr->ResetDevice(this->d3d11dev, this->reset_token));
+
+    // initialize sink writer
+    CHECK_HR(hr = this->initialize_sink_writer());
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
 }
 
 media_stream_t sink_preview::create_stream(presentation_clock_t& clock)
@@ -125,23 +223,18 @@ stream_preview::~stream_preview()
     /*this->unregister_sink();*/
 }
 
-bool stream_preview::on_clock_start(time_unit t)
+bool stream_preview::on_clock_start(time_unit t, int packet_number)
 {
-    presentation_clock_t t2;
-    this->get_clock(t2);
-    this->pipeline_latency = t2->get_current_time();
-    this->start_time = t;
+    std::cout << "playback started" << std::endl;
     this->running = true;
-    this->schedule_new(t);
-
-    request_packet rp;
-    rp.request_time = t - LAG_BEHIND;
-    return (this->request_sample(rp) != media_stream::FATAL_ERROR);
+    this->packet_number = packet_number;
+    this->scheduled_callback(t);
+    return true;
 }
 
 void stream_preview::on_clock_stop(time_unit t)
 {
-    /*std::cout << "playback stopped" << std::endl;*/
+    std::cout << "playback stopped" << std::endl;
     this->running = false;
     this->clear_queue();
 }
@@ -154,18 +247,17 @@ void stream_preview::scheduled_callback(time_unit due_time)
     if(!this->running)
         return;
     
-    // schedule a new time
-    this->schedule_new(due_time);
+    // add a new request
+    this->push_request(due_time);
 
+    // initiate the request
     const HRESULT hr = this->callback->mf_put_work_item(
         this->shared_from_this<stream_preview>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
-    /*}
-    else
-        std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_PREVIEW--" << std::endl;*/
-    /*if(this->request_sample(due_time) == FATAL_ERROR)
-        this->running = false;*/
+
+    // schedule a new time
+    this->schedule_new(due_time);
 }
 
 bool bb = true;
@@ -204,11 +296,6 @@ void stream_preview::schedule_new(time_unit due_time)
             {
                 // the scheduled time is so close to current time that the callback cannot be set
                 std::cout << "VERY CLOSE" << std::endl;
-                /*std::cout << sample->timestamp << std::endl;*/
-                {
-                    std::lock_guard<std::recursive_mutex> lock(this->mutex);
-                    this->requests.push(scheduled_time);
-                }
                 this->scheduled_callback(scheduled_time);
             }
             else
@@ -233,21 +320,26 @@ void stream_preview::schedule_new(time_unit due_time)
                 while(!this->schedule_new_callback(scheduled_time));
             }
         }
-        else
-            /*std::cout << scheduled_time << std::endl*/;
-
-        std::lock_guard<std::recursive_mutex> lock(this->mutex);
-        this->requests.push(scheduled_time);
     }
 }
 
-void stream_preview::request_cb()
+void stream_preview::push_request(time_unit t)
 {
-    time_unit request_time;
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    request_t request;
+    request.request_time = t - LAG_BEHIND;
+    request.timestamp = t;
+    request.packet_number = this->packet_number++;
+    this->requests.push(request);
+}
+
+void stream_preview::request_cb(void*)
+{
+    request_t request;
     request_packet rp;
     {
         std::lock_guard<std::recursive_mutex> lock(this->mutex);
-        request_time = this->requests.front() - LAG_BEHIND;
+        request = this->requests.front();
         this->requests.pop();
     }
     
@@ -259,12 +351,18 @@ void stream_preview::request_cb()
         return;
     }
 
-    this->requests_pending++;
-    rp.request_time = request_time;
-    if(this->request_sample(rp) == FATAL_ERROR)
+    // wait for the source texture cache to saturate
+    if(request.request_time >= 0)
     {
-        this->requests_pending--;
-        this->running = false;
+        this->requests_pending++;
+        rp.request_time = request.request_time;
+        rp.timestamp = request.timestamp;
+        rp.packet_number = request.packet_number;
+        if(this->request_sample(rp) == FATAL_ERROR)
+        {
+            this->requests_pending--;
+            this->running = false;
+        }
     }
 }
 
@@ -277,13 +375,6 @@ media_stream::result_t stream_preview::request_sample(request_packet& rp)
 {
     if(!this->sink->session->request_sample(this, rp, true))
         return FATAL_ERROR;
-
-    //presentation_clock_t t;
-    //if(this->get_clock(t))
-    //    /*for(int i = 0; i < 10; i++)*/
-    //        this->schedule_new_callback(t->get_current_time() + std::rand() % 110000 + 10000);
-
-    /*std::cout << "NEW" << std::endl;*/
 
     return OK;
 }
@@ -298,24 +389,56 @@ media_stream::result_t stream_preview::process_sample(
 
     // TODO: drawing etc should be put to a work queue
 
-    // TODO: scheduling can be removed from the sink and replaced with
-    // a request each time a new sample arrives(that might hinder the concurrency a bit)
-
     static HANDLE last_frame;
     static time_unit last_request_time = 0;
     HRESULT hr = S_OK;
     if(sample->frame)
     {
+        /*goto out;*/
+        CComPtr<ID3D11Texture2D> texture;
+        CComPtr<IDXGISurface> surface;
+        CComPtr<IDXGIKeyedMutex> mutex;
+        CComPtr<IMFMediaBuffer> buffer;
+        CComPtr<IMFSample> sample2;
+        CComPtr<IMF2DBuffer> buffer2d;
+
+        hr = this->sink->d3d11dev->OpenSharedResource(
+            sample->frame, __uuidof(ID3D11Texture2D), (void**)&texture);
+        hr = texture->QueryInterface(&surface);
+        hr = surface->QueryInterface(&mutex);
+        hr = mutex->AcquireSync(1, INFINITE);
+
+        hr = MFCreateDXGISurfaceBuffer(
+            IID_ID3D11Texture2D, texture, 0, FALSE, &buffer);
+        // the length must be set for the buffer so that sink writer doesn't fail
+        // (documentation was lacking for this case)
+        hr = buffer->QueryInterface(&buffer2d);
+        DWORD len;
+        hr = buffer2d->GetContiguousLength(&len);
+        hr = buffer->SetCurrentLength(len);
+        hr = MFCreateVideoSampleFromSurface(NULL, &sample2);
+        hr = sample2->AddBuffer(buffer);
+        const LONGLONG timestamp = sample->timestamp;
+        static LONGLONG timestamp_ = 0;
+        hr = sample2->SetSampleTime(rp.request_time);
+        timestamp_ += FPS60_INTERVAL;
+        /*hr = sample2->SetSampleDuration(FPS60_INTERVAL);*/
+        hr = this->sink->sink_writer->WriteSample(this->sink->stream_index, sample2);
+
+        /*mutex->ReleaseSync(1);*/
+        if(FAILED(hr))
+            throw std::exception();
+
         // TODO: decide if the mutex is necessary here
         std::lock_guard<std::mutex> lock(this->render_mutex);
         this->sink->drawn = true;
-        CComPtr<IDXGISurface> surface;
-        hr = this->sink->d3d11dev->OpenSharedResource(
-            sample->frame, __uuidof(IDXGISurface), (void**)&surface);
+        //CComPtr<IDXGISurface> surface;
+        //hr = this->sink->d3d11dev->OpenSharedResource(
+        //    sample->frame, __uuidof(IDXGISurface), (void**)&surface);
         CComPtr<ID2D1Bitmap1> frame;
-        CComPtr<IDXGIKeyedMutex> frame_mutex;
-        hr = surface->QueryInterface(&frame_mutex);
-        frame_mutex->AcquireSync(1, INFINITE);
+        //CComPtr<IDXGIKeyedMutex> frame_mutex;
+        //hr = surface->QueryInterface(&frame_mutex);
+        //frame_mutex->AcquireSync(1, INFINITE);
         hr = this->sink->d2d1devctx->CreateBitmapFromDxgiSurface(
             surface,
             D2D1::BitmapProperties1(
@@ -323,17 +446,17 @@ media_stream::result_t stream_preview::process_sample(
             D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
             &frame);
 
-        // 10000000
+        //// 10000000
 
         this->sink->d2d1devctx->BeginDraw();
         this->sink->d2d1devctx->DrawBitmap(frame);
         hr = this->sink->d2d1devctx->EndDraw();
-        frame_mutex->ReleaseSync(1);
+        mutex->ReleaseSync(1);
 
         /*this->sink->drawn = false;*/
     }
     else
-        this->sink->drawn = false;
+        out: this->sink->drawn = false;
     
     if(last_request_time > rp.request_time)
     {
@@ -367,7 +490,7 @@ media_stream::result_t stream_preview::process_sample(
 
     this->requests_pending--;
 
-    /*std::cout << "frame time: " << request_time << std::endl;*/
+    /*std::cout << "frame time: " << rp.request_time << std::endl;*/
 
     /*if(this->sink->displaycapture->new_available)
     {
