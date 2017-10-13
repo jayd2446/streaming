@@ -11,11 +11,6 @@
 // 100 nanosecond = 1 time_unit
 typedef int64_t time_unit;
 
-// TODO: media sample must be refactored for a better access to the texture
-// (this can be accomplished by making a subclass that implements video memory access)
-
-// TODO: media sample view which is used to lock and unlock the sample
-
 class media_sample
 {
 public:
@@ -29,15 +24,14 @@ public:
     media_sample();
     virtual ~media_sample() {}
 
+    time_unit timestamp;
+
     // tries to lock the sample without blocking
     bool try_lock_sample();
     // waits for the sample to become available and sets it to unavailable
     void lock_sample();
     // makes the sample available
     void unlock_sample();
-
-    time_unit timestamp;
-    HANDLE frame;
 };
 
 typedef std::shared_ptr<media_sample> media_sample_t;
@@ -50,13 +44,26 @@ public:
 
 typedef std::shared_ptr<media_sample_memorybuffer> media_sample_memorybuffer_t;
 
-// implements raii-based reference counted locking for the sample
+class media_sample_texture : public media_sample
+{
+public:
+    media_sample_texture();
+
+    CComPtr<ID3D11Texture2D> texture;
+    CComPtr<IDXGIResource> resource;
+    CComPtr<IDXGIKeyedMutex> mutex;
+    HANDLE shared_handle;
+};
+
+typedef std::shared_ptr<media_sample_texture> media_sample_texture_t;
+
+// implements raii-based locking for the sample
 class media_sample_view
 {
 private:
     media_sample_t sample;
 public:
-    media_sample_view(const media_sample_t& sample);
+    media_sample_view(const media_sample_t& sample, bool already_locked = false);
     ~media_sample_view();
 
     // TODO: sample view can have an enum that identifies the
@@ -67,4 +74,4 @@ public:
     std::shared_ptr<T> get_sample() const {return std::dynamic_pointer_cast<T>(this->sample);}
 };
 
-typedef std::shared_ptr<media_sample_view> media_sample_view_t;
+typedef std::shared_ptr<const media_sample_view> media_sample_view_t;

@@ -22,6 +22,8 @@
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "Mfreadwrite.lib")
 
+#define QUEUE_MAX_SIZE 3
+
 class stream_preview;
 class source_displaycapture;
 class source_displaycapture2;
@@ -42,6 +44,12 @@ TODO: sample requests should have timestamps attached to them
 class sink_preview : public media_sink
 {
     friend class stream_preview;
+public:
+    struct request_t 
+    {
+        time_unit request_time, timestamp; 
+        int packet_number;
+    };
 private:
     CComPtr<ID2D1Factory1> d2d1factory;
     CComPtr<ID2D1HwndRenderTarget> rendertarget;
@@ -53,6 +61,9 @@ private:
     CComPtr<IDXGIOutput> dxgioutput;
     CComPtr<ID2D1Bitmap1> d2dtarget_bitmap;
     bool drawn;
+
+    std::queue<request_t> requests;
+    std::atomic_int32_t requests_pending, packet_number;
 
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
@@ -77,6 +88,11 @@ public:
     explicit sink_preview(const media_session_t& session);
     ~sink_preview();
 
+    struct pending_streams_t {int packet_number; bool available;};
+
+    media_stream_t concurrent_streams[QUEUE_MAX_SIZE];
+    pending_streams_t pending_streams[QUEUE_MAX_SIZE];
+
     media_stream_t create_stream(presentation_clock_t&);
 
     // (presentation clock can be accessed from media session)
@@ -100,12 +116,9 @@ class stream_preview : public media_stream, public presentation_clock_sink
 {
 public:
     typedef async_callback<stream_preview> async_callback_t;
-    struct request_t {time_unit request_time, timestamp; int packet_number;};
 private:
     sink_preview_t sink;
     bool running;
-    std::queue<request_t> requests;
-    std::atomic_int32_t requests_pending, packet_number;
     
     std::recursive_mutex mutex;
     std::mutex render_mutex;
@@ -127,7 +140,7 @@ public:
     // called by sink_preview
     result_t request_sample(request_packet&);
     // called by media session
-    result_t process_sample(const media_sample_t&, request_packet&);
+    result_t process_sample(const media_sample_view_t&, request_packet&);
 };
 
 typedef std::shared_ptr<stream_preview> stream_preview_t;

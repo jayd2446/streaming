@@ -1,6 +1,6 @@
 #include "media_sample.h"
 
-media_sample::media_sample() : available(true), frame(NULL)
+media_sample::media_sample() : available(true)
 {
 }
 
@@ -32,10 +32,15 @@ void media_sample::unlock_sample()
     this->cv.notify_all();
 }
 
-media_sample_view::media_sample_view(const media_sample_t& sample) :
+media_sample_texture::media_sample_texture() : shared_handle(NULL)
+{
+}
+
+media_sample_view::media_sample_view(const media_sample_t& sample, bool already_locked) :
     sample(sample)
 {
-    this->sample->lock_sample();
+    if(!already_locked)
+        this->sample->lock_sample();
 }
 
 media_sample_view::~media_sample_view()

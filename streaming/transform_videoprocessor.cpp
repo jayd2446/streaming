@@ -9,19 +9,16 @@
 #endif
 
 transform_videoprocessor::transform_videoprocessor(const media_session_t& session) :
-    media_source(session), view_initialized(false),
-    output_texture_handle(NULL)
+    media_source(session)
 {
 }
 
-HRESULT transform_videoprocessor::initialize(
-    const CComPtr<ID3D11Device>& d3d11dev, ID3D11DeviceContext* devctx)
+HRESULT transform_videoprocessor::initialize(const CComPtr<ID3D11Device>& d3d11dev)
 {
     HRESULT hr = S_OK;
 
     this->d3d11dev = d3d11dev;
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->videodevice));
-    CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
     
     // check the supported capabilities of the video processor
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc;
@@ -61,10 +58,10 @@ done:
     return hr;
 }
 
-media_stream_t transform_videoprocessor::create_stream()
+media_stream_t transform_videoprocessor::create_stream(ID3D11DeviceContext* devctx)
 {
     return media_stream_t(
-        new stream_videoprocessor(this->shared_from_this<transform_videoprocessor>()));
+        new stream_videoprocessor(devctx, this->shared_from_this<transform_videoprocessor>()));
 }
 
 
@@ -73,48 +70,46 @@ media_stream_t transform_videoprocessor::create_stream()
 /////////////////////////////////////////////////////////////////
 
 
-stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& transform) :
+stream_videoprocessor::stream_videoprocessor(
+    ID3D11DeviceContext* devctx,
+    const transform_videoprocessor_t& transform) :
     transform(transform),
-    output_sample(new media_sample)
+    output_sample(new media_sample_texture),
+    view_initialized(false)
 {
     this->processing_callback.Attach(new async_callback_t(&stream_videoprocessor::processing_cb));
+
+    HRESULT hr = S_OK;
+    CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
 }
 
 void stream_videoprocessor::processing_cb(void*)
 {
+    // TODO: any kind of parameter changing should only happen by reinitializing
+    // the streams;
+    // actually, some parameters can be changed by setting the packet number point
+    // where new parameters will apply
+
     HRESULT hr = S_OK;
     {
-        // lock the processor so that only one processing task is performed at a time
-        scoped_lock lock(this->transform->videoprocessor_mutex);
-
-        this->transform->requests_mutex.lock();
-        transform_videoprocessor::packet p = this->transform->requests_2.front();
-        this->transform->requests_2.pop();
-        auto it = this->transform->requests.find(p.rp.request_time);
-        transform_videoprocessor::packet p2 = it->second;
-        this->transform->requests.erase(it);
-        this->transform->requests_mutex.unlock();
-
         // lock the output sample
-        // TODO: the locking of the output sample acts as a global videoprocessor lock
-        this->output_sample->lock_sample();
+        media_sample_view_t sample_view(new media_sample_view(this->output_sample));
 
-        HANDLE frame = p2.sample->frame;
-        HANDLE frame2 = p.sample->frame;
+        CComPtr<ID3D11Texture2D> texture = 
+            this->pending_request2.sample_view->get_sample<media_sample_texture>()->texture;
+        CComPtr<ID3D11Texture2D> texture2 =
+            this->pending_request.sample_view->get_sample<media_sample_texture>()->texture;
 
-        assert(frame != frame2 || !frame || !frame2);
-        if(frame && frame2)
+        if(texture && texture2)
         {
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view[2];
-            CComPtr<ID3D11Texture2D> texture, texture2;
             CComPtr<IDXGIKeyedMutex> mutex, mutex2, mutex3;
             CComPtr<IDXGISurface> surface, surface2, surface3;
-
-            CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-                frame, __uuidof(ID3D11Texture2D), (void**)&texture));
-            CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-                frame2, __uuidof(ID3D11Texture2D), (void**)&texture2));
 
             D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
             desc.FourCC = 0; // uses the same format the input resource has
@@ -150,32 +145,32 @@ void stream_videoprocessor::processing_cb(void*)
 
             // set the target rectangle for the output
             // (sets the rectangle where the output blit on the output texture will appear)
-            this->transform->videocontext->VideoProcessorSetOutputTargetRect(
+            this->videocontext->VideoProcessorSetOutputTargetRect(
                 this->transform->videoprocessor, TRUE, &source_rect);
 
             // set the source rectangle of the streams
             // (the part of the stream texture which will be included in the blit)
-            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+            this->videocontext->VideoProcessorSetStreamSourceRect(
                 this->transform->videoprocessor, 0, TRUE, &source_rect);
-            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+            this->videocontext->VideoProcessorSetStreamSourceRect(
                 this->transform->videoprocessor, 1, TRUE, &source_rect);
 
             // set the destination rectangle of the streams
             // (where the stream will appear in the output blit)
-            this->transform->videocontext->VideoProcessorSetStreamDestRect(
+            this->videocontext->VideoProcessorSetStreamDestRect(
                 this->transform->videoprocessor, 0, TRUE, &source_rect);
             RECT rect;
             rect.top = rect.left = 0;
             rect.right = 1920 / 3;
             rect.bottom = 1080 / 3;
-            this->transform->videocontext->VideoProcessorSetStreamDestRect(
+            this->videocontext->VideoProcessorSetStreamDestRect(
                 this->transform->videoprocessor, 1, TRUE, &rect);
 
             // because the input texture uses shared keyed mutex the texture must be locked
             // before operating it
             CHECK_HR(hr = texture->QueryInterface(&surface));
             CHECK_HR(hr = texture2->QueryInterface(&surface2));
-            CHECK_HR(hr = this->transform->output_texture->QueryInterface(&surface3));
+            CHECK_HR(hr = this->output_sample->texture->QueryInterface(&surface3));
             CHECK_HR(hr = surface->QueryInterface(&mutex));
             CHECK_HR(hr = surface2->QueryInterface(&mutex2));
             CHECK_HR(hr = surface3->QueryInterface(&mutex3));
@@ -187,8 +182,8 @@ void stream_videoprocessor::processing_cb(void*)
             // https://msdn.microsoft.com/en-us/library/windows/desktop/cc307964(v=vs.85).aspx#Video_Process_Blit
             // the video processor alpha blends the input streams to the target output
             const UINT stream_count = 2;
-            CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
-                this->transform->videoprocessor, this->transform->output_view,
+            CHECK_HR(hr = this->videocontext->VideoProcessorBlt(
+                this->transform->videoprocessor, this->output_view,
                 0, stream_count, stream));
 
             CHECK_HR(hr = mutex3->ReleaseSync(1));
@@ -196,16 +191,22 @@ void stream_videoprocessor::processing_cb(void*)
             CHECK_HR(hr = mutex->ReleaseSync(1));
         }
 
-        this->output_sample->frame = this->transform->output_texture_handle;
         // use the earliest timestamp
         this->output_sample->timestamp = 
-            std::min(p2.sample->timestamp, p.sample->timestamp);
+            std::min(
+            this->pending_request2.sample_view->get_sample()->timestamp, 
+            this->pending_request.sample_view->get_sample()->timestamp);
 
-        // unlock the input samples
-        p2.sample->unlock_sample();
-        p.sample->unlock_sample();
+        request_packet rp = this->pending_request.rp;
 
-        this->transform->session->give_sample(this, this->output_sample, p.rp, false);
+        // reset the sample view from the pending packet so it is unlocked
+        this->pending_request.sample_view = NULL;
+        this->pending_request2.sample_view = NULL;
+        // reset the rps so that there aren't any circular dependencies at shutdown
+        this->pending_request.rp = request_packet();
+        this->pending_request2.rp = request_packet();
+
+        this->transform->session->give_sample(this, sample_view, rp, false);
     }
 
     return;
@@ -216,83 +217,69 @@ done:
 
 media_stream::result_t stream_videoprocessor::request_sample(request_packet& rp)
 {
-    if(!this->transform->session->request_sample(this, rp, false))
+    if(!this->transform->session->request_sample(this, rp, true))
         return FATAL_ERROR;
     return OK;
 }
 
 media_stream::result_t stream_videoprocessor::process_sample(
-    const media_sample_t& sample, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp)
 {
     // TODO: resources shouldn't be initialized here because of the multithreaded
     // nature they might be initialized more than once
+    // (isn't the case anymore)
+
+    CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
 
     // create the output view if it hasn't been created
-    if(!this->transform->view_initialized && sample->frame)
+    if(!this->view_initialized && texture)
     {
-        this->transform->view_initialized = true;
-
+        this->view_initialized = true;
         HRESULT hr = S_OK;
-        CComPtr<ID3D11Texture2D> texture;
-        CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-            sample->frame, __uuidof(ID3D11Texture2D), (void**)&texture));
 
-        {
-            scoped_lock lock(this->transform->videoprocessor_mutex);
-            CComPtr<IDXGIResource> idxgiresource;
-            CComPtr<IDXGIKeyedMutex> mutex;
-            // create output texture with same format as the sample
-            D3D11_TEXTURE2D_DESC desc;
-            texture->GetDesc(&desc);
-            desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-            /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
-            desc.Usage = D3D11_USAGE_DEFAULT;
-            desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-            CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-                &desc, NULL, &this->transform->output_texture));
-            CHECK_HR(hr = this->transform->output_texture->QueryInterface(&idxgiresource));
-            CHECK_HR(hr = idxgiresource->GetSharedHandle(&this->transform->output_texture_handle));
-            CHECK_HR(hr = this->transform->output_texture->QueryInterface(&mutex));
-            CHECK_HR(hr = mutex->AcquireSync(0, INFINITE));
-            CHECK_HR(hr = mutex->ReleaseSync(1));
+        CComPtr<IDXGIKeyedMutex> mutex;
+        // create output texture with same format as the sample
+        D3D11_TEXTURE2D_DESC desc;
+        texture->GetDesc(&desc);
+        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+        /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
+            &desc, NULL, &this->output_sample->texture));
+        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->resource));
+        CHECK_HR(hr = this->output_sample->resource->GetSharedHandle(&this->output_sample->shared_handle));
+        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->mutex));
+        CHECK_HR(hr = this->output_sample->mutex->AcquireSync(0, INFINITE));
+        CHECK_HR(hr = this->output_sample->mutex->ReleaseSync(1));
 
-            // create output view
-            D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
-            view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-            view_desc.Texture2D.MipSlice = 0;
-            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-                this->transform->output_texture, this->transform->enumerator,
-                &view_desc, &this->transform->output_view));
-        }
+        // create output view
+        D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
+        view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+        view_desc.Texture2D.MipSlice = 0;
+        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
+            this->output_sample->texture, this->transform->enumerator,
+            &view_desc, &this->output_view));
     }
 
+    // TODO: this can be multithreaded,
+    // because media session will dispatch via work queues
+    if(!this->pending_request.sample_view)
     {
-        scoped_lock lock(this->transform->requests_mutex);
+        this->pending_request.rp = rp;
+        this->pending_request.sample_view = sample_view;
+    }
+    else
+    {
+        this->pending_request2.rp = rp;
+        this->pending_request2.sample_view = sample_view;
 
-        auto it = this->transform->requests.find(rp.request_time);
-        if(it != this->transform->requests.end())
-        {
-            transform_videoprocessor::packet p = {rp, sample};
-            this->transform->requests_2.push(p);
-
-            const HRESULT hr = this->processing_callback->mf_put_work_item(
-                this->shared_from_this<stream_videoprocessor>(),
-                MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-            if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-                throw std::exception();
-            else if(hr == MF_E_SHUTDOWN)
-                return FATAL_ERROR;
-        }
-        else
-        {
-            this->transform->requests[rp.request_time].rp = rp;
-            this->transform->requests[rp.request_time].sample = sample;
-        }
+        this->processing_cb(NULL);
     }
 
     return OK;
 done:
-    this->transform->view_initialized = false;
+    this->view_initialized = false;
     throw std::exception();
     return FATAL_ERROR;
 }

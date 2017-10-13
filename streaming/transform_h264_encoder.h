@@ -23,7 +23,7 @@ class transform_h264_encoder : public media_source
 {
     friend class stream_h264_encoder;
 public:
-    struct packet {request_packet rp; media_sample_t sample;};
+    struct packet {request_packet rp; media_sample_view_t sample_view;};
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     // sorted by packet number
     typedef std::map<int, packet> sorted_map_t;
@@ -83,5 +83,5 @@ public:
     // called by the downstream from media session
     result_t request_sample(request_packet&);
     // called by the upstream from media session
-    result_t process_sample(const media_sample_view&, request_packet&);
+    result_t process_sample(const media_sample_view_t&, request_packet&);
 };

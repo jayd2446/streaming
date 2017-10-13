@@ -86,7 +86,7 @@ public:
     // sample cannot be NULL
     bool give_sample(
         const media_stream* this_output_stream, 
-        const media_sample_view& sample_view,
+        const media_sample_view_t& sample_view,
         request_packet&,
         bool is_source);
 

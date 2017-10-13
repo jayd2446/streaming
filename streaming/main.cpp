@@ -10,8 +10,8 @@
 #include "media_session.h"
 #include "media_topology.h"
 #include "transform_videoprocessor.h"
-#include "transform_h264_encoder.h"
-#include "transform_color_converter.h"
+//#include "transform_h264_encoder.h"
+//#include "transform_color_converter.h"
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "D3D11.lib")
@@ -21,9 +21,73 @@ LARGE_INTEGER pc_frequency;
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 800
 #define OUTPUT_MONITOR 0
+#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND create_window();
+
+void create_streams(
+    ID3D11DeviceContext* devctx,
+    const media_topology_t& topology,
+    const sink_preview_t& preview_sink,
+    const source_displaycapture4_t& displaycapture_source2,
+    const source_displaycapture4_t& displaycapture_source,
+    const transform_videoprocessor_t& videoprocessor_transform)
+{
+    HRESULT hr = S_OK;
+
+    // (each thread gets approximately 20ms time slice)
+    // TODO: decide if use work queues for streams in a same node
+    // TODO: sinks should also have streams for each core
+    media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
+
+    for(int i = 0; i < QUEUE_MAX_SIZE; i++)
+    {
+        media_stream_t transform_stream = videoprocessor_transform->create_stream(devctx);
+        media_stream_t source_stream = displaycapture_source->create_stream();
+        media_stream_t source_stream2 = displaycapture_source2->create_stream();
+        preview_sink->concurrent_streams[i] = transform_stream;
+        preview_sink->pending_streams[i].available = true;
+
+        topology->connect_streams(source_stream, preview_sink->concurrent_streams[i]);
+        topology->connect_streams(source_stream2, preview_sink->concurrent_streams[i]);
+        topology->connect_streams(preview_sink->concurrent_streams[i], sink_stream);
+    }
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
+
+    /*media_stream_t color_converter_stream = color_converter_transform->create_stream();*/
+    /*media_stream_t h264_encoder_stream = h264_encoder_transform->create_stream();*/
+    /*bool b = true;
+    b &= topology->connect_streams(source_stream, transform_stream);
+    b &= topology->connect_streams(source_stream2, transform_stream);
+    b &= topology->connect_streams(transform_stream, sink_stream);*/
+    /*b &= topology->connect_streams(color_converter_stream, sink_stream);*/
+    /*b &= topology->connect_streams(h264_encoder_stream, sink_stream);*/
+    /*b &= topology->connect_streams(source_stream, sink_stream);*/
+}
+
+/*
+
+streams are single threaded; components are multithreaded
+streams take d3d context as constructor parameter
+
+one topology is enough for the multithreading
+
+direct3d context should be restricted to topology level;
+d3d11 device is multithread safe
+
+decide if concurrency is implemented in topology granularity instead;
+work queues further reduce the granularity to subprocedure level
+
+this would need a clock that is shared between topologies;
+(that means an implementation of time source object)
+
+also some components should also be shared between topologies
+
+*/
 
 int main()
 {
@@ -66,18 +130,18 @@ int main()
         //hr = h264_encoder_transform->initialize(d3d11dev);
 
         // create and initialize the color converter transform
-        transform_color_converter_t color_converter_transform(new transform_color_converter(session));
-        hr = color_converter_transform->initialize(d3d11dev, d3d11devctx);
+        /*transform_color_converter_t color_converter_transform(new transform_color_converter(session));
+        hr = color_converter_transform->initialize(d3d11dev);*/
 
         // create and initialize the video processor transform
         transform_videoprocessor_t videoprocessor_transform(new transform_videoprocessor(session));
-        hr = videoprocessor_transform->initialize(d3d11dev, d3d11devctx);
+        hr = videoprocessor_transform->initialize(d3d11dev);
 
         // create and initialize the display capture source
         source_displaycapture4_t displaycapture_source(new source_displaycapture4(session));
         source_displaycapture4_t displaycapture_source2(new source_displaycapture4(session));
-        hr = displaycapture_source->initialize(0);
-        hr |= displaycapture_source2->initialize(1);
+        hr = displaycapture_source->initialize(0, d3d11dev);
+        hr |= displaycapture_source2->initialize(1, d3d11dev);
         if(FAILED(hr))
         {
             std::cerr << "could not initialize display capture source" << std::endl;
@@ -92,19 +156,13 @@ int main()
             hwnd, d3d11dev, d3d11devctx, swapchain);
 
         // initialize the topology
-        media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
-        media_stream_t source_stream = displaycapture_source->create_stream();
-        media_stream_t source_stream2 = displaycapture_source2->create_stream();
-        media_stream_t transform_stream = videoprocessor_transform->create_stream();
-        /*media_stream_t color_converter_stream = color_converter_transform->create_stream();*/
-        /*media_stream_t h264_encoder_stream = h264_encoder_transform->create_stream();*/
-        bool b = true;
-        b &= topology->connect_streams(source_stream, transform_stream);
-        b &= topology->connect_streams(source_stream2, transform_stream);
-        b &= topology->connect_streams(transform_stream, sink_stream);
-        /*b &= topology->connect_streams(color_converter_stream, sink_stream);*/
-        /*b &= topology->connect_streams(h264_encoder_stream, sink_stream);*/
-        /*b &= topology->connect_streams(source_stream, sink_stream);*/
+        create_streams(
+            d3d11devctx,
+            topology,
+            preview_sink,
+            displaycapture_source,
+            displaycapture_source2,
+            videoprocessor_transform);
 
         // add the topology to the media session
         session->switch_topology(topology);
@@ -118,6 +176,33 @@ int main()
         {
             if(msg.message == WM_KEYDOWN)
             {
+                outputmonitor_index = (outputmonitor_index + 1) % 2;
+
+                if(outputmonitor_index)
+                {
+                    topology.reset(new media_topology);
+                    create_streams(
+                        d3d11devctx,
+                        topology,
+                        preview_sink,
+                        displaycapture_source2,
+                        displaycapture_source,
+                        videoprocessor_transform);
+                }
+                else
+                {
+                    topology.reset(new media_topology);
+                    create_streams(
+                        d3d11devctx,
+                        topology,
+                        preview_sink,
+                        displaycapture_source,
+                        displaycapture_source2,
+                        videoprocessor_transform);
+                }
+
+                session->switch_topology(topology);
+
                 /*for(int i = 0; i < 25001; i++)*/
                 //{
                 //    outputmonitor_index = (outputmonitor_index + 1) % 2;
@@ -158,6 +243,10 @@ int main()
 
         session->stop_playback();
 
+        // clear the references in sink
+        for(int i = 0; i < QUEUE_MAX_SIZE; i++)
+            preview_sink->concurrent_streams[i] = NULL;
+
         // shutdown the media session
         session->shutdown();
     }
@@ -168,6 +257,8 @@ int main()
     c = 0;
     topology = NULL;*/
 
+    // main should wait for all threads to terminate before terminating itself;
+    // this sleep fakes that functionality
     Sleep(1000);
     hr = MFShutdown();
 

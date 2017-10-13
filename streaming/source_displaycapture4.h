@@ -71,13 +71,13 @@ private:
 
     CComPtr<IDXGIOutputDuplication> output_duplication;
     CComPtr<ID3D11Device> d3d11dev;
+    CComPtr<ID3D11Device> d3d11dev2;
     CComPtr<ID3D11DeviceContext> d3d11devctx;
 
     // sample history
     int current_frame;
-    CComPtr<ID3D11Texture2D> screen_frame[SAMPLE_DEPTH];
-    media_sample_t samples[SAMPLE_DEPTH];
-    media_sample_t null_sample;
+    media_sample_texture_t samples[SAMPLE_DEPTH];
+    media_sample_texture_t null_sample;
     std::recursive_mutex mutex;
 
     void capture_frame(LARGE_INTEGER start_time);
@@ -90,7 +90,7 @@ public:
 
     media_stream_t create_stream();
     // after initializing starts the capturing
-    HRESULT initialize(UINT output_index);
+    HRESULT initialize(UINT output_index, const CComPtr<ID3D11Device>&);
 
     // returns a valid clock
     presentation_clock_t get_device_clock();
@@ -99,8 +99,6 @@ public:
 // TODO: use weak pointer for source
 class stream_displaycapture4 : public media_stream
 {
-public:
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_displaycapture4_t source;
 public:
@@ -111,5 +109,5 @@ public:
     // called by media session
     result_t request_sample(request_packet&);
     // called by source_displaycapture
-    result_t process_sample(const media_sample_t&, request_packet&);
+    result_t process_sample(const media_sample_view_t&, request_packet&);
 };

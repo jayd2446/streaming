@@ -14,14 +14,18 @@
 #pragma comment(lib, "Avrt.lib")
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
-#define QUEUE_MAX_SIZE 3
 #define LAG_BEHIND 1000000/*(FPS60_INTERVAL * 6)*/
 extern LARGE_INTEGER pc_frequency;
 
 
 sink_preview::sink_preview(const media_session_t& session) : 
-    media_sink(session), drawn(false)
+    media_sink(session), drawn(false), requests_pending(0)
 {
+    for(int i = 0; i < QUEUE_MAX_SIZE; i++)
+    {
+        this->pending_streams[i].packet_number = -1;
+        this->pending_streams[i].available = true;
+    }
 }
 
 sink_preview::~sink_preview()
@@ -212,8 +216,7 @@ media_stream_t sink_preview::create_stream(presentation_clock_t& clock)
 
 
 stream_preview::stream_preview(const sink_preview_t& sink) : 
-    sink(sink), running(false), 
-    requests_pending(0)
+    sink(sink), running(false)
 {
     this->callback.Attach(new async_callback_t(&stream_preview::request_cb));
 }
@@ -227,7 +230,7 @@ bool stream_preview::on_clock_start(time_unit t, int packet_number)
 {
     std::cout << "playback started" << std::endl;
     this->running = true;
-    this->packet_number = packet_number;
+    this->sink->packet_number = packet_number;
     this->scheduled_callback(t);
     return true;
 }
@@ -289,6 +292,9 @@ void stream_preview::schedule_new(time_unit due_time)
 
         /*std::cout << numbers << ". ";*/
 
+        // TODO: by setting the fps lag in the middle of cache,
+        // new frame can be requested even if the scheduled time is late
+
         /*last_scheduled_time = scheduled_time;*/
         if(!this->schedule_new_callback(scheduled_time))
         {
@@ -326,26 +332,26 @@ void stream_preview::schedule_new(time_unit due_time)
 void stream_preview::push_request(time_unit t)
 {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
-    request_t request;
+    sink_preview::request_t request;
     request.request_time = t - LAG_BEHIND;
     request.timestamp = t;
-    request.packet_number = this->packet_number++;
-    this->requests.push(request);
+    request.packet_number = this->sink->packet_number++;
+    this->sink->requests.push(request);
 }
 
 void stream_preview::request_cb(void*)
 {
-    request_t request;
+    sink_preview::request_t request;
     request_packet rp;
     {
         std::lock_guard<std::recursive_mutex> lock(this->mutex);
-        request = this->requests.front();
-        this->requests.pop();
+        request = this->sink->requests.front();
+        this->sink->requests.pop();
     }
     
     // TODO: there's still a chance that the requests queue will over saturate
     // which implies a very massive lag
-    if(this->requests_pending >= QUEUE_MAX_SIZE)
+    if(this->sink->requests_pending >= QUEUE_MAX_SIZE)
     {
         std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_PREVIEW--" << std::endl;
         return;
@@ -354,13 +360,13 @@ void stream_preview::request_cb(void*)
     // wait for the source texture cache to saturate
     if(request.request_time >= 0)
     {
-        this->requests_pending++;
+        this->sink->requests_pending++;
         rp.request_time = request.request_time;
         rp.timestamp = request.timestamp;
         rp.packet_number = request.packet_number;
         if(this->request_sample(rp) == FATAL_ERROR)
         {
-            this->requests_pending--;
+            this->sink->requests_pending--;
             this->running = false;
         }
     }
@@ -373,14 +379,30 @@ bool stream_preview::get_clock(presentation_clock_t& clock)
 
 media_stream::result_t stream_preview::request_sample(request_packet& rp)
 {
-    if(!this->sink->session->request_sample(this, rp, true))
-        return FATAL_ERROR;
+    // dispatch the request to another equivalent topology branch
+    media_stream::result_t res = OK;
+    for(int i = 0; i < QUEUE_MAX_SIZE; i++)
+    {
+        if(this->sink->pending_streams[i].available)
+        {
+            this->sink->pending_streams[i].available = false;
+            this->sink->pending_streams[i].packet_number = rp.packet_number;
 
-    return OK;
+            res = this->sink->concurrent_streams[i]->request_sample(rp);
+            this->sink->pending_streams[i].available = true;
+            return res;
+        }
+    }
+
+    assert(false);
+    return res;
+
+    /*if(!this->sink->session->request_sample(this, rp, true))
+        return FATAL_ERROR;*/
 }
 
 media_stream::result_t stream_preview::process_sample(
-    const media_sample_t& sample, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp)
 {
     // schedule the sample
     // 5000000 = half a second
@@ -392,18 +414,18 @@ media_stream::result_t stream_preview::process_sample(
     static HANDLE last_frame;
     static time_unit last_request_time = 0;
     HRESULT hr = S_OK;
-    if(sample->frame)
+    CComPtr<ID3D11Texture2D> texture = 
+        sample_view->get_sample<media_sample_texture>()->texture;
+
+    if(texture)
     {
         /*goto out;*/
-        CComPtr<ID3D11Texture2D> texture;
         CComPtr<IDXGISurface> surface;
         CComPtr<IDXGIKeyedMutex> mutex;
         CComPtr<IMFMediaBuffer> buffer;
         CComPtr<IMFSample> sample2;
         CComPtr<IMF2DBuffer> buffer2d;
 
-        hr = this->sink->d3d11dev->OpenSharedResource(
-            sample->frame, __uuidof(ID3D11Texture2D), (void**)&texture);
         hr = texture->QueryInterface(&surface);
         hr = surface->QueryInterface(&mutex);
         hr = mutex->AcquireSync(1, INFINITE);
@@ -418,7 +440,7 @@ media_stream::result_t stream_preview::process_sample(
         hr = buffer->SetCurrentLength(len);
         hr = MFCreateVideoSampleFromSurface(NULL, &sample2);
         hr = sample2->AddBuffer(buffer);
-        const LONGLONG timestamp = sample->timestamp;
+        const LONGLONG timestamp = sample_view->get_sample()->timestamp;
         static LONGLONG timestamp_ = 0;
         hr = sample2->SetSampleTime(rp.request_time);
         timestamp_ += FPS60_INTERVAL;
@@ -463,11 +485,11 @@ media_stream::result_t stream_preview::process_sample(
         std::cout << "OUT OF ORDER FRAME" << std::endl;
     }
 
-    last_frame = sample->frame;
+    /*last_frame = sample_view->get_sample()->frame;*/
     last_request_time = rp.request_time;
 
     // unlock the frame
-    sample->unlock_sample();
+    /*sample->unlock_sample();*/
 
     // calculate fps
     // (fps under 60 means that the frames are coming out of order
@@ -488,7 +510,7 @@ media_stream::result_t stream_preview::process_sample(
     if(this->sink->drawn)
         this->sink->swapchain->Present(0, 0);
 
-    this->requests_pending--;
+    this->sink->requests_pending--;
 
     /*std::cout << "frame time: " << rp.request_time << std::endl;*/
 

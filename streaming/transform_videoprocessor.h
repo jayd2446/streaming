@@ -26,26 +26,12 @@ private:
     CComPtr<ID3D11VideoDevice> videodevice;
     CComPtr<ID3D11VideoProcessor> videoprocessor;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
-    CComPtr<ID3D11VideoContext> videocontext;
-
-    HANDLE output_texture_handle;
-    CComPtr<ID3D11Texture2D> output_texture;
-    CComPtr<ID3D11VideoProcessorOutputView> output_view;
-    bool view_initialized;
-
-    // video context isn't multithreaded so the access must be serialized
-    // TODO: this must be generalized to all d3d11 context accesses
-    std::recursive_mutex videoprocessor_mutex, requests_mutex;
-
-    struct packet {request_packet rp; media_sample_t sample;};
-    std::unordered_map<time_unit, packet> requests;
-    std::queue<packet> requests_2;
 public:
     explicit transform_videoprocessor(const media_session_t& session);
 
     // TODO: access to device context must be synchronized
-    HRESULT initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext*);
-    media_stream_t create_stream();
+    HRESULT initialize(const CComPtr<ID3D11Device>&);
+    media_stream_t create_stream(ID3D11DeviceContext*);
 };
 
 typedef std::shared_ptr<transform_videoprocessor> transform_videoprocessor_t;
@@ -55,18 +41,26 @@ class stream_videoprocessor : public media_stream
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<stream_videoprocessor> async_callback_t;
+    struct packet {request_packet rp; media_sample_view_t sample_view;};
 private:
     transform_videoprocessor_t transform;
     CComPtr<async_callback_t> processing_callback;
-    media_sample_t output_sample;
+    media_sample_texture_t output_sample;
+    CComPtr<ID3D11VideoContext> videocontext;
+    CComPtr<ID3D11VideoProcessorOutputView> output_view;
+    bool view_initialized;
+
+    packet pending_request, pending_request2;
 
     void processing_cb(void*);
 public:
-    explicit stream_videoprocessor(const transform_videoprocessor_t& transform);
+    stream_videoprocessor(
+        ID3D11DeviceContext*,
+        const transform_videoprocessor_t& transform);
 
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     // called by the downstream from media session
     result_t request_sample(request_packet&);
     // called by the upstream from media session
-    result_t process_sample(const media_sample_t&, request_packet&);
+    result_t process_sample(const media_sample_view_t&, request_packet&);
 };

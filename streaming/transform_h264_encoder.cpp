@@ -256,7 +256,7 @@ void stream_h264_encoder::processing_cb(void*)
         CComPtr<IDXGIKeyedMutex> mutex;
 
         CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-            packet.sample->frame, __uuidof(ID3D11Texture2D), (void**)&texture));
+            packet.sample_view->get_sample()->frame, __uuidof(ID3D11Texture2D), (void**)&texture));
 
         // lock the texture
         // (cant lock because the unlocking can happen in another thread)
@@ -324,6 +324,7 @@ void stream_h264_encoder::process_output_cb(void*)
     /*std::cout << "processing output..." << std::endl;*/
 
     media_sample_memorybuffer_t sample(new media_sample_memorybuffer);
+    media_sample_view_t sample_view(new media_sample_view(sample));
     transform_h264_encoder::packet packet;
 
     const DWORD mft_provides_samples = 
@@ -361,13 +362,9 @@ void stream_h264_encoder::process_output_cb(void*)
 
 
     sample->buffer = buffer;
-    sample->timestamp = packet.sample->timestamp;
-    // lock the output sample
-    sample->lock_sample();
-    // unlock the input sample
-    packet.sample->unlock_sample();
+    sample->timestamp = packet.sample_view->get_sample()->timestamp;
 
-    this->transform->session->give_sample(this, sample, packet.rp, false);
+    this->transform->session->give_sample(this, sample_view, packet.rp, false);
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -390,9 +387,9 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp)
 extern bool bb;
 
 media_stream::result_t stream_h264_encoder::process_sample(
-    const media_sample_view& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp)
 {
-    if(!sample_view.get_sample()->frame)
+    if(!sample_view->get_sample()->frame)
         if(!this->transform->session->give_sample(this, sample_view, rp, false))
             return FATAL_ERROR;
         else
@@ -403,7 +400,7 @@ media_stream::result_t stream_h264_encoder::process_sample(
     // queuing of packets causes a deadlock
     {
         scoped_lock lock(this->transform->requests_mutex);
-        transform_h264_encoder::packet p = {rp, sample};
+        transform_h264_encoder::packet p = {rp, sample_view};
         this->transform->requests[rp.packet_number] = p;
 
         /*if(this->transform->last_packet_number == (rp.packet_number - 1) || 

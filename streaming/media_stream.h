@@ -30,7 +30,7 @@ public:
     virtual result_t request_sample(request_packet&) = 0;
     // processes the new sample and optionally calls media_session::give_sample;
     // implements output stream functionality
-    virtual result_t process_sample(const media_sample_view&, request_packet&) = 0;
+    virtual result_t process_sample(const media_sample_view_t&, request_packet&) = 0;
 
     // TODO: return a list of available formats for the stream
     // (media session will use these to set valid formats for the streams between components)

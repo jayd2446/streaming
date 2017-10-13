@@ -155,11 +155,11 @@ void source_displaycapture4::thread_capture::schedule_new(time_unit due_time)
 
 
 source_displaycapture4::source_displaycapture4(const media_session_t& session) : 
-    media_source(session), current_frame(0), null_sample(new media_sample)
+    media_source(session), current_frame(0), null_sample(new media_sample_texture)
 {
     for(size_t i = 0; i < SAMPLE_DEPTH; i++)
     {
-        this->samples[i].reset(new media_sample);
+        this->samples[i].reset(new media_sample_texture);
         this->samples[i]->timestamp = 0;
     }
     this->null_sample->timestamp = 0;
@@ -177,13 +177,15 @@ media_stream_t source_displaycapture4::create_stream()
         new stream_displaycapture4(this->shared_from_this<source_displaycapture4>()));
 }
 
-HRESULT source_displaycapture4::initialize(UINT output_index)
+HRESULT source_displaycapture4::initialize(UINT output_index, const CComPtr<ID3D11Device>& d3d11dev2)
 {
     HRESULT hr;
     CComPtr<IDXGIDevice> dxgidev;
     CComPtr<IDXGIAdapter> dxgiadapter;
     CComPtr<IDXGIOutput> output;
     CComPtr<IDXGIOutput1> output1;
+
+    this->d3d11dev2 = d3d11dev2;
 
     // create d3d11 device
     CHECK_HR(hr = D3D11CreateDevice(
@@ -259,31 +261,49 @@ void source_displaycapture4::capture_frame(LARGE_INTEGER start_time)
         this->samples[this->current_frame]->timestamp = this->get_device_clock()->get_current_time();
 
     UINT64 key = 1;
-    // allocate buffer
-    if(!this->screen_frame[this->current_frame])
+    // allocate texture
+    if(!this->samples[this->current_frame]->texture)
     {
+        CComPtr<IDXGIResource> idxgiresource;
+        CComPtr<IDXGIKeyedMutex> mutex;
+        CComPtr<ID3D11Texture2D> texture;
+
         D3D11_TEXTURE2D_DESC screen_frame_desc;
         screen_frame->GetDesc(&screen_frame_desc);
         screen_frame_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
         screen_frame_desc.Usage = D3D11_USAGE_DEFAULT;
-        CHECK_HR(hr = this->d3d11dev->CreateTexture2D(
-            &screen_frame_desc, NULL, &this->screen_frame[this->current_frame]));
+        CHECK_HR(hr = this->d3d11dev2->CreateTexture2D(
+            &screen_frame_desc, NULL, &this->samples[this->current_frame]->texture));
+        texture = this->samples[this->current_frame]->texture;
 
-        CComPtr<IDXGIResource> idxgiresource;
-        CHECK_HR(hr = this->screen_frame[this->current_frame]->QueryInterface(&idxgiresource));
+        CHECK_HR(hr = texture->QueryInterface(&idxgiresource));
         HANDLE h;
         CHECK_HR(hr = idxgiresource->GetSharedHandle(&h));
-        this->samples[this->current_frame]->frame = h;
+        CHECK_HR(hr = texture->QueryInterface(&mutex));
+
+        // set the properties of the allocated sample
+        this->samples[this->current_frame]->shared_handle = h;
+        this->samples[this->current_frame]->mutex = mutex;
+        this->samples[this->current_frame]->resource = idxgiresource;
+
         key = 0;
     }
 
     // copy
-    CHECK_HR(hr = this->screen_frame[this->current_frame]->QueryInterface(&frame_mutex));
-    CHECK_HR(hr = frame_mutex->AcquireSync(key, INFINITE));
-    this->d3d11devctx->CopyResource(this->screen_frame[this->current_frame], screen_frame);
-    if(key == 0)
-        key = 1;
-    CHECK_HR(hr = frame_mutex->ReleaseSync(key));
+    {
+        CComPtr<ID3D11Texture2D> texture;
+
+        CHECK_HR(hr = this->d3d11dev->OpenSharedResource(
+            this->samples[this->current_frame]->shared_handle,
+            __uuidof(ID3D11Texture2D), (void**)&texture));
+
+        CHECK_HR(hr = texture->QueryInterface(&frame_mutex));
+        CHECK_HR(hr = frame_mutex->AcquireSync(key, INFINITE));
+        this->d3d11devctx->CopyResource(texture, screen_frame);
+        if(key == 0)
+            key = 1;
+        CHECK_HR(hr = frame_mutex->ReleaseSync(key));
+    }
 
 done:
     this->output_duplication->ReleaseFrame();
@@ -370,12 +390,13 @@ media_stream::result_t stream_displaycapture4::request_sample(request_packet& rp
     bool too_new;
     // capture frame locks the sample
     media_sample_t sample = this->source->capture_frame(device_time, too_new);
+    media_sample_view_t sample_view(new media_sample_view(sample, true));
 
-    return this->process_sample(sample, rp);
+    return this->process_sample(sample_view, rp);
 }
 
 media_stream::result_t stream_displaycapture4::process_sample(
-    const media_sample_t& sample, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp)
 {
     // add the timestamp and lock the frame
     presentation_clock_t clock;
@@ -388,6 +409,6 @@ media_stream::result_t stream_displaycapture4::process_sample(
     // (the sample is already locked when it comes here)
 
     // pass the sample to downstream
-    this->source->session->give_sample(this, sample, rp, true);
+    this->source->session->give_sample(this, sample_view, rp, true);
     return OK;
 }

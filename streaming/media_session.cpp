@@ -104,7 +104,7 @@ bool media_session::request_sample(
 
 bool media_session::give_sample(
     const media_stream* stream, 
-    const media_sample_view& sample_view, 
+    const media_sample_view_t& sample_view, 
     request_packet& rp,
     bool is_source)
 {
