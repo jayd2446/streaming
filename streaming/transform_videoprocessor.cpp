@@ -209,7 +209,6 @@ void stream_videoprocessor::processing_cb(void*)
         this->transform->session->give_sample(this, sample_view, rp, false);
     }
 
-    return;
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -217,7 +216,7 @@ done:
 
 media_stream::result_t stream_videoprocessor::request_sample(request_packet& rp)
 {
-    if(!this->transform->session->request_sample(this, rp, true))
+    if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
     return OK;
 }
@@ -237,7 +236,6 @@ media_stream::result_t stream_videoprocessor::process_sample(
         this->view_initialized = true;
         HRESULT hr = S_OK;
 
-        CComPtr<IDXGIKeyedMutex> mutex;
         // create output texture with same format as the sample
         D3D11_TEXTURE2D_DESC desc;
         texture->GetDesc(&desc);

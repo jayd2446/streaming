@@ -263,7 +263,7 @@ void stream_preview::scheduled_callback(time_unit due_time)
     this->schedule_new(due_time);
 }
 
-bool bb = true;
+//bool bb = true;
 
 void stream_preview::schedule_new(time_unit due_time)
 {
@@ -271,8 +271,8 @@ void stream_preview::schedule_new(time_unit due_time)
     this->get_clock(t);
     if(t)
     {
-        if(!bb)
-            return;
+        /*if(!bb)
+            return;*/
 
         // 60 fps
         static int counter = 0;
@@ -389,12 +389,11 @@ media_stream::result_t stream_preview::request_sample(request_packet& rp)
             this->sink->pending_streams[i].packet_number = rp.packet_number;
 
             res = this->sink->concurrent_streams[i]->request_sample(rp);
-            this->sink->pending_streams[i].available = true;
             return res;
         }
     }
 
-    assert(false);
+    /*assert(false);*/
     return res;
 
     /*if(!this->sink->session->request_sample(this, rp, true))
@@ -414,71 +413,75 @@ media_stream::result_t stream_preview::process_sample(
     static HANDLE last_frame;
     static time_unit last_request_time = 0;
     HRESULT hr = S_OK;
-    CComPtr<ID3D11Texture2D> texture = 
-        sample_view->get_sample<media_sample_texture>()->texture;
 
-    if(texture)
+    media_sample_texture_t sample = sample_view->get_sample<media_sample_texture>();
+    if(sample)
     {
-        /*goto out;*/
-        CComPtr<IDXGISurface> surface;
-        CComPtr<IDXGIKeyedMutex> mutex;
-        CComPtr<IMFMediaBuffer> buffer;
-        CComPtr<IMFSample> sample2;
-        CComPtr<IMF2DBuffer> buffer2d;
+        CComPtr<ID3D11Texture2D> texture = 
+            sample_view->get_sample<media_sample_texture>()->texture;
+        if(texture)
+        {
+            /*goto out;*/
+            CComPtr<IDXGISurface> surface;
+            CComPtr<IDXGIKeyedMutex> mutex;
+            CComPtr<IMFMediaBuffer> buffer;
+            CComPtr<IMFSample> sample2;
+            CComPtr<IMF2DBuffer> buffer2d;
 
-        hr = texture->QueryInterface(&surface);
-        hr = surface->QueryInterface(&mutex);
-        hr = mutex->AcquireSync(1, INFINITE);
+            hr = texture->QueryInterface(&surface);
+            hr = surface->QueryInterface(&mutex);
+            hr = mutex->AcquireSync(1, INFINITE);
 
-        hr = MFCreateDXGISurfaceBuffer(
-            IID_ID3D11Texture2D, texture, 0, FALSE, &buffer);
-        // the length must be set for the buffer so that sink writer doesn't fail
-        // (documentation was lacking for this case)
-        hr = buffer->QueryInterface(&buffer2d);
-        DWORD len;
-        hr = buffer2d->GetContiguousLength(&len);
-        hr = buffer->SetCurrentLength(len);
-        hr = MFCreateVideoSampleFromSurface(NULL, &sample2);
-        hr = sample2->AddBuffer(buffer);
-        const LONGLONG timestamp = sample_view->get_sample()->timestamp;
-        static LONGLONG timestamp_ = 0;
-        hr = sample2->SetSampleTime(rp.request_time);
-        timestamp_ += FPS60_INTERVAL;
-        /*hr = sample2->SetSampleDuration(FPS60_INTERVAL);*/
-        hr = this->sink->sink_writer->WriteSample(this->sink->stream_index, sample2);
+            hr = MFCreateDXGISurfaceBuffer(
+                IID_ID3D11Texture2D, texture, 0, FALSE, &buffer);
+            // the length must be set for the buffer so that sink writer doesn't fail
+            // (documentation was lacking for this case)
+            hr = buffer->QueryInterface(&buffer2d);
+            DWORD len;
+            hr = buffer2d->GetContiguousLength(&len);
+            hr = buffer->SetCurrentLength(len);
+            hr = MFCreateVideoSampleFromSurface(NULL, &sample2);
+            hr = sample2->AddBuffer(buffer);
+            const LONGLONG timestamp = sample_view->get_sample()->timestamp;
+            static LONGLONG timestamp_ = 0;
+            hr = sample2->SetSampleTime(timestamp_);
+            timestamp_ += FPS60_INTERVAL;
+            /*hr = sample2->SetSampleDuration(FPS60_INTERVAL);*/
+            /*hr = this->sink->sink_writer->WriteSample(this->sink->stream_index, sample2);*/
 
-        /*mutex->ReleaseSync(1);*/
-        if(FAILED(hr))
-            throw std::exception();
+            /*mutex->ReleaseSync(1);*/
+            if(FAILED(hr))
+                throw std::exception();
 
-        // TODO: decide if the mutex is necessary here
-        std::lock_guard<std::mutex> lock(this->render_mutex);
-        this->sink->drawn = true;
-        //CComPtr<IDXGISurface> surface;
-        //hr = this->sink->d3d11dev->OpenSharedResource(
-        //    sample->frame, __uuidof(IDXGISurface), (void**)&surface);
-        CComPtr<ID2D1Bitmap1> frame;
-        //CComPtr<IDXGIKeyedMutex> frame_mutex;
-        //hr = surface->QueryInterface(&frame_mutex);
-        //frame_mutex->AcquireSync(1, INFINITE);
-        hr = this->sink->d2d1devctx->CreateBitmapFromDxgiSurface(
-            surface,
-            D2D1::BitmapProperties1(
-            D2D1_BITMAP_OPTIONS_NONE,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
-            &frame);
+            // TODO: decide if the mutex is necessary here
+            std::lock_guard<std::mutex> lock(this->render_mutex);
+            this->sink->drawn = true;
+            //CComPtr<IDXGISurface> surface;
+            //hr = this->sink->d3d11dev->OpenSharedResource(
+            //    sample->frame, __uuidof(IDXGISurface), (void**)&surface);
+            CComPtr<ID2D1Bitmap1> frame;
+            //CComPtr<IDXGIKeyedMutex> frame_mutex;
+            //hr = surface->QueryInterface(&frame_mutex);
+            //frame_mutex->AcquireSync(1, INFINITE);
+            hr = this->sink->d2d1devctx->CreateBitmapFromDxgiSurface(
+                surface,
+                D2D1::BitmapProperties1(
+                D2D1_BITMAP_OPTIONS_NONE,
+                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
+                &frame);
 
-        //// 10000000
+            //// 10000000
 
-        this->sink->d2d1devctx->BeginDraw();
-        this->sink->d2d1devctx->DrawBitmap(frame);
-        hr = this->sink->d2d1devctx->EndDraw();
-        mutex->ReleaseSync(1);
+            this->sink->d2d1devctx->BeginDraw();
+            this->sink->d2d1devctx->DrawBitmap(frame);
+            hr = this->sink->d2d1devctx->EndDraw();
+            mutex->ReleaseSync(1);
 
-        /*this->sink->drawn = false;*/
+            /*this->sink->drawn = false;*/
+        }
+        else
+            this->sink->drawn = false;
     }
-    else
-        out: this->sink->drawn = false;
     
     if(last_request_time > rp.request_time)
     {
@@ -509,6 +512,13 @@ media_stream::result_t stream_preview::process_sample(
 
     if(this->sink->drawn)
         this->sink->swapchain->Present(0, 0);
+
+    // make the stream available
+    for(int i = 0; i < QUEUE_MAX_SIZE; i++)
+    {
+        if(this->sink->pending_streams[i].packet_number == rp.packet_number)
+            this->sink->pending_streams[i].available = true;
+    }
 
     this->sink->requests_pending--;
 

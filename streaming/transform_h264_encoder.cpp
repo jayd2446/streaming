@@ -11,9 +11,12 @@
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session) :
     media_source(session),
     last_packet_number(-1),
-    stream_started(false)
+    encoder_requests(0)
 {
+    this->processing_callback.Attach(new async_callback_t(&transform_h264_encoder::processing_cb));
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
+    this->process_output_callback.Attach(new async_callback_t(&transform_h264_encoder::process_output_cb));
+    this->process_input_callback.Attach(new async_callback_t(&transform_h264_encoder::process_input_cb));
 }
 
 HRESULT transform_h264_encoder::set_input_stream_type()
@@ -75,11 +78,143 @@ void transform_h264_encoder::events_cb(void* unk)
     // set callback for the next event
     CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
 
-    this->stream_events_callback->invoke((void*)media_event.p);
+    // process the event
+    MediaEventType type = MEUnknown;
+    HRESULT status = S_OK;
+    CHECK_HR(hr = media_event->GetType(&type));
+    CHECK_HR(hr = media_event->GetStatus(&status));
+
+    if(type == METransformNeedInput)
+    {
+        UINT32 stream_id;
+        CHECK_HR(hr = media_event->GetUINT32(MF_EVENT_MFT_INPUT_STREAM_ID, &stream_id));
+        const HRESULT hr = this->process_input_callback->mf_put_work_item(
+            this->shared_from_this<transform_h264_encoder>(),
+            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw std::exception();
+        else if(hr == MF_E_SHUTDOWN)
+            return;
+    }
+    else if(type == METransformHaveOutput)
+    {
+        const HRESULT hr = this->process_output_callback->mf_put_work_item(
+            this->shared_from_this<transform_h264_encoder>(),
+            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw std::exception();
+        else if(hr == MF_E_SHUTDOWN)
+            return;
+    }
+    else
+        assert(false);
 
 done:
     if(FAILED(hr))
         throw std::exception();
+}
+
+void transform_h264_encoder::processing_cb(void*)
+{
+    HRESULT hr = S_OK;
+    while(this->encoder_requests)
+    {
+        // encoder needs to be locked so that the samples are submitted in right order
+        scoped_lock lock(this->encoder_mutex);
+        packet p;
+        {
+            scoped_lock lock(this->samples_mutex);
+            scoped_lock lock2(this->processed_samples_mutex);
+
+            if(!this->encoder_requests || this->samples.empty())
+                return;
+
+            // pull the next sample from the queue
+            auto first_item = this->samples.begin();
+            if(this->last_packet_number != -1 && first_item->first != (this->last_packet_number + 1))
+                return;
+
+            this->encoder_requests--;
+            p = first_item->second;
+            this->samples.erase(first_item);
+
+            // push the sample to the processed samples queue
+            this->processed_samples.push(p);
+        }
+
+        // submit the sample to the encoder
+        CComPtr<IMFMediaBuffer> buffer;
+        CComPtr<IMF2DBuffer> buffer2d;
+        CComPtr<IMFSample> sample;
+        DWORD len;
+
+        // (cant lock the texture because the unlocking can happen in another thread)
+        CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
+            IID_ID3D11Texture2D,
+            p.sample_view->get_sample<media_sample_texture>()->texture, 0, FALSE, &buffer));
+        CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
+        CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
+        CHECK_HR(hr = buffer->SetCurrentLength(len));
+        CHECK_HR(hr = MFCreateVideoSampleFromSurface(NULL, &sample));
+        CHECK_HR(hr = sample->AddBuffer(buffer));
+        CHECK_HR(hr = this->encoder->ProcessInput(0, sample, 0));
+
+        // TODO: maybe set sample time aswell
+    }
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
+}
+
+void transform_h264_encoder::process_output_cb(void*)
+{
+    HRESULT hr = S_OK;
+
+    media_sample_memorybuffer_t sample(new media_sample_memorybuffer);
+    media_sample_view_t sample_view(new media_sample_view(sample));
+    packet p;
+
+    const DWORD mft_provides_samples =
+        this->output_stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
+
+    MFT_OUTPUT_DATA_BUFFER output;
+    DWORD status = 0;
+    output.dwStreamID = 0;
+    if(mft_provides_samples)
+        output.pSample = NULL;
+    else
+        throw std::exception();
+    output.dwStatus = 0;
+    output.pEvents = NULL;
+
+    CComPtr<IMFMediaBuffer> buffer;
+    CHECK_HR(hr = this->encoder->ProcessOutput(0, 1, &output, &status));
+    CHECK_HR(hr = output.pSample->ConvertToContiguousBuffer(&buffer));
+    // release the mft allocated buffer
+    output.pSample->Release();
+
+    // TODO: frame drops must be handled in encoder
+
+    {
+        scoped_lock lock(this->processed_samples_mutex);
+        p = this->processed_samples.front();
+        this->processed_samples.pop();
+    }
+
+    sample->buffer = buffer;
+    sample->timestamp = p.sample_view->get_sample()->timestamp;
+
+    this->session->give_sample(p.stream, sample_view, p.rp, false);
+done:
+    if(FAILED(hr))
+        throw std::exception();
+}
+
+void transform_h264_encoder::process_input_cb(void*)
+{
+    this->encoder_requests++;
+    this->processing_cb(NULL);
 }
 
 HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev)
@@ -161,6 +296,8 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
 
     // get the media event generator interface
     CHECK_HR(hr = this->encoder->QueryInterface(&this->event_generator));
+    // register this to the event callback function
+    this->events_callback->set_callback(this->shared_from_this<transform_h264_encoder>());
 
     /*
     amd hardware mft supports nv12 and argb32 input types
@@ -168,6 +305,10 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
     intel quicksync only supports nv12 and is not direct3d aware
     microsoft async mft supports only nv12 and is not direct3d aware
     */
+
+    // start the encoder
+    CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
+    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));
 
 done:
     // release allocated memory
@@ -186,27 +327,8 @@ done:
 
 media_stream_t transform_h264_encoder::create_stream()
 {
-    stream_h264_encoder_t temp(
+    return media_stream_t(
         new stream_h264_encoder(this->shared_from_this<transform_h264_encoder>()));
-
-    // start the streaming in the encoder if it's not yet started
-    HRESULT hr = S_OK;
-    scoped_lock lock(this->create_stream_mutex);
-
-    temp->events_callback->set_callback(temp);
-    this->stream_events_callback = temp->events_callback;
-    if(!this->stream_started)
-    {
-        this->stream_started = true;
-        this->events_callback->set_callback(this->shared_from_this<transform_h264_encoder>());
-        CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
-        CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));
-    }
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
-    return temp;
 }
 
 
@@ -216,165 +338,8 @@ done:
 
 
 stream_h264_encoder::stream_h264_encoder(const transform_h264_encoder_t& transform) :
-    transform(transform), encoder_requests(0)
+    transform(transform)
 {
-    this->processing_callback.Attach(new async_callback_t(&stream_h264_encoder::processing_cb));
-    this->events_callback.Attach(new async_callback_t(&stream_h264_encoder::events_cb));
-    this->process_output_callback.Attach(new async_callback_t(&stream_h264_encoder::process_output_cb));
-    this->process_input_callback.Attach(new async_callback_t(&stream_h264_encoder::process_input_cb));
-}
-
-void stream_h264_encoder::processing_cb(void*)
-{
-    HRESULT hr = S_OK;
-    while(this->encoder_requests)
-    {
-        scoped_lock lock(this->transform->encoder_mutex);
-        transform_h264_encoder::packet packet;
-        {
-            scoped_lock lock(this->transform->requests_mutex);
-            scoped_lock lock2(this->transform->processed_requests_mutex);
-
-            if(!this->encoder_requests || this->transform->requests.empty())
-                return;
-
-            // pull the request from the requests queue
-            this->encoder_requests--;
-            auto first_item = this->transform->requests.begin();
-            packet = first_item->second;
-            this->transform->requests.erase(first_item);
-
-            // push the request to the processed requests queue
-            this->transform->processed_requests.push(packet);
-        }
-
-        // submit input to the encoder
-        CComPtr<IMFMediaBuffer> buffer;
-        CComPtr<IMFSample> sample;
-        CComPtr<ID3D11Texture2D> texture;
-        CComPtr<IDXGISurface> surface;
-        CComPtr<IDXGIKeyedMutex> mutex;
-
-        CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-            packet.sample_view->get_sample()->frame, __uuidof(ID3D11Texture2D), (void**)&texture));
-
-        // lock the texture
-        // (cant lock because the unlocking can happen in another thread)
-        /*CHECK_HR(hr = texture->QueryInterface(&surface));
-        CHECK_HR(hr = surface->QueryInterface(&mutex));
-        CHECK_HR(hr = mutex->AcquireSync(1, INFINITE));*/
-
-        // create the sample and submit it to the encoder
-        CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
-            IID_ID3D11Texture2D,
-            texture, 0, FALSE, &buffer));
-        CHECK_HR(hr = MFCreateVideoSampleFromSurface(NULL, &sample));
-        CHECK_HR(hr = sample->AddBuffer(buffer));
-        CHECK_HR(hr = this->transform->encoder->ProcessInput(0, sample, 0));
-    }
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
-}
-
-void stream_h264_encoder::events_cb(void* unk)
-{
-    IMFMediaEvent* media_event = (IMFMediaEvent*)unk;
-    HRESULT hr = S_OK;
-
-    // process the event
-    MediaEventType type = MEUnknown;
-    HRESULT status = S_OK;
-    CHECK_HR(hr = media_event->GetType(&type));
-    CHECK_HR(hr = media_event->GetStatus(&status));
-
-    if(type == METransformNeedInput)
-    {
-        UINT32 stream_id;
-        CHECK_HR(hr = media_event->GetUINT32(MF_EVENT_MFT_INPUT_STREAM_ID, &stream_id));
-        const HRESULT hr = this->process_input_callback->mf_put_work_item(
-            this->shared_from_this<stream_h264_encoder>(),
-            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw std::exception();
-        else if(hr == MF_E_SHUTDOWN)
-            return;
-    }
-    else if(type == METransformHaveOutput)
-    {
-        const HRESULT hr = this->process_output_callback->mf_put_work_item(
-            this->shared_from_this<stream_h264_encoder>(),
-            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw std::exception();
-        else if(hr == MF_E_SHUTDOWN)
-            return;
-    }
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
-}
-
-void stream_h264_encoder::process_output_cb(void*)
-{
-    HRESULT hr = S_OK;
-
-    /*std::cout << "processing output..." << std::endl;*/
-
-    media_sample_memorybuffer_t sample(new media_sample_memorybuffer);
-    media_sample_view_t sample_view(new media_sample_view(sample));
-    transform_h264_encoder::packet packet;
-
-    const DWORD mft_provides_samples = 
-        this->transform->output_stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
-
-    MFT_OUTPUT_DATA_BUFFER output;
-    DWORD status = 0;
-    output.dwStreamID = 0;
-    if(mft_provides_samples)
-        output.pSample = NULL;
-    else
-        throw std::exception();
-    output.dwStatus = 0;
-    output.pEvents = NULL;
-
-    CComPtr<IMFMediaBuffer> buffer;
-    CHECK_HR(hr = this->transform->encoder->ProcessOutput(0, 1, &output, &status));
-    CHECK_HR(hr = output.pSample->ConvertToContiguousBuffer(&buffer));
-    // release the mft allocated buffer
-    output.pSample->Release();
-
-    // (formats for the streams are changed by creating new topologies)
-    // TODO: more robust event system
-    // TODO: initializing shouldnt happen process_sample(might cause null pointer exception)
-    // TODO: sink that writes these samples and requests new samples
-
-    // TODO: inversed packets must be solved(currently causes deadlock)
-    // TODO: frame drops must be handled in encoder
-
-    {
-        scoped_lock lock(this->transform->processed_requests_mutex);
-        packet = this->transform->processed_requests.front();
-        this->transform->processed_requests.pop();
-    }
-
-
-    sample->buffer = buffer;
-    sample->timestamp = packet.sample_view->get_sample()->timestamp;
-
-    this->transform->session->give_sample(this, sample_view, packet.rp, false);
-done:
-    if(FAILED(hr))
-        throw std::exception();
-}
-
-void stream_h264_encoder::process_input_cb(void*)
-{
-    /*std::cout << "processing input..." << std::endl;  */ 
-    this->encoder_requests++;
-    this->processing_cb(NULL);
 }
 
 media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp)
@@ -384,39 +349,24 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp)
     return OK;
 }
 
-extern bool bb;
-
 media_stream::result_t stream_h264_encoder::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp)
 {
-    if(!sample_view->get_sample()->frame)
+    if(!sample_view->get_sample<media_sample_texture>()->texture)
         if(!this->transform->session->give_sample(this, sample_view, rp, false))
             return FATAL_ERROR;
         else
             return OK;
 
-    /*bb = false;*/
-
-    // queuing of packets causes a deadlock
     {
-        scoped_lock lock(this->transform->requests_mutex);
-        transform_h264_encoder::packet p = {rp, sample_view};
-        this->transform->requests[rp.packet_number] = p;
-
-        /*if(this->transform->last_packet_number == (rp.packet_number - 1) || 
-            this->transform->last_packet_number == -1)*/
-        {
-            this->transform->last_packet_number = rp.packet_number;
-
-            const HRESULT hr = this->processing_callback->mf_put_work_item(
-                this->shared_from_this<stream_h264_encoder>(),
-                MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-            if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-                throw std::exception();
-            else if(hr == MF_E_SHUTDOWN)
-                return FATAL_ERROR;
-        }
+        scoped_lock lock(this->transform->samples_mutex);
+        transform_h264_encoder::packet p;
+        p.rp = rp;
+        p.sample_view = sample_view;
+        p.stream = this;
+        this->transform->samples[rp.packet_number] = p;
     }
 
+    this->transform->processing_cb(NULL);
     return OK;
 }

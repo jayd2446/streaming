@@ -344,13 +344,12 @@ media_sample_t source_displaycapture4::capture_frame(time_unit timestamp, bool& 
     if(diff > MAX_DIFF)
         return NULL;
 
-    // TODO: this might happen
-    /*assert(index != -1);*/
     // TODO: null sample should be implemented that don't have
     // a locking mechanism
     if(index == -1)
     {
-        this->null_sample->lock_sample();
+        // locking isn't necessary for null sample so just try to lock it
+        /*this->null_sample->try_lock_sample();*/
         return this->null_sample;
     }
     else

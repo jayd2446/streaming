@@ -39,7 +39,7 @@ public:
 
     async_callback(
         invoke_fn cb,
-        DWORD work_queue = MF_MULTITHREADED_WORKQUEUE,
+        DWORD work_queue = MFASYNC_CALLBACK_QUEUE_MULTITHREADED,
         DWORD flags = 0) : 
         parent(parent), 
         cb(cb), 

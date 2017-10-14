@@ -75,11 +75,13 @@
     <ClCompile Include="media_sample.cpp" />
     <ClCompile Include="media_session.cpp" />
     <ClCompile Include="media_topology.cpp" />
+    <ClCompile Include="sink_mpeg.cpp" />
+    <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="transform_color_converter.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="transform_h264_encoder.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="transform_videoprocessor.cpp" />
     <ClCompile Include="presentation_clock.cpp" />
@@ -97,11 +99,13 @@
     <ClInclude Include="media_stream.h" />
     <ClInclude Include="media_topology.h" />
     <ClInclude Include="enable_shared_from_this.h" />
+    <ClInclude Include="sink_mpeg.h" />
+    <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="transform_color_converter.h">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="transform_h264_encoder.h">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="transform_videoprocessor.h" />
     <ClInclude Include="presentation_clock.h" />

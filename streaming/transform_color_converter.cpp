@@ -75,8 +75,7 @@ stream_color_converter::stream_color_converter(
     ID3D11DeviceContext* devctx,
     const transform_color_converter_t& transform) :
     transform(transform),
-    output_sample(new media_sample),
-    output_texture_handle(NULL), 
+    output_sample(new media_sample_texture),
     view_initialized(false)
 {
     this->processing_callback.Attach(new async_callback_t(&stream_color_converter::processing_cb));
@@ -97,17 +96,14 @@ void stream_color_converter::processing_cb(void*)
         // lock the output sample
         media_sample_view_t sample_view(new media_sample_view(this->output_sample));
 
-        HANDLE frame = this->pending_packet.sample_view->get_sample()->frame;
-        if(frame)
+        CComPtr<ID3D11Texture2D> texture = 
+            this->pending_packet.sample_view->get_sample<media_sample_texture>()->texture;
+        if(texture)
         {
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view;
-            CComPtr<ID3D11Texture2D> texture;
             CComPtr<IDXGIKeyedMutex> mutex, mutex2;
             CComPtr<IDXGISurface> surface, surface2;
-
-            CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-                frame, __uuidof(ID3D11Texture2D), (void**)&texture));
 
             D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
             desc.FourCC = 0; // uses the same format the input resource has
@@ -154,7 +150,7 @@ void stream_color_converter::processing_cb(void*)
             // because the input texture uses shared keyed mutex the texture must be locked
             // before operating it
             CHECK_HR(hr = texture->QueryInterface(&surface));
-            CHECK_HR(hr = this->output_texture->QueryInterface(&surface2));
+            CHECK_HR(hr = this->output_sample->texture->QueryInterface(&surface2));
             CHECK_HR(hr = surface->QueryInterface(&mutex));
             CHECK_HR(hr = surface2->QueryInterface(&mutex2));
             CHECK_HR(hr = mutex->AcquireSync(1, INFINITE));
@@ -169,10 +165,9 @@ void stream_color_converter::processing_cb(void*)
             CHECK_HR(hr = mutex->ReleaseSync(1));
         }
 
-        request_packet rp = this->pending_packet.rp;
-
-        this->output_sample->frame = this->output_texture_handle;
         this->output_sample->timestamp = this->pending_packet.sample_view->get_sample()->timestamp;
+        
+        request_packet rp = this->pending_packet.rp;
 
         // reset the sample view from the pending packet so it is unlocked
         this->pending_packet.sample_view = NULL;
@@ -201,41 +196,35 @@ media_stream::result_t stream_color_converter::process_sample(
     // TODO: resources shouldn't be initialized here because of the multithreaded
     // nature they might be initialized more than once
 
-    if(!this->view_initialized && sample_view->get_sample()->frame)
+    CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
+
+    if(!this->view_initialized && texture)
     {
         this->view_initialized = true;
-
         HRESULT hr = S_OK;
-        CComPtr<ID3D11Texture2D> texture;
-        CHECK_HR(hr = this->transform->d3d11dev->OpenSharedResource(
-            sample_view->get_sample()->frame, __uuidof(ID3D11Texture2D), (void**)&texture));
 
-        {
-            CComPtr<IDXGIResource> idxgiresource;
-            CComPtr<IDXGIKeyedMutex> mutex;
-            // create output texture with nv12 color format
-            D3D11_TEXTURE2D_DESC desc;
-            texture->GetDesc(&desc);
-            desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-            /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
-            desc.Usage = D3D11_USAGE_DEFAULT;
-            desc.Format = DXGI_FORMAT_NV12;
-            CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-                &desc, NULL, &this->output_texture));
-            CHECK_HR(hr = this->output_texture->QueryInterface(&idxgiresource));
-            CHECK_HR(hr = idxgiresource->GetSharedHandle(&this->output_texture_handle));
-            CHECK_HR(hr = this->output_texture->QueryInterface(&mutex));
-            CHECK_HR(hr = mutex->AcquireSync(0, INFINITE));
-            CHECK_HR(hr = mutex->ReleaseSync(1));
+        // create output texture with nv12 color format
+        D3D11_TEXTURE2D_DESC desc;
+        texture->GetDesc(&desc);
+        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+        /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.Format = DXGI_FORMAT_NV12;
+        CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
+            &desc, NULL, &this->output_sample->texture));
+        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->resource));
+        CHECK_HR(hr = this->output_sample->resource->GetSharedHandle(&this->output_sample->shared_handle));
+        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->mutex));
+        CHECK_HR(hr = this->output_sample->mutex->AcquireSync(0, INFINITE));
+        CHECK_HR(hr = this->output_sample->mutex->ReleaseSync(1));
 
-            // create output view
-            D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
-            view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-            view_desc.Texture2D.MipSlice = 0;
-            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-                this->output_texture, this->transform->enumerator,
-                &view_desc, &this->output_view));
-        }
+        // create output view
+        D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
+        view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+        view_desc.Texture2D.MipSlice = 0;
+        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
+            this->output_sample->texture, this->transform->enumerator,
+            &view_desc, &this->output_view));
     }
 
     this->pending_packet.rp = rp;

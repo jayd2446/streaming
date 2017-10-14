@@ -10,8 +10,10 @@
 #include "media_session.h"
 #include "media_topology.h"
 #include "transform_videoprocessor.h"
-//#include "transform_h264_encoder.h"
-//#include "transform_color_converter.h"
+#include "transform_h264_encoder.h"
+#include "transform_color_converter.h"
+#include "sink_mpeg.h"
+#include "sink_preview2.h"
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "D3D11.lib")
@@ -23,50 +25,87 @@ LARGE_INTEGER pc_frequency;
 #define OUTPUT_MONITOR 0
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
+#define WORKER_STREAMS 3
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND create_window();
+
+/*
+TODO: media session should dispatch stream calls in same a node to a work queue
+TODO: mfshutdown should be called only after all other threads have terminated
+TODO: schedule_new can retroactively dispatch a request even if the calculated scheduled time
+has already been surpassed(this means that the lag behind constant is between the max and min of
+sample timestamps in the source)
+*/
 
 void create_streams(
     ID3D11DeviceContext* devctx,
     const media_topology_t& topology,
-    const sink_preview_t& preview_sink,
+    const sink_preview2_t& preview_sink2,
+    const sink_mpeg_t& mpeg_sink,
     const source_displaycapture4_t& displaycapture_source2,
     const source_displaycapture4_t& displaycapture_source,
-    const transform_videoprocessor_t& videoprocessor_transform)
+    const transform_videoprocessor_t& videoprocessor_transform,
+    const transform_color_converter_t& color_converter_transform,
+    const transform_h264_encoder_t& h264_encoder_transform)
 {
     HRESULT hr = S_OK;
+
+    stream_mpeg_host_t mpeg_stream = mpeg_sink->create_host_stream(topology->get_clock());
+
+    for(int i = 0; i < WORKER_STREAMS; i++)
+    {
+        stream_mpeg_t mpeg_worker_stream = mpeg_sink->create_worker_stream();
+        media_stream_t transform_stream = videoprocessor_transform->create_stream(devctx);
+        media_stream_t encoder_stream = h264_encoder_transform->create_stream();
+        media_stream_t color_converter_stream = color_converter_transform->create_stream(devctx);
+        media_stream_t source_stream = displaycapture_source->create_stream();
+        media_stream_t source_stream2 = displaycapture_source2->create_stream();
+        media_stream_t preview_stream = preview_sink2->create_stream();
+
+        mpeg_stream->add_worker_stream(mpeg_worker_stream);
+
+        topology->connect_streams(source_stream, transform_stream);
+        topology->connect_streams(source_stream2, transform_stream);
+        topology->connect_streams(transform_stream, color_converter_stream);
+        topology->connect_streams(transform_stream, preview_stream);
+        topology->connect_streams(color_converter_stream, encoder_stream);
+        topology->connect_streams(encoder_stream, mpeg_worker_stream);
+        topology->connect_streams(mpeg_worker_stream, mpeg_stream);
+    }
 
     // (each thread gets approximately 20ms time slice)
     // TODO: decide if use work queues for streams in a same node
     // TODO: sinks should also have streams for each core
-    media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
+    //media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
 
-    for(int i = 0; i < QUEUE_MAX_SIZE; i++)
-    {
-        media_stream_t transform_stream = videoprocessor_transform->create_stream(devctx);
-        media_stream_t source_stream = displaycapture_source->create_stream();
-        media_stream_t source_stream2 = displaycapture_source2->create_stream();
-        preview_sink->concurrent_streams[i] = transform_stream;
-        preview_sink->pending_streams[i].available = true;
+    //for(int i = 0; i < QUEUE_MAX_SIZE; i++)
+    //{
+    //    media_stream_t transform_stream = videoprocessor_transform->create_stream(devctx);
+    //    media_stream_t encoder_stream = h264_encoder_transform->create_stream();
+    //    media_stream_t color_converter_stream = color_converter_transform->create_stream(devctx);
+    //    media_stream_t source_stream = displaycapture_source->create_stream();
+    //    media_stream_t source_stream2 = displaycapture_source2->create_stream();
+    //    preview_sink->concurrent_streams[i] = encoder_stream;
+    //    preview_sink->pending_streams[i].available = true;
 
-        topology->connect_streams(source_stream, preview_sink->concurrent_streams[i]);
-        topology->connect_streams(source_stream2, preview_sink->concurrent_streams[i]);
-        topology->connect_streams(preview_sink->concurrent_streams[i], sink_stream);
-    }
+    //    topology->connect_streams(source_stream, transform_stream);
+    //    topology->connect_streams(source_stream2, transform_stream);
+    //    topology->connect_streams(transform_stream, color_converter_stream);
+    //    topology->connect_streams(color_converter_stream, encoder_stream);
+    //    topology->connect_streams(encoder_stream, sink_stream);
+
+    //    // sink preview currently acts as a encoder sink and preview sink
+    //    topology->connect_streams(transform_stream, sink_stream);
+
+    //    /*topology->connect_streams(source_stream, preview_sink->concurrent_streams[i]);
+    //    topology->connect_streams(source_stream2, preview_sink->concurrent_streams[i]);
+    //    topology->connect_streams(preview_sink->concurrent_streams[i], sink_stream);*/
+    //}
 
 done:
     if(FAILED(hr))
         throw std::exception();
-
-    /*media_stream_t color_converter_stream = color_converter_transform->create_stream();*/
-    /*media_stream_t h264_encoder_stream = h264_encoder_transform->create_stream();*/
-    /*bool b = true;
-    b &= topology->connect_streams(source_stream, transform_stream);
-    b &= topology->connect_streams(source_stream2, transform_stream);
-    b &= topology->connect_streams(transform_stream, sink_stream);*/
-    /*b &= topology->connect_streams(color_converter_stream, sink_stream);*/
-    /*b &= topology->connect_streams(h264_encoder_stream, sink_stream);*/
-    /*b &= topology->connect_streams(source_stream, sink_stream);*/
 }
 
 /*
@@ -125,13 +164,13 @@ int main()
         media_session_t session(new media_session);
         media_topology_t topology(new media_topology);
 
-        //// create and initialize the h264 encoder transform
-        //transform_h264_encoder_t h264_encoder_transform(new transform_h264_encoder(session));
-        //hr = h264_encoder_transform->initialize(d3d11dev);
+        // create and initialize the h264 encoder transform
+        transform_h264_encoder_t h264_encoder_transform(new transform_h264_encoder(session));
+        hr = h264_encoder_transform->initialize(d3d11dev);
 
         // create and initialize the color converter transform
-        /*transform_color_converter_t color_converter_transform(new transform_color_converter(session));
-        hr = color_converter_transform->initialize(d3d11dev);*/
+        transform_color_converter_t color_converter_transform(new transform_color_converter(session));
+        hr = color_converter_transform->initialize(d3d11dev);
 
         // create and initialize the video processor transform
         transform_videoprocessor_t videoprocessor_transform(new transform_videoprocessor(session));
@@ -150,19 +189,26 @@ int main()
         }
 
         // create and initialize the preview window sink
-        sink_preview_t preview_sink(new sink_preview(session));
-        preview_sink->initialize(
+        /*sink_preview_t preview_sink(new sink_preview(session));*/
+        sink_preview2_t preview_sink2(new sink_preview2(session));
+        preview_sink2->initialize(
             WINDOW_WIDTH, WINDOW_HEIGHT,
             hwnd, d3d11dev, d3d11devctx, swapchain);
+
+        // create the mpeg sink
+        sink_mpeg_t mpeg_sink(new sink_mpeg(session));
 
         // initialize the topology
         create_streams(
             d3d11devctx,
             topology,
-            preview_sink,
+            preview_sink2,
+            mpeg_sink,
             displaycapture_source,
             displaycapture_source2,
-            videoprocessor_transform);
+            videoprocessor_transform,
+            color_converter_transform,
+            h264_encoder_transform);
 
         // add the topology to the media session
         session->switch_topology(topology);
@@ -176,32 +222,41 @@ int main()
         {
             if(msg.message == WM_KEYDOWN)
             {
-                outputmonitor_index = (outputmonitor_index + 1) % 2;
-
-                if(outputmonitor_index)
+                /*for(int i = 0; i < 25001; i++)*/
                 {
-                    topology.reset(new media_topology);
-                    create_streams(
-                        d3d11devctx,
-                        topology,
-                        preview_sink,
-                        displaycapture_source2,
-                        displaycapture_source,
-                        videoprocessor_transform);
-                }
-                else
-                {
-                    topology.reset(new media_topology);
-                    create_streams(
-                        d3d11devctx,
-                        topology,
-                        preview_sink,
-                        displaycapture_source,
-                        displaycapture_source2,
-                        videoprocessor_transform);
-                }
+                    outputmonitor_index = (outputmonitor_index + 1) % 2;
 
-                session->switch_topology(topology);
+                    if(outputmonitor_index)
+                    {
+                        topology.reset(new media_topology);
+                        create_streams(
+                            d3d11devctx,
+                            topology,
+                            preview_sink2,
+                            mpeg_sink,
+                            displaycapture_source2,
+                            displaycapture_source,
+                            videoprocessor_transform,
+                            color_converter_transform,
+                            h264_encoder_transform);
+                    }
+                    else
+                    {
+                        topology.reset(new media_topology);
+                        create_streams(
+                            d3d11devctx,
+                            topology,
+                            preview_sink2,
+                            mpeg_sink,
+                            displaycapture_source,
+                            displaycapture_source2,
+                            videoprocessor_transform,
+                            color_converter_transform,
+                            h264_encoder_transform);
+                    }
+
+                    session->switch_topology(topology);
+                }
 
                 /*for(int i = 0; i < 25001; i++)*/
                 //{
@@ -237,15 +292,15 @@ int main()
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
             }
-            /*Sleep(10000);
+            /*Sleep(30000);
             break;*/
         }
 
         session->stop_playback();
 
-        // clear the references in sink
-        for(int i = 0; i < QUEUE_MAX_SIZE; i++)
-            preview_sink->concurrent_streams[i] = NULL;
+        //// clear the references in sink
+        //for(int i = 0; i < QUEUE_MAX_SIZE; i++)
+        //    preview_sink->concurrent_streams[i] = NULL;
 
         // shutdown the media session
         session->shutdown();

@@ -42,11 +42,9 @@ public:
 private:
     transform_color_converter_t transform;
     CComPtr<async_callback_t> processing_callback;
-    media_sample_t output_sample;
+    media_sample_texture_t output_sample;
     CComPtr<ID3D11VideoContext> videocontext;
-    CComPtr<ID3D11Texture2D> output_texture;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
-    HANDLE output_texture_handle;
     bool view_initialized;
     packet pending_packet;
 
