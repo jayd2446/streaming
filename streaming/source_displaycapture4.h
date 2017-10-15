@@ -96,7 +96,6 @@ public:
     presentation_clock_t get_device_clock();
 };
 
-// TODO: use weak pointer for source
 class stream_displaycapture4 : public media_stream
 {
 private:

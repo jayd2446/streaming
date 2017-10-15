@@ -67,7 +67,6 @@ public:
     void switch_topology(const media_topology_t& new_topology);
 
     // returns false if any of the sinks couldn't be started or stopped
-    // TODO: make sure these cannot be called recursively
     bool start_playback(time_unit time_start);
     // returns false if there's no current topology
     bool stop_playback();
@@ -83,7 +82,7 @@ public:
         request_packet&,
         bool is_sink);
     // is_source flag is used for the media session to able to translate the sample times;
-    // sample cannot be NULL
+    // sample_view cannot be NULL
     bool give_sample(
         const media_stream* this_output_stream, 
         const media_sample_view_t& sample_view,

@@ -6,7 +6,7 @@
 //#include "source_displaycapture2.h"
 //#include "source_displaycapture3.h"
 #include "source_displaycapture4.h"
-#include "sink_preview.h"
+//#include "sink_preview.h"
 #include "media_session.h"
 #include "media_topology.h"
 #include "transform_videoprocessor.h"
@@ -25,7 +25,7 @@ LARGE_INTEGER pc_frequency;
 #define OUTPUT_MONITOR 0
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-#define WORKER_STREAMS 3
+#define WORKER_STREAMS 4
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND create_window();
@@ -75,33 +75,6 @@ void create_streams(
     }
 
     // (each thread gets approximately 20ms time slice)
-    // TODO: decide if use work queues for streams in a same node
-    // TODO: sinks should also have streams for each core
-    //media_stream_t sink_stream = preview_sink->create_stream(topology->get_clock());
-
-    //for(int i = 0; i < QUEUE_MAX_SIZE; i++)
-    //{
-    //    media_stream_t transform_stream = videoprocessor_transform->create_stream(devctx);
-    //    media_stream_t encoder_stream = h264_encoder_transform->create_stream();
-    //    media_stream_t color_converter_stream = color_converter_transform->create_stream(devctx);
-    //    media_stream_t source_stream = displaycapture_source->create_stream();
-    //    media_stream_t source_stream2 = displaycapture_source2->create_stream();
-    //    preview_sink->concurrent_streams[i] = encoder_stream;
-    //    preview_sink->pending_streams[i].available = true;
-
-    //    topology->connect_streams(source_stream, transform_stream);
-    //    topology->connect_streams(source_stream2, transform_stream);
-    //    topology->connect_streams(transform_stream, color_converter_stream);
-    //    topology->connect_streams(color_converter_stream, encoder_stream);
-    //    topology->connect_streams(encoder_stream, sink_stream);
-
-    //    // sink preview currently acts as a encoder sink and preview sink
-    //    topology->connect_streams(transform_stream, sink_stream);
-
-    //    /*topology->connect_streams(source_stream, preview_sink->concurrent_streams[i]);
-    //    topology->connect_streams(source_stream2, preview_sink->concurrent_streams[i]);
-    //    topology->connect_streams(preview_sink->concurrent_streams[i], sink_stream);*/
-    //}
 
 done:
     if(FAILED(hr))
@@ -197,6 +170,7 @@ int main()
 
         // create the mpeg sink
         sink_mpeg_t mpeg_sink(new sink_mpeg(session));
+        mpeg_sink->initialize(h264_encoder_transform->output_type);
 
         // initialize the topology
         create_streams(
@@ -297,10 +271,6 @@ int main()
         }
 
         session->stop_playback();
-
-        //// clear the references in sink
-        //for(int i = 0; i < QUEUE_MAX_SIZE; i++)
-        //    preview_sink->concurrent_streams[i] = NULL;
 
         // shutdown the media session
         session->shutdown();

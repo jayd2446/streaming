@@ -2,6 +2,7 @@
 #include <Mferror.h>
 #include <evr.h>
 #include <iostream>
+#include <cassert>
 
 #pragma comment(lib, "Evr.lib")
 #pragma comment(lib, "dxguid.lib")
@@ -23,6 +24,8 @@ HRESULT transform_h264_encoder::set_input_stream_type()
 {
     HRESULT hr = S_OK;
 
+    // TODO: input type should be get from the color converter transform
+
     CComPtr<IMFMediaType> input_type;
     CHECK_HR(hr = MFCreateMediaType(&input_type));
     CHECK_HR(hr = input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
@@ -40,7 +43,7 @@ done:
 
 HRESULT transform_h264_encoder::set_output_stream_type()
 {
-    HRESULT hr = S_OK;
+    /*HRESULT hr = S_OK;
 
     CComPtr<IMFMediaType> output_type;
     for(DWORD index = 0;; index++)
@@ -54,11 +57,20 @@ HRESULT transform_h264_encoder::set_output_stream_type()
             output_type = type;
             break;
         }
-    }
+    }*/
 
-    //// TODO: mf_mt_framesize must be set(amd defaults to 1080p)
+    HRESULT hr = S_OK;
+    CHECK_HR(hr = MFCreateMediaType(&this->output_type));
+    CHECK_HR(hr = this->output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
+    CHECK_HR(hr = this->output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AVG_BITRATE, 6000*1000));
+    CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, 60, 1));
+    CHECK_HR(hr = MFSetAttributeSize(this->output_type, MF_MT_FRAME_SIZE, 1920, 1080));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
+    CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
-    CHECK_HR(hr = this->encoder->SetOutputType(0, output_type, 0));
+    CHECK_HR(hr = this->encoder->SetOutputType(0, this->output_type, 0));
 done:
     return hr;
 }
@@ -190,9 +202,9 @@ void transform_h264_encoder::process_output_cb(void*)
 
     CComPtr<IMFMediaBuffer> buffer;
     CHECK_HR(hr = this->encoder->ProcessOutput(0, 1, &output, &status));
-    CHECK_HR(hr = output.pSample->ConvertToContiguousBuffer(&buffer));
-    // release the mft allocated buffer
-    output.pSample->Release();
+    /*CHECK_HR(hr = output.pSample->ConvertToContiguousBuffer(&buffer));*/
+    //// release the mft allocated buffer
+    //output.pSample->Release();
 
     // TODO: frame drops must be handled in encoder
 
@@ -204,6 +216,8 @@ void transform_h264_encoder::process_output_cb(void*)
 
     sample->buffer = buffer;
     sample->timestamp = p.sample_view->get_sample()->timestamp;
+    sample->sample.Attach(output.pSample);
+    CHECK_HR(hr = sample->sample->SetSampleTime(p.rp.request_time));
 
     this->session->give_sample(p.stream, sample_view, p.rp, false);
 done:

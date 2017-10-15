@@ -31,6 +31,10 @@ private:
         if(parent)
             (parent.get()->*cb)((void*)res);
         else
+            // this assert might fail when the parent is currently @ the destructor;
+            // the locking of the parent isn't possible anymore, but
+            // the parent has still a reference to this in addition to the
+            // media foundation callback having a reference to this
             assert(this->RefCount == 1);
         return S_OK;
     }

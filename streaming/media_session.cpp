@@ -22,6 +22,9 @@ void media_session::switch_topology(const media_topology_t& topology)
 
 bool media_session::start_playback(time_unit time_start)
 {
+    // TODO: add parameter for playback topology
+    // (so that switch_topology doesnt have to set it)
+
     presentation_clock_t clock;
     if(!this->get_current_clock(clock))
         return false;
@@ -31,6 +34,9 @@ bool media_session::start_playback(time_unit time_start)
 
 bool media_session::stop_playback()
 {
+    // TODO: stop_playback might in turn automatically set the topology
+    // to null
+
     presentation_clock_t clock;
     if(!this->get_current_clock(clock))
         return false;

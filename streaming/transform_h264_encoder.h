@@ -45,7 +45,7 @@ private:
     UINT reset_token;
     std::recursive_mutex samples_mutex, encoder_mutex, processed_samples_mutex;
     std::atomic_int32_t last_packet_number, encoder_requests;
-    
+
     sorted_map_t samples;
     queue_t processed_samples;
 
@@ -57,6 +57,8 @@ private:
     void process_output_cb(void*);
     void process_input_cb(void*);
 public:
+    CComPtr<IMFMediaType> output_type;
+
     explicit transform_h264_encoder(const media_session_t& session);
 
     HRESULT initialize(const CComPtr<ID3D11Device>&);

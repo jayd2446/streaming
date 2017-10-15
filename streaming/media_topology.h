@@ -5,17 +5,12 @@
 #include <unordered_map>
 #include <vector>
 
-// each topology node must have a unique component associated to it
-// ^ for transitions to work correctly components must be shared between topologies;
-// actually probably both components and streams can be shared between topologies;
-// (sharing streams might not be safe after all because active streams in the old topology
-// continue staying active in the new topology)
-// topologies cannot be shared between sessions
+/*
+components must be multithreading safe, streams don't have to be;
+components can be shared between topologies, but must not be shared between sessions;
+streams shouldn't be shared between topologies because they are assumed to be singlethreaded
+*/
 
-// 1 topology -> combined topology with transition transform -> 2 topology
-// media session's switcher will switch seamlessly between these topologies
-
-// TODO: probably should be renamed to scene
 class media_topology
 {
     friend class media_session;

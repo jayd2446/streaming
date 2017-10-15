@@ -3,9 +3,21 @@
 #include <Mferror.h>
 
 #define LAG_BEHIND 1000000/*(FPS60_INTERVAL * 6)*/
+#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-sink_mpeg::sink_mpeg(const media_session_t& session) : media_sink(session)
+sink_mpeg::sink_mpeg(const media_session_t& session) : media_sink(session), last_packet_number(-1)
 {
+    this->processing_callback.Attach(new async_callback_t(&sink_mpeg::processing_cb));
+}
+
+sink_mpeg::~sink_mpeg()
+{
+    HRESULT hr = this->sink_writer->Finalize();
+    if(FAILED(hr))
+        std::cout << "finalizing failed" << std::endl;
+
+    this->sink_writer.Release();
+    this->mpeg_media_sink->Shutdown();
 }
 
 stream_mpeg_host_t sink_mpeg::create_host_stream(presentation_clock_t& clock)
@@ -19,6 +31,84 @@ stream_mpeg_host_t sink_mpeg::create_host_stream(presentation_clock_t& clock)
 stream_mpeg_t sink_mpeg::create_worker_stream()
 {
     return stream_mpeg_t(new stream_mpeg(this->shared_from_this<sink_mpeg>()));
+}
+
+void sink_mpeg::new_packet()
+{
+    scoped_lock lock(this->packets_mutex);
+    while(!this->packets.empty())
+    {
+        packet p;
+        auto first_item = this->packets.begin();
+        if(this->last_packet_number != -1 && first_item->first != (this->last_packet_number + 1))
+            return;
+
+        p = first_item->second;
+        this->packets.erase(first_item);
+
+        // push the sample to the processed samples queue
+        scoped_lock lock(this->processed_packets_mutex);
+        this->processed_packets.push(p);
+
+        // initiate the write
+        const HRESULT hr = this->processing_callback->mf_put_work_item(
+            this->shared_from_this<sink_mpeg>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw std::exception();
+    }
+}
+
+void sink_mpeg::processing_cb(void*)
+{
+    std::unique_lock<std::recursive_mutex> lock(this->processing_mutex);
+    packet p;
+    {
+        scoped_lock lock(this->processed_packets_mutex);
+        p = this->processed_packets.front();
+        this->processed_packets.pop();
+    }
+
+    HRESULT hr = S_OK;
+    // send the sample to the sink writer
+    CHECK_HR(hr = this->sink_writer->WriteSample(
+        0, 
+        p.sample_view->get_sample<media_sample_memorybuffer>()->sample));
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
+}
+
+void sink_mpeg::initialize(const CComPtr<IMFMediaType>& input_type)
+{
+    HRESULT hr = S_OK;
+    CComPtr<IMFAttributes> sink_writer_attributes;
+    this->mpeg_file_type = input_type;
+
+    // create file
+    CHECK_HR(hr = MFCreateFile(
+        MF_ACCESSMODE_READWRITE, MF_OPENMODE_DELETE_IF_EXIST, MF_FILEFLAGS_NONE, 
+        L"test.mp4", &this->byte_stream));
+
+    // create mpeg 4 media sink
+    CHECK_HR(hr = MFCreateMPEG4MediaSink(
+        this->byte_stream, this->mpeg_file_type, NULL, &this->mpeg_media_sink));
+
+    // configure the sink writer
+    CHECK_HR(hr = MFCreateAttributes(&sink_writer_attributes, 1));
+    CHECK_HR(hr = sink_writer_attributes->SetGUID(
+        MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4));
+
+    // create sink writer
+    CHECK_HR(hr = MFCreateSinkWriterFromMediaSink(
+        this->mpeg_media_sink, sink_writer_attributes, &this->sink_writer));
+
+    // start accepting data
+    CHECK_HR(hr = this->sink_writer->BeginWriting());
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
 }
 
 
@@ -204,7 +294,18 @@ media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp)
 media_stream::result_t stream_mpeg_host::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp)
 {
-    // TODO: process the sample
+    // the encoder will just give an empty texture sample if the input sample was empty
+    if(sample_view->get_sample<media_sample_memorybuffer>())
+    {
+        {
+            scoped_lock lock(this->sink->packets_mutex);
+            sink_mpeg::packet p;
+            p.rp = rp;
+            p.sample_view = sample_view;
+            this->sink->packets[rp.packet_number] = p;
+        }
+        this->sink->new_packet();
+    }
 
     return OK;
 }

@@ -8,8 +8,13 @@
 #include <mutex>
 #include <atomic>
 #include <queue>
+#include <map>
 #include <utility>
 #include <atlbase.h>
+
+#include <mfapi.h>
+#include <mfreadwrite.h>
+#include <mfidl.h>
 
 /*
 
@@ -25,22 +30,59 @@ class stream_mpeg;
 typedef std::shared_ptr<stream_mpeg_host> stream_mpeg_host_t;
 typedef std::shared_ptr<stream_mpeg> stream_mpeg_t;
 
+// TODO: the mpeg packet writing queue might overload
+// TODO: the mpeg file writing should be separated
+// (can be choosed between rtmp and file)
+
+// in windows 8 the mpeg media sink automatically tries to find the sequence header
+// from the input samples
+// https://stackoverflow.com/questions/22057696/creating-an-mp4-container-from-an-h-264-byte-stream-annex-b-using-media-found
+
+// TODO: the mpeg sink should take input type parameters from the encoder
+
 class sink_mpeg : public media_sink
 {
     friend class stream_mpeg_host;
 public:
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef async_callback<sink_mpeg> async_callback_t;
     struct request_t
     {
         time_unit request_time, timestamp;
         int packet_number;
     };
+
+    struct packet
+    {
+        request_packet rp;
+        media_sample_view_t sample_view;
+    };
 private:
     std::recursive_mutex requests_mutex;
     std::queue<request_t> requests;
     std::atomic_int32_t packet_number;
+
+    // used for writing the packet to disk
+    std::atomic_int32_t last_packet_number;
+    std::recursive_mutex packets_mutex;
+    std::map<int /*packet number*/, packet> packets;
+    std::recursive_mutex processed_packets_mutex;
+    std::queue<packet> processed_packets;
+    CComPtr<async_callback_t> processing_callback;
+    std::recursive_mutex processing_mutex;
+
+    CComPtr<IMFMediaSink> mpeg_media_sink;
+    CComPtr<IMFSinkWriter> sink_writer;
+    CComPtr<IMFByteStream> byte_stream;
+    CComPtr<IMFMediaType> mpeg_file_type;
+
+    void new_packet();
+    void processing_cb(void*);
 public:
     explicit sink_mpeg(const media_session_t& session);
+    ~sink_mpeg();
 
+    void initialize(const CComPtr<IMFMediaType>& input_type);
     // the host stream will dispatch the request to streams
     // directly without media session's involvement
     stream_mpeg_host_t create_host_stream(presentation_clock_t&);
