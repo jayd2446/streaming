@@ -128,6 +128,8 @@ done:
 
 void transform_h264_encoder::processing_cb(void*)
 {
+    // TODO: hot path
+
     HRESULT hr = S_OK;
     while(this->encoder_requests)
     {
@@ -200,7 +202,6 @@ void transform_h264_encoder::process_output_cb(void*)
     output.dwStatus = 0;
     output.pEvents = NULL;
 
-    CComPtr<IMFMediaBuffer> buffer;
     CHECK_HR(hr = this->encoder->ProcessOutput(0, 1, &output, &status));
     /*CHECK_HR(hr = output.pSample->ConvertToContiguousBuffer(&buffer));*/
     //// release the mft allocated buffer
@@ -214,7 +215,6 @@ void transform_h264_encoder::process_output_cb(void*)
         this->processed_samples.pop();
     }
 
-    sample->buffer = buffer;
     sample->timestamp = p.sample_view->get_sample()->timestamp;
     sample->sample.Attach(output.pSample);
     CHECK_HR(hr = sample->sample->SetSampleTime(p.rp.request_time));
@@ -356,7 +356,7 @@ stream_h264_encoder::stream_h264_encoder(const transform_h264_encoder_t& transfo
 {
 }
 
-media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp)
+media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, const media_stream*)
 {
     if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
@@ -364,7 +364,7 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp)
 }
 
 media_stream::result_t stream_h264_encoder::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
     if(!sample_view->get_sample<media_sample_texture>()->texture)
         if(!this->transform->session->give_sample(this, sample_view, rp, false))

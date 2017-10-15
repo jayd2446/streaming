@@ -58,9 +58,9 @@ done:
     return hr;
 }
 
-media_stream_t transform_videoprocessor::create_stream(ID3D11DeviceContext* devctx)
+stream_videoprocessor_t transform_videoprocessor::create_stream(ID3D11DeviceContext* devctx)
 {
-    return media_stream_t(
+    return stream_videoprocessor_t(
         new stream_videoprocessor(devctx, this->shared_from_this<transform_videoprocessor>()));
 }
 
@@ -75,7 +75,8 @@ stream_videoprocessor::stream_videoprocessor(
     const transform_videoprocessor_t& transform) :
     transform(transform),
     output_sample(new media_sample_texture),
-    view_initialized(false)
+    view_initialized(false),
+    primary_stream(NULL)
 {
     this->processing_callback.Attach(new async_callback_t(&stream_videoprocessor::processing_cb));
 
@@ -214,7 +215,8 @@ done:
         throw std::exception();
 }
 
-media_stream::result_t stream_videoprocessor::request_sample(request_packet& rp)
+media_stream::result_t stream_videoprocessor::request_sample(
+    request_packet& rp, const media_stream* prev_stream)
 {
     if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
@@ -222,13 +224,15 @@ media_stream::result_t stream_videoprocessor::request_sample(request_packet& rp)
 }
 
 media_stream::result_t stream_videoprocessor::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream* prev_stream)
 {
-    // TODO: resources shouldn't be initialized here because of the multithreaded
-    // nature they might be initialized more than once
-    // (isn't the case anymore)
-
     CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
+
+    // TODO: the order of incoming streams isn't constant anymore
+
+    // this function needs to be locked because media session dispatches the process sample calls
+    // to work queues in a same node
+    std::unique_lock<std::recursive_mutex> lock(this->mutex);
 
     // create the output view if it hasn't been created
     if(!this->view_initialized && texture)
@@ -260,9 +264,7 @@ media_stream::result_t stream_videoprocessor::process_sample(
             &view_desc, &this->output_view));
     }
 
-    // TODO: this can be multithreaded,
-    // because media session will dispatch via work queues
-    if(!this->pending_request.sample_view)
+    if(prev_stream == this->primary_stream)
     {
         this->pending_request.rp = rp;
         this->pending_request.sample_view = sample_view;
@@ -271,7 +273,11 @@ media_stream::result_t stream_videoprocessor::process_sample(
     {
         this->pending_request2.rp = rp;
         this->pending_request2.sample_view = sample_view;
+    }
 
+    if(this->pending_request.sample_view && this->pending_request2.sample_view)
+    {
+        lock.unlock();
         this->processing_cb(NULL);
     }
 

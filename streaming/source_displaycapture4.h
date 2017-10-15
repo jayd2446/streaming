@@ -106,7 +106,7 @@ public:
 
     bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
     // called by media session
-    result_t request_sample(request_packet&);
+    result_t request_sample(request_packet&, const media_stream*);
     // called by source_displaycapture
-    result_t process_sample(const media_sample_view_t&, request_packet&);
+    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream* = NULL);
 };

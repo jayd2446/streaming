@@ -85,7 +85,9 @@
     </ClCompile>
     <ClCompile Include="transform_videoprocessor.cpp" />
     <ClCompile Include="presentation_clock.cpp" />
-    <ClCompile Include="sink_preview.cpp" />
+    <ClCompile Include="sink_preview.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="source_displaycapture4.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -109,7 +111,9 @@
     </ClInclude>
     <ClInclude Include="transform_videoprocessor.h" />
     <ClInclude Include="presentation_clock.h" />
-    <ClInclude Include="sink_preview.h" />
+    <ClInclude Include="sink_preview.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="source_displaycapture4.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

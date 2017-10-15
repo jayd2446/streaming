@@ -147,14 +147,14 @@ stream_preview2::stream_preview2(const sink_preview2_t& sink) : sink(sink)
 {
 }
 
-media_stream::result_t stream_preview2::request_sample(request_packet& rp)
+media_stream::result_t stream_preview2::request_sample(request_packet& rp, const media_stream*)
 {
     assert(false);
     return OK;
 }
 
 media_stream::result_t stream_preview2::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
     this->sink->draw_sample(sample_view, rp);
     return OK;

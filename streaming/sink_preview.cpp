@@ -377,7 +377,7 @@ bool stream_preview::get_clock(presentation_clock_t& clock)
     return this->sink->session->get_current_clock(clock);
 }
 
-media_stream::result_t stream_preview::request_sample(request_packet& rp)
+media_stream::result_t stream_preview::request_sample(request_packet& rp, const media_stream*)
 {
     // dispatch the request to another equivalent topology branch
     media_stream::result_t res = OK;
@@ -401,7 +401,7 @@ media_stream::result_t stream_preview::request_sample(request_packet& rp)
 }
 
 media_stream::result_t stream_preview::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
     // schedule the sample
     // 5000000 = half a second

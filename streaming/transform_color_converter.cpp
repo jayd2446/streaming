@@ -183,7 +183,7 @@ done:
         throw std::exception();
 }
 
-media_stream::result_t stream_color_converter::request_sample(request_packet& rp)
+media_stream::result_t stream_color_converter::request_sample(request_packet& rp, const media_stream*)
 {
     if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
@@ -191,7 +191,7 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_color_converter::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
     // TODO: resources shouldn't be initialized here because of the multithreaded
     // nature they might be initialized more than once

@@ -40,9 +40,7 @@ typedef std::shared_ptr<media_sample> media_sample_t;
 class media_sample_memorybuffer : public media_sample
 {
 public:
-    // TODO: remove buffer
     CComPtr<IMFSample> sample;
-    CComPtr<IMFMediaBuffer> buffer;
 };
 
 typedef std::shared_ptr<media_sample_memorybuffer> media_sample_memorybuffer_t;

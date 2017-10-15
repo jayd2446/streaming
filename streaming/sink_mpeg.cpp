@@ -2,6 +2,9 @@
 #include <iostream>
 #include <Mferror.h>
 
+#pragma comment(lib, "Mf.lib")
+#pragma comment(lib, "Mfreadwrite.lib")
+
 #define LAG_BEHIND 1000000/*(FPS60_INTERVAL * 6)*/
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
@@ -121,7 +124,7 @@ stream_mpeg::stream_mpeg(const sink_mpeg_t& sink) : sink(sink), available(true)
 {
 }
 
-media_stream::result_t stream_mpeg::request_sample(request_packet& rp)
+media_stream::result_t stream_mpeg::request_sample(request_packet& rp, const media_stream*)
 {
     if(!this->sink->session->request_sample(this, rp, true))
         return FATAL_ERROR;
@@ -129,7 +132,7 @@ media_stream::result_t stream_mpeg::request_sample(request_packet& rp)
 }
 
 media_stream::result_t stream_mpeg::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
     this->available = true;
 
@@ -273,7 +276,7 @@ void stream_mpeg_host::add_worker_stream(const stream_mpeg_t& worker_stream)
     this->worker_streams.push_back(worker_stream);
 }
 
-media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp)
+media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp, const media_stream*)
 {
     // dispatch the request to a worker stream
     std::unique_lock<std::recursive_mutex> lock(this->worker_streams_mutex);
@@ -283,7 +286,7 @@ media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp)
         {
             (*it)->available = false;
             lock.unlock();
-            return (*it)->request_sample(rp);
+            return (*it)->request_sample(rp, this);
         }
     }
 
@@ -292,7 +295,7 @@ media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp)
 }
 
 media_stream::result_t stream_mpeg_host::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
     // the encoder will just give an empty texture sample if the input sample was empty
     if(sample_view->get_sample<media_sample_memorybuffer>())

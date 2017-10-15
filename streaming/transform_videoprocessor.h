@@ -16,6 +16,9 @@
 // the requests and samples are tied to work queues so generalizing them can include
 // those
 
+class stream_videoprocessor;
+typedef std::shared_ptr<stream_videoprocessor> stream_videoprocessor_t;
+
 class transform_videoprocessor : public media_source
 {
     friend class stream_videoprocessor;
@@ -31,7 +34,7 @@ public:
 
     // TODO: access to device context must be synchronized
     HRESULT initialize(const CComPtr<ID3D11Device>&);
-    media_stream_t create_stream(ID3D11DeviceContext*);
+    stream_videoprocessor_t create_stream(ID3D11DeviceContext*);
 };
 
 typedef std::shared_ptr<transform_videoprocessor> transform_videoprocessor_t;
@@ -48,7 +51,11 @@ private:
     media_sample_texture_t output_sample;
     CComPtr<ID3D11VideoContext> videocontext;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
+    std::recursive_mutex mutex;
     bool view_initialized;
+    // the primary stream will stay alive as long as this stream
+    // because they both are in the same topology
+    const media_stream* primary_stream;
 
     packet pending_request, pending_request2;
 
@@ -58,9 +65,13 @@ public:
         ID3D11DeviceContext*,
         const transform_videoprocessor_t& transform);
 
+    // the secondary stream is blended on to the primary stream;
+    // primary stream must be in the same topology as this stream
+    void set_primary_stream(const media_stream* stream) {this->primary_stream = stream;}
+
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     // called by the downstream from media session
-    result_t request_sample(request_packet&);
+    result_t request_sample(request_packet&, const media_stream*);
     // called by the upstream from media session
-    result_t process_sample(const media_sample_view_t&, request_packet&);
+    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
 };

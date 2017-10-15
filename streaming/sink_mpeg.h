@@ -101,8 +101,8 @@ private:
 public:
     explicit stream_mpeg(const sink_mpeg_t& sink);
 
-    result_t request_sample(request_packet&);
-    result_t process_sample(const media_sample_view_t&, request_packet&);
+    result_t request_sample(request_packet&, const media_stream*);
+    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
 };
 
 class stream_mpeg_host : public media_stream, public presentation_clock_sink
@@ -134,6 +134,6 @@ public:
     void add_worker_stream(const stream_mpeg_t& worker_stream);
 
     bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}
-    result_t request_sample(request_packet&);
-    result_t process_sample(const media_sample_view_t&, request_packet&);
+    result_t request_sample(request_packet&, const media_stream* = NULL);
+    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
 };

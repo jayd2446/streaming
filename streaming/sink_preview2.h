@@ -60,9 +60,9 @@ private:
 public:
     explicit stream_preview2(const sink_preview2_t& sink);
 
-    result_t request_sample(request_packet&);
+    result_t request_sample(request_packet&, const media_stream*);
     // called by media session
-    result_t process_sample(const media_sample_view_t&, request_packet&);
+    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_preview2> stream_preview2_t;

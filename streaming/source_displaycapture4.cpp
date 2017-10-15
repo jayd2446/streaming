@@ -376,7 +376,8 @@ stream_displaycapture4::~stream_displaycapture4()
 {
 }
 
-media_stream::result_t stream_displaycapture4::request_sample(request_packet& rp)
+media_stream::result_t stream_displaycapture4::request_sample(
+    request_packet& rp, const media_stream*)
 {
     // convert the topology's time to device time
     presentation_clock_t device_clock = this->source->get_device_clock();
@@ -395,7 +396,7 @@ media_stream::result_t stream_displaycapture4::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_displaycapture4::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp)
+    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
     // add the timestamp and lock the frame
     presentation_clock_t clock;

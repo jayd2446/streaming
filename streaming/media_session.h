@@ -2,10 +2,13 @@
 #include "media_sample.h"
 #include "media_topology.h"
 #include "presentation_clock.h"
+#include "async_callback.h"
+#include "enable_shared_from_this.h"
 #include <memory>
 #include <vector>
 #include <map>
 #include <mutex>
+#include <queue>
 
 // orchestrates the data flow between components in the media pipeline;
 // translates the source's media time to the presentation time
@@ -51,14 +54,32 @@ struct request_packet
     int packet_number;
 };
 
-class media_session
+class media_session : public enable_shared_from_this
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef async_callback<media_session> async_callback_t;
+
+    struct give_sample_t
+    {
+        // the stream stays alive as long as the rp is alive
+        const media_stream* stream;
+        media_sample_view_t sample_view;
+        request_packet rp;
+        bool is_source;
+    };
 private:
     media_topology_t current_topology, new_topology;
-    std::recursive_mutex mutex;
+    std::recursive_mutex switch_topology_mutex;
+
+    std::recursive_mutex give_sample_mutex;
+    CComPtr<async_callback_t> give_sample_callback;
+    std::queue<give_sample_t> give_sample_requests;
+
+    void give_sample_cb(void*);
 public:
+    media_session();
+
     // returns the clock of the current topology;
     // components shouldn't store the reference because it might
     // create a cyclic dependency between clock and components;
