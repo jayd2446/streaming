@@ -62,20 +62,31 @@ public:
 
     struct give_sample_t
     {
+        media_topology::topology_t::iterator it;
         // the stream stays alive as long as the rp is alive
         const media_stream* stream;
         media_sample_view_t sample_view;
         request_packet rp;
         bool is_source;
     };
+    struct request_sample_t
+    {
+        // the stream stays alive as long as the rp is alive
+        const media_stream* stream;
+        request_packet rp;
+    };
 private:
     media_topology_t current_topology, new_topology;
-    std::recursive_mutex switch_topology_mutex;
+
+    std::recursive_mutex request_sample_mutex;
+    CComPtr<async_callback_t> request_sample_callback;
+    std::queue<request_sample_t> request_sample_requests;
 
     std::recursive_mutex give_sample_mutex;
     CComPtr<async_callback_t> give_sample_callback;
     std::queue<give_sample_t> give_sample_requests;
 
+    void request_sample_cb(void*);
     void give_sample_cb(void*);
 public:
     media_session();
@@ -96,6 +107,14 @@ public:
     // and the node is added to the media session's topology and the request sample doesn't
     // return fatal_error;
     // the events won't have any effect if those conditions don't apply
+
+    // TODO: make request_sample call that's coming from sink
+    // its own function
+
+    // TODO: subsequent request sample and give calls must not fail;
+    // failing might lead to deadlocks in sink
+
+    // TODO: use same return values for media streams and media session
 
     // request_sample returns false if the topology is switched
     bool request_sample(

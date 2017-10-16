@@ -12,10 +12,6 @@
 
 // source blender
 
-// TODO: the queue system for samples can be generalized;
-// the requests and samples are tied to work queues so generalizing them can include
-// those
-
 class stream_videoprocessor;
 typedef std::shared_ptr<stream_videoprocessor> stream_videoprocessor_t;
 
@@ -32,7 +28,6 @@ private:
 public:
     explicit transform_videoprocessor(const media_session_t& session);
 
-    // TODO: access to device context must be synchronized
     HRESULT initialize(const CComPtr<ID3D11Device>&);
     stream_videoprocessor_t create_stream(ID3D11DeviceContext*);
 };

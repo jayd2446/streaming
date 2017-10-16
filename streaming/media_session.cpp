@@ -5,6 +5,7 @@
 media_session::media_session()
 {
     this->give_sample_callback.Attach(new async_callback_t(&media_session::give_sample_cb));
+    this->request_sample_callback.Attach(new async_callback_t(&media_session::request_sample_cb));
 }
 
 bool media_session::get_current_clock(presentation_clock_t& clock) const
@@ -56,26 +57,26 @@ bool media_session::request_sample(
     request_packet& rp,
     bool is_sink)
 {
-    // assign a topology for the request packet if it's coming from the sink
+    // dispatch the request call to a work queue if it's coming from a sink
     media_topology_t topology;
     if(is_sink)
     {
+        // if the call is coming from sink, it is assumed that no subsequent is_sink
+        // calls are made before this has been processed
+
         assert(!rp.topology);
 
-        topology = std::atomic_load(&this->new_topology);
         // check if there's a topology switch
+        topology = std::atomic_load(&this->new_topology);
         if(topology)
         {
-            // lock is here so that the message passing doesn't become a bottleneck
-            scoped_lock lock(this->switch_topology_mutex);
-            if(!(topology = std::atomic_load(&this->new_topology)))
-                return false;
-
             presentation_clock_t clock, old_clock;
 
             // TODO: for even more precise set_current_time,
             // the old clock shouldnt be stopped at all
             // (requires a temporary clock to be set)
+
+            // request queue not needed anymore
 
             // rp.topology is null when it's coming from the sink
             std::atomic_exchange(&this->new_topology, rp.topology);
@@ -97,15 +98,29 @@ bool media_session::request_sample(
         }
 
         rp.topology = std::atomic_load(&this->current_topology);
-    }
-    topology = rp.topology;
 
-    if(!topology)
-        return false;
+        request_sample_t request;
+        request.stream = stream;
+        request.rp = rp;
+
+        {
+            scoped_lock lock(this->request_sample_mutex);
+            this->request_sample_requests.push(request);
+        }
+
+        // dispatch this function to a work queue
+        const HRESULT hr = this->request_sample_callback->mf_put_work_item(
+            this->shared_from_this<media_session>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw std::exception();
+        return true;
+    }
+
+    topology = rp.topology;
+    assert(topology);
 
     media_topology::topology_t::iterator it = topology->topology_reverse.find(stream);
-    if(it == topology->topology_reverse.end())
-        return false;
+    assert(it != topology->topology_reverse.end());
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
         if((*jt)->request_sample(rp, stream) == media_stream::FATAL_ERROR)
@@ -121,24 +136,7 @@ bool media_session::give_sample(
     bool is_source)
 {
     // is_source is used for translating time stamps to presentation time
-    {
-        give_sample_t request;
-        request.stream = stream;
-        request.sample_view = sample_view;
-        request.rp = rp;
-        request.is_source = is_source;
-
-        scoped_lock lock(this->give_sample_mutex);
-        this->give_sample_requests.push(request);
-    }
-
-    // dispatch this function to a work queue
-    const HRESULT hr = this->give_sample_callback->mf_put_work_item(
-        this->shared_from_this<media_session>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
-
-    /*media_topology_t topology(rp.topology);
+    media_topology_t topology(rp.topology);
 
     if(!topology)
         return false;
@@ -147,11 +145,55 @@ bool media_session::give_sample(
     if(it == topology->topology.end())
         return false;
 
-    for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        if((*jt)->process_sample(sample_view, rp) == media_stream::FATAL_ERROR)
-            return false;*/
+    if(it->second.next.size() > 1)
+    {
+        // dispatch to work queue
+        {
+            give_sample_t request;
+            request.stream = stream;
+            request.sample_view = sample_view;
+            request.rp = rp;
+            request.is_source = is_source;
+            request.it = it;
+
+            scoped_lock lock(this->give_sample_mutex);
+            this->give_sample_requests.push(request);
+        }
+
+        // dispatch this function to a work queue
+        const HRESULT hr = this->give_sample_callback->mf_put_work_item(
+            this->shared_from_this<media_session>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw std::exception();
+    }
+    else
+    {
+        for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
+            if((*jt)->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
+                return false;
+    }
 
     return true;
+}
+
+void media_session::request_sample_cb(void*)
+{
+    request_sample_t request;
+    {
+        scoped_lock lock(this->request_sample_mutex);
+        request = this->request_sample_requests.front();
+        this->request_sample_requests.pop();
+    }
+
+    media_topology_t topology(request.rp.topology);
+    assert(topology);
+
+    media_topology::topology_t::iterator it = topology->topology_reverse.find(request.stream);
+    assert(it != topology->topology_reverse.end());
+
+    for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
+        if((*jt)->request_sample(request.rp, request.stream) == media_stream::FATAL_ERROR)
+            return;
 }
 
 void media_session::give_sample_cb(void*)
@@ -163,16 +205,7 @@ void media_session::give_sample_cb(void*)
         this->give_sample_requests.pop();
     }
 
-    media_topology_t topology(request.rp.topology);
-
-    if(!topology)
-        return;
-
-    media_topology::topology_t::iterator it = topology->topology.find(request.stream);
-    if(it == topology->topology.end())
-        return;
-
-    for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
+    for(auto jt = request.it->second.next.begin(); jt != request.it->second.next.end(); jt++)
         if((*jt)->process_sample(
             request.sample_view, request.rp, request.stream) == media_stream::FATAL_ERROR)
             return;

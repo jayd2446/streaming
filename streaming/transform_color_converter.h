@@ -10,8 +10,6 @@
 #include <queue>
 
 // color space converter
-// TODO: create a pool of textures that can be reused
-// (currently color converter creates a new texture each time)
 
 class transform_color_converter : public media_source
 {

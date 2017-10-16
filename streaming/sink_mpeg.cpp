@@ -8,7 +8,7 @@
 #define LAG_BEHIND 1000000/*(FPS60_INTERVAL * 6)*/
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-sink_mpeg::sink_mpeg(const media_session_t& session) : media_sink(session), last_packet_number(-1)
+sink_mpeg::sink_mpeg(const media_session_t& session) : media_sink(session)
 {
     this->processing_callback.Attach(new async_callback_t(&sink_mpeg::processing_cb));
 }
@@ -43,7 +43,7 @@ void sink_mpeg::new_packet()
     {
         packet p;
         auto first_item = this->packets.begin();
-        if(this->last_packet_number != -1 && first_item->first != (this->last_packet_number + 1))
+        if(!first_item->second.sample_view)
             return;
 
         p = first_item->second;
@@ -63,7 +63,7 @@ void sink_mpeg::new_packet()
 
 void sink_mpeg::processing_cb(void*)
 {
-    std::unique_lock<std::recursive_mutex> lock(this->processing_mutex);
+    scoped_lock lock(this->processing_mutex);
     packet p;
     {
         scoped_lock lock(this->processed_packets_mutex);
@@ -127,7 +127,10 @@ stream_mpeg::stream_mpeg(const sink_mpeg_t& sink) : sink(sink), available(true)
 media_stream::result_t stream_mpeg::request_sample(request_packet& rp, const media_stream*)
 {
     if(!this->sink->session->request_sample(this, rp, true))
+    {
+        this->available = true;
         return FATAL_ERROR;
+    }
     return OK;
 }
 
@@ -149,21 +152,20 @@ media_stream::result_t stream_mpeg::process_sample(
 
 stream_mpeg_host::stream_mpeg_host(const sink_mpeg_t& sink) : sink(sink), running(false)
 {
-    this->request_callback.Attach(new async_callback_t(&stream_mpeg_host::request_cb));
 }
 
 bool stream_mpeg_host::on_clock_start(time_unit t, int packet_number)
 {
-    std::cout << "playback started" << std::endl;
+    /*std::cout << "playback started: " << packet_number << ", " << (ptrdiff_t)this << std::endl;*/
     this->running = true;
-    this->sink->packet_number = packet_number;
+    this->packet_number = packet_number;
     this->scheduled_callback(t);
     return true;
 }
 
 void stream_mpeg_host::on_clock_stop(time_unit t)
 {
-    std::cout << "playback stopped" << std::endl;
+    /*std::cout << "playback stopped" << ", " << (ptrdiff_t)this << std::endl;*/
     this->running = false;
     this->clear_queue();
 }
@@ -173,14 +175,9 @@ void stream_mpeg_host::scheduled_callback(time_unit due_time)
     if(!this->running)
         return;
 
-    // add the request
-    this->push_request(due_time);
-
     // initiate the request
-    const HRESULT hr = this->request_callback->mf_put_work_item(
-        this->shared_from_this<stream_mpeg_host>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
+    // (the initial request call from sink must be synchronized)
+    this->dispatch_request(due_time);
 
     // schedule a new time
     this->schedule_new(due_time);
@@ -190,6 +187,8 @@ bool bb = true;
 
 void stream_mpeg_host::schedule_new(time_unit due_time)
 {
+    HRESULT hr = S_OK;
+
     presentation_clock_t t;
     if(this->get_clock(t))
     {
@@ -226,6 +225,12 @@ sample timestamps in the source)
                     /*const time_unit current_time2 = t->get_current_time();
                     scheduled_time = current_time2;*/
 
+                    if((scheduled_time - LAG_BEHIND) >= 0)
+                    {
+                        CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(
+                            0, scheduled_time - LAG_BEHIND));
+                    }
+
                     // frame request was late
                     std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
 
@@ -236,37 +241,49 @@ sample timestamps in the source)
             }
         }
     }
+
+done:
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        throw std::exception();
 }
 
-void stream_mpeg_host::push_request(time_unit t)
+void stream_mpeg_host::dispatch_request(time_unit due_time)
 {
-    scoped_lock lock(this->sink->requests_mutex);
-    sink_mpeg::request_t request;
-    request.request_time = t - LAG_BEHIND;
-    request.timestamp = t;
-    request.packet_number = this->sink->packet_number++;
-    this->sink->requests.push(request);
-}
+    const time_unit request_time = due_time - LAG_BEHIND;
 
-void stream_mpeg_host::request_cb(void*)
-{
-    sink_mpeg::request_t request;
-    request_packet rp;
+    // let the source texture queue saturate a bit
+    if(request_time >= 0)
     {
-        scoped_lock lock(this->sink->requests_mutex);
-        request = this->sink->requests.front();
-        this->sink->requests.pop();
-    }
+        request_packet rp;
+        rp.request_time = request_time;
+        rp.timestamp = due_time;
 
-    // wait for the source texture cache to saturate
-    if(request.request_time >= 0)
-    {
-        rp.request_time = request.request_time;
-        rp.timestamp = request.timestamp;
-        rp.packet_number = request.packet_number;
+        scoped_lock lock(this->worker_streams_mutex);
+        for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
+        {
+            if((*it)->available)
+            {
+                (*it)->available = false;
+                // increase the packet number and add it to the rp
+                rp.packet_number = this->packet_number++;
 
-        if(this->request_sample(rp) == FATAL_ERROR)
-            this->running = false;
+                // add a packet to the packets queue
+                {
+                    scoped_lock lock(this->sink->packets_mutex);
+                    sink_mpeg::packet p;
+                    p.rp = rp;
+                    this->sink->packets[rp.request_time] = p;
+                }
+
+                // TODO: change fatal error to topology switch;
+                // also, subsequent request and give calls cannot fail
+                if((*it)->request_sample(rp, this) == FATAL_ERROR)
+                    this->running = false;
+                else
+                    /*std::cout << rp.packet_number << ", " << (ptrdiff_t)this << std::endl*/;
+                return;
+            }
+        }
     }
 }
 
@@ -278,37 +295,54 @@ void stream_mpeg_host::add_worker_stream(const stream_mpeg_t& worker_stream)
 
 media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp, const media_stream*)
 {
-    // dispatch the request to a worker stream
-    std::unique_lock<std::recursive_mutex> lock(this->worker_streams_mutex);
-    for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
-    {
-        if((*it)->available)
-        {
-            (*it)->available = false;
-            lock.unlock();
-            return (*it)->request_sample(rp, this);
-        }
-    }
-
-    std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_MPEG_HOST--" << std::endl;
+    assert(false);
     return OK;
+    //// dispatch the request to a worker stream
+    //std::unique_lock<std::recursive_mutex> lock(this->worker_streams_mutex);
+    //for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
+    //{
+    //    if((*it)->available)
+    //    {
+    //        (*it)->available = false;
+    //        lock.unlock();
+    //        
+    //        // deadlock happens because the available property is set
+    //        // even if there's a sample on a queue; the next request will thus wait,
+    //        // and a deadlock will occur because the packet numbers aren't consecutive anymore
+
+    //        // add a packet to the packets queue
+    //        std::unique_lock<std::recursive_mutex> lock(this->sink->packets_mutex);
+    //        sink_mpeg::packet p;
+    //        p.rp = rp;
+    //        this->sink->packets[rp.request_time] = p;
+    //        lock.unlock();
+
+    //        /*std::cout << rp.packet_number << std::endl;*/
+
+    //        return (*it)->request_sample(rp, this);
+    //    }
+    //}
+
+    //std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_MPEG_HOST--" << std::endl;
+    //return OK;
 }
 
 media_stream::result_t stream_mpeg_host::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
+    std::unique_lock<std::recursive_mutex> lock(this->sink->packets_mutex);
+    auto it = this->sink->packets.find(rp.request_time);
+    assert(it != this->sink->packets.end());
+
     // the encoder will just give an empty texture sample if the input sample was empty
     if(sample_view->get_sample<media_sample_memorybuffer>())
     {
-        {
-            scoped_lock lock(this->sink->packets_mutex);
-            sink_mpeg::packet p;
-            p.rp = rp;
-            p.sample_view = sample_view;
-            this->sink->packets[rp.packet_number] = p;
-        }
+        it->second.sample_view = sample_view;
+        lock.unlock();
         this->sink->new_packet();
     }
+    else
+        this->sink->packets.erase(it);
 
     return OK;
 }

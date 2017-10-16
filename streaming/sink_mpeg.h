@@ -3,6 +3,7 @@
 #include "media_sink.h"
 #include "media_stream.h"
 #include "presentation_clock.h"
+#include "transform_h264_encoder.h"
 #include <memory>
 #include <vector>
 #include <mutex>
@@ -46,26 +47,16 @@ class sink_mpeg : public media_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<sink_mpeg> async_callback_t;
-    struct request_t
-    {
-        time_unit request_time, timestamp;
-        int packet_number;
-    };
-
+    // used for writing the h264 packet to disk
     struct packet
     {
         request_packet rp;
         media_sample_view_t sample_view;
     };
 private:
-    std::recursive_mutex requests_mutex;
-    std::queue<request_t> requests;
-    std::atomic_int32_t packet_number;
-
     // used for writing the packet to disk
-    std::atomic_int32_t last_packet_number;
     std::recursive_mutex packets_mutex;
-    std::map<int /*packet number*/, packet> packets;
+    std::map<time_unit /*request time*/, packet> packets;
     std::recursive_mutex processed_packets_mutex;
     std::queue<packet> processed_packets;
     CComPtr<async_callback_t> processing_callback;
@@ -82,7 +73,8 @@ public:
     explicit sink_mpeg(const media_session_t& session);
     ~sink_mpeg();
 
-    void initialize(const CComPtr<IMFMediaType>& input_type);
+    void initialize(
+        const CComPtr<IMFMediaType>& input_type);
     // the host stream will dispatch the request to streams
     // directly without media session's involvement
     stream_mpeg_host_t create_host_stream(presentation_clock_t&);
@@ -110,13 +102,22 @@ class stream_mpeg_host : public media_stream, public presentation_clock_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<stream_mpeg_host> async_callback_t;
+    // used for dispatching requests to topology branches
+    struct request_t
+    {
+        time_unit request_time, timestamp;
+        int packet_number;
+    };
 private:
     sink_mpeg_t sink;
     bool running;
 
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_mpeg_t> worker_streams;
-    CComPtr<async_callback_t> request_callback;
+
+    std::atomic_int32_t packet_number;
+
+    stream_h264_encoder_t encoder_stream;
 
     // presentation_clock_sink
     bool on_clock_start(time_unit, int packet_number);
@@ -124,14 +125,12 @@ private:
     void scheduled_callback(time_unit due_time);
 
     void schedule_new(time_unit due_time);
-    void push_request(time_unit);
-
-    // callback
-    void request_cb(void*);
+    void dispatch_request(time_unit due_time);
 public:
     explicit stream_mpeg_host(const sink_mpeg_t& sink);
 
     void add_worker_stream(const stream_mpeg_t& worker_stream);
+    void set_encoder_stream(const stream_h264_encoder_t& e) {this->encoder_stream = e;}
 
     bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}
     result_t request_sample(request_packet&, const media_stream* = NULL);

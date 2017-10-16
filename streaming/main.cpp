@@ -27,15 +27,32 @@ LARGE_INTEGER pc_frequency;
 
 #define WORKER_STREAMS 4
 
+// TODO: drop packets in mpeg sink
+// TODO: the worker thread size should equal at least to the amount of input samples
+// the encoder accepts before outputting samples
+// TODO: change fatal error enum to topology switch
+// TODO: subsequent request&give calls cannot fail
+// TODO: make another function for request_sample thats coming from sink
+// TODO: reuse streams from worker stream to reduce memory load on gpu
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 HWND create_window();
 
 /*
-TODO: media session should dispatch stream calls in same a node to a work queue
 TODO: mfshutdown should be called only after all other threads have terminated
 TODO: schedule_new can retroactively dispatch a request even if the calculated scheduled time
 has already been surpassed(this means that the lag behind constant is between the max and min of
 sample timestamps in the source)
+*/
+
+/*
+
+worker stream in h264 doesn't work because the encoder assumes consecutive packet numbers.
+the stream is set to available as soon as the sample is submitted to the encoder.
+the encoder might need additional data in order to output samples.
+the mpeg will choose the previous stream again, and a deadlock occurs because
+the sample in that stream is already queued in the encoder.
+
 */
 
 void create_streams(
@@ -55,15 +72,16 @@ void create_streams(
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
-        stream_mpeg_t mpeg_worker_stream = mpeg_sink->create_worker_stream();
         stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream(devctx);
-        media_stream_t encoder_stream = h264_encoder_transform->create_stream();
+        stream_mpeg_t worker_stream = mpeg_sink->create_worker_stream();
+        stream_h264_encoder_t encoder_stream = h264_encoder_transform->create_stream();
         media_stream_t color_converter_stream = color_converter_transform->create_stream(devctx);
         media_stream_t source_stream = displaycapture_source->create_stream();
         media_stream_t source_stream2 = displaycapture_source2->create_stream();
         media_stream_t preview_stream = preview_sink2->create_stream();
 
-        mpeg_stream->add_worker_stream(mpeg_worker_stream);
+        mpeg_stream->set_encoder_stream(encoder_stream);
+        mpeg_stream->add_worker_stream(worker_stream);
         transform_stream->set_primary_stream(source_stream.get());
 
         topology->connect_streams(source_stream, transform_stream);
@@ -71,8 +89,8 @@ void create_streams(
         topology->connect_streams(transform_stream, color_converter_stream);
         topology->connect_streams(transform_stream, preview_stream);
         topology->connect_streams(color_converter_stream, encoder_stream);
-        topology->connect_streams(encoder_stream, mpeg_worker_stream);
-        topology->connect_streams(mpeg_worker_stream, mpeg_stream);
+        topology->connect_streams(encoder_stream, worker_stream);
+        topology->connect_streams(worker_stream, mpeg_stream);
     }
 
     // (each thread gets approximately 20ms time slice)
@@ -197,7 +215,7 @@ int main()
         {
             if(msg.message == WM_KEYDOWN)
             {
-                /*for(int i = 0; i < 25001; i++)*/
+                /*for(int i = 0; i < 1500; i++)*/
                 {
                     outputmonitor_index = (outputmonitor_index + 1) % 2;
 

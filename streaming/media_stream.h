@@ -18,6 +18,7 @@ public:
     enum result_t
     {
         OK,
+        // TODO: rename fatal error to topology not found
         // the topology encountered an unrecoverable error
         FATAL_ERROR
     };

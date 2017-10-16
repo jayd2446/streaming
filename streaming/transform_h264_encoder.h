@@ -9,13 +9,17 @@
 #include <memory>
 #include <mutex>
 #include <map>
+#include <unordered_map>
 #include <queue>
 #include <atomic>
 
 // h264 encoder
 class stream_h264_encoder;
+typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
 
 // the encoder transform must be recreated to change encoder parameters
+
+// the encoder currently acts as a sink
 
 class transform_h264_encoder : public media_source
 {
@@ -31,7 +35,6 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     // sorted by packet number
     typedef std::map<int, packet> sorted_map_t;
-    typedef std::queue<packet> queue_t;
     typedef async_callback<transform_h264_encoder> async_callback_t;
 private:
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -43,14 +46,15 @@ private:
     CComPtr<async_callback_t> 
         events_callback, process_input_callback, process_output_callback, processing_callback;
     UINT reset_token;
-    std::recursive_mutex samples_mutex, encoder_mutex, processed_samples_mutex;
+    std::recursive_mutex samples_mutex, encoder_mutex, processed_samples_mutex, events_mutex;
     std::atomic_int32_t last_packet_number, encoder_requests;
 
     sorted_map_t samples;
-    queue_t processed_samples;
+    std::unordered_map<time_unit /*request time*/, packet> processed_samples;
 
     HRESULT set_input_stream_type();
     HRESULT set_output_stream_type();
+    HRESULT set_encoder_parameters();
 
     void events_cb(void*);
     void processing_cb(void*);
@@ -62,13 +66,14 @@ public:
     explicit transform_h264_encoder(const media_session_t& session);
 
     HRESULT initialize(const CComPtr<ID3D11Device>&);
-    media_stream_t create_stream();
+    stream_h264_encoder_t create_stream();
 };
 
 typedef std::shared_ptr<transform_h264_encoder> transform_h264_encoder_t;
 
 class stream_h264_encoder : public media_stream
 {
+    friend class stream_mpeg_host;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:

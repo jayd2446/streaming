@@ -228,8 +228,6 @@ media_stream::result_t stream_videoprocessor::process_sample(
 {
     CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
 
-    // TODO: the order of incoming streams isn't constant anymore
-
     // this function needs to be locked because media session dispatches the process sample calls
     // to work queues in a same node
     std::unique_lock<std::recursive_mutex> lock(this->mutex);

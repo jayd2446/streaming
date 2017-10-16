@@ -239,7 +239,7 @@ void presentation_clock::set_current_time(time_unit t)
 
 bool presentation_clock::clock_start(time_unit time, bool set_time, int packet_number)
 {
-    assert(packet_number >= 0);
+    /*assert(packet_number >= 0);*/
 
     bool stop_all = false;
     {
