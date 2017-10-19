@@ -35,8 +35,6 @@ LARGE_INTEGER pc_frequency;
 
 #define WORKER_STREAMS 3
 
-// TODO: skip the request sample chain and go directly to the sources that need to be captured,
-// after the capturing succeeds, the call stack unwinds and a next request can be made
 // TODO: work queue dispatching should be used when the thread might enter a waiting state
 // (gpu dispatching etc)
 // (actually, the work queue should be used whenever)
@@ -54,18 +52,9 @@ HWND create_window();
 
 /*
 TODO: mfshutdown should be called only after all other threads have terminated
-TODO: schedule_new can retroactively dispatch a request even if the calculated scheduled time
-has already been surpassed(this means that the lag behind constant is between the max and min of
-sample timestamps in the source)
 */
 
 /*
-
-worker stream in h264 doesn't work because the encoder assumes consecutive packet numbers.
-the stream is set to available as soon as the sample is submitted to the encoder.
-the encoder might need additional data in order to output samples.
-the mpeg will choose the previous stream again, and a deadlock occurs because
-the sample in that stream is already queued in the encoder.
 
 color converter should be used only if needed;
 it seems that the amd h264 encoder creates minimal artifacts if the color converter is used

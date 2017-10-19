@@ -7,12 +7,12 @@
 
 #pragma comment(lib, "dxguid.lib")
 
-void CHECK_HR(HRESULT hr)
-{
-    if(FAILED(hr))
-        throw std::exception();
-}
-//#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+//void CHECK_HR(HRESULT hr)
+//{
+//    if(FAILED(hr))
+//        throw std::exception();
+//}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session) :
     media_source(session),
@@ -181,8 +181,8 @@ void transform_h264_encoder::processing_cb(void*)
             IID_ID3D11Texture2D,
             p.sample_view->get_sample<media_sample_texture>()->texture, 0, FALSE, &buffer));
         CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
-        CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
-        CHECK_HR(hr = buffer->SetCurrentLength(len));
+        /*CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
+        CHECK_HR(hr = buffer->SetCurrentLength(len));*/
         // do not use MFCreateVideoSampleFromSurface because it creates evr thread
         CHECK_HR(hr = MFCreateSample(&sample));
         CHECK_HR(hr = sample->AddBuffer(buffer));

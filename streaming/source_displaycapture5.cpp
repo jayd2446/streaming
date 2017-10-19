@@ -77,22 +77,14 @@ bool source_displaycapture5::capture_frame(media_sample_texture_t& sample)
     CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
 
-    UINT64 key = 1;
     if(!sample->texture)
     {
-        /*CComPtr<IDXGIKeyedMutex> mutex;*/
         D3D11_TEXTURE2D_DESC screen_frame_desc;
 
         screen_frame->GetDesc(&screen_frame_desc);
         screen_frame_desc.MiscFlags = 0;
         screen_frame_desc.Usage = D3D11_USAGE_DEFAULT;
-        /*screen_frame_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;*/
-        // allow multithreaded read and write for shaders
-        /*screen_frame_desc.BindFlags = D3D11_BIND_UNORDERED_ACCESS;*/
         CHECK_HR(hr = this->d3d11dev->CreateTexture2D(&screen_frame_desc, NULL, &sample->texture));
-
-        /*CHECK_HR(hr = sample->texture->QueryInterface(&mutex));*/
-        key = 0;
     }
 
     // copy
@@ -105,7 +97,6 @@ bool source_displaycapture5::capture_frame(media_sample_texture_t& sample)
         /*CHECK_HR(hr = frame_mutex->AcquireSync(key, INFINITE));*/
 
         this->d3d11devctx->CopyResource(sample->texture, screen_frame);
-        key = 1;
         /*CHECK_HR(hr = frame_mutex->ReleaseSync(key));*/
 
         // update the newest sample
