@@ -116,8 +116,10 @@ private:
     std::vector<stream_mpeg_t> worker_streams;
 
     std::atomic_int32_t packet_number;
-
+    std::atomic<time_unit> due_time;
     stream_h264_encoder_t encoder_stream;
+
+    int unavailable;
 
     // presentation_clock_sink
     bool on_clock_start(time_unit, int packet_number);

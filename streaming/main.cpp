@@ -6,6 +6,7 @@
 //#include "source_displaycapture2.h"
 //#include "source_displaycapture3.h"
 #include "source_displaycapture4.h"
+#include "source_displaycapture5.h"
 //#include "sink_preview.h"
 #include "media_session.h"
 #include "media_topology.h"
@@ -14,9 +15,16 @@
 #include "transform_color_converter.h"
 #include "sink_mpeg.h"
 #include "sink_preview2.h"
+#include <mutex>
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "D3D11.lib")
+
+#ifdef _DEBUG
+#define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
+#else
+#define CREATE_DEVICE_DEBUG 0
+#endif
 
 LARGE_INTEGER pc_frequency;
 
@@ -25,7 +33,13 @@ LARGE_INTEGER pc_frequency;
 #define OUTPUT_MONITOR 0
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-#define WORKER_STREAMS 4
+#define WORKER_STREAMS 3
+
+// TODO: skip the request sample chain and go directly to the sources that need to be captured,
+// after the capturing succeeds, the call stack unwinds and a next request can be made
+// TODO: work queue dispatching should be used when the thread might enter a waiting state
+// (gpu dispatching etc)
+// (actually, the work queue should be used whenever)
 
 // TODO: drop packets in mpeg sink
 // TODO: the worker thread size should equal at least to the amount of input samples
@@ -53,6 +67,9 @@ the encoder might need additional data in order to output samples.
 the mpeg will choose the previous stream again, and a deadlock occurs because
 the sample in that stream is already queued in the encoder.
 
+color converter should be used only if needed;
+it seems that the amd h264 encoder creates minimal artifacts if the color converter is used
+
 */
 
 void create_streams(
@@ -60,8 +77,8 @@ void create_streams(
     const media_topology_t& topology,
     const sink_preview2_t& preview_sink2,
     const sink_mpeg_t& mpeg_sink,
-    const source_displaycapture4_t& displaycapture_source2,
-    const source_displaycapture4_t& displaycapture_source,
+    const source_displaycapture5_t& displaycapture_source2,
+    const source_displaycapture5_t& displaycapture_source,
     const transform_videoprocessor_t& videoprocessor_transform,
     const transform_color_converter_t& color_converter_transform,
     const transform_h264_encoder_t& h264_encoder_transform)
@@ -74,13 +91,13 @@ void create_streams(
     {
         stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream(devctx);
         stream_mpeg_t worker_stream = mpeg_sink->create_worker_stream();
-        stream_h264_encoder_t encoder_stream = h264_encoder_transform->create_stream();
+        media_stream_t encoder_stream = h264_encoder_transform->create_stream();
         media_stream_t color_converter_stream = color_converter_transform->create_stream(devctx);
         media_stream_t source_stream = displaycapture_source->create_stream();
         media_stream_t source_stream2 = displaycapture_source2->create_stream();
         media_stream_t preview_stream = preview_sink2->create_stream();
 
-        mpeg_stream->set_encoder_stream(encoder_stream);
+        mpeg_stream->set_encoder_stream(std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream));
         mpeg_stream->add_worker_stream(worker_stream);
         transform_stream->set_primary_stream(source_stream.get());
 
@@ -126,9 +143,9 @@ int main()
     hr = MFStartup(MFSTARTUP_NOSOCKET);
 
     //// register all media foundation standard work queues as playback
-    //DWORD taskgroup_id = 0;
-    //if(FAILED(MFRegisterPlatformWithMMCSS(L"Playback", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
-    //    throw std::exception();
+    DWORD taskgroup_id = 0;
+    if(FAILED(MFRegisterPlatformWithMMCSS(L"Capture", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
+        throw std::exception();
 
     HWND hwnd = create_window();
 
@@ -143,7 +160,7 @@ int main()
 
     hr = D3D11CreateDevice(
         NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
-        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
         NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, &d3d11devctx);
 
     /*Sleep(10000);*/
@@ -169,10 +186,10 @@ int main()
         hr = videoprocessor_transform->initialize(d3d11dev);
 
         // create and initialize the display capture source
-        source_displaycapture4_t displaycapture_source(new source_displaycapture4(session));
-        source_displaycapture4_t displaycapture_source2(new source_displaycapture4(session));
-        hr = displaycapture_source->initialize(0, d3d11dev);
-        hr |= displaycapture_source2->initialize(1, d3d11dev);
+        source_displaycapture5_t displaycapture_source(new source_displaycapture5(session));
+        source_displaycapture5_t displaycapture_source2(new source_displaycapture5(session));
+        hr = displaycapture_source->initialize(0, d3d11dev, d3d11devctx);
+        hr |= displaycapture_source2->initialize(1, d3d11dev, d3d11devctx);
         if(FAILED(hr))
         {
             std::cerr << "could not initialize display capture source" << std::endl;
@@ -285,7 +302,7 @@ int main()
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
             }
-            /*Sleep(30000);
+            /*Sleep(60000);
             break;*/
         }
 
@@ -303,6 +320,7 @@ int main()
 
     // main should wait for all threads to terminate before terminating itself;
     // this sleep fakes that functionality
+    std::cout << "ending..." << std::endl;
     Sleep(1000);
     hr = MFShutdown();
 

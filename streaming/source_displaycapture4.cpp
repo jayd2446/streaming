@@ -133,11 +133,11 @@ void source_displaycapture4::thread_capture::schedule_new(time_unit due_time)
                 {
                     // this commented line will skip the loop and calculate the
                     // next frame
-                    /*const time_unit current_time2 = t->get_current_time();
-                    scheduled_time = current_time2;*/
+                    const time_unit current_time2 = t->get_current_time();
+                    scheduled_time = current_time2;
 
                     // frame request was late
-                    std::cout << "--FRAME DROPPED-- @ monitor " << this->monitor_index << std::endl;
+                    /*std::cout << "--FRAME DROPPED-- @ monitor " << this->monitor_index << std::endl;*/
 
                     scheduled_time += pull_interval;
                     scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
@@ -350,6 +350,7 @@ media_sample_t source_displaycapture4::capture_frame(time_unit timestamp, bool& 
     {
         // locking isn't necessary for null sample so just try to lock it
         /*this->null_sample->try_lock_sample();*/
+        std::cout << "NULL SAMPLE RETURNED" << std::endl;
         return this->null_sample;
     }
     else

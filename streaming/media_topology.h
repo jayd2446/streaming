@@ -11,6 +11,8 @@ components can be shared between topologies, but must not be shared between sess
 streams shouldn't be shared between topologies because they are assumed to be singlethreaded
 */
 
+// TODO: improve topology traverse speed
+
 class media_topology
 {
     friend class media_session;

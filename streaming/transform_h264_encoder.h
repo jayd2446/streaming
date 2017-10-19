@@ -17,9 +17,9 @@
 class stream_h264_encoder;
 typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
 
-// the encoder transform must be recreated to change encoder parameters
-
-// the encoder currently acts as a sink
+// the encoder transform must be recreated to change encoder parameter
+// the encoder currently acts as a sink;
+// the first packet must be 0
 
 class transform_h264_encoder : public media_source
 {
@@ -33,10 +33,9 @@ public:
         stream_h264_encoder* stream;
     };
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    // sorted by packet number
-    typedef std::map<int, packet> sorted_map_t;
     typedef async_callback<transform_h264_encoder> async_callback_t;
 private:
+    DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
     MFT_OUTPUT_STREAM_INFO output_stream_info;
     CComPtr<IMFTransform> encoder;
@@ -44,12 +43,20 @@ private:
     CComPtr<IMFDXGIDeviceManager> devmngr;
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<async_callback_t> 
-        events_callback, process_input_callback, process_output_callback, processing_callback;
+        events_callback, process_input_callback, process_output_callback;
     UINT reset_token;
-    std::recursive_mutex samples_mutex, encoder_mutex, processed_samples_mutex, events_mutex;
-    std::atomic_int32_t last_packet_number, encoder_requests;
 
-    sorted_map_t samples;
+    std::recursive_mutex encoder_mutex, events_mutex;
+    std::atomic_int32_t encoder_requests;
+
+    int last_packet_number;
+    std::recursive_mutex requests_mutex;
+    std::deque<packet> requests;
+
+    std::recursive_mutex processed_requests_mutex;
+    std::deque<packet> processed_requests;
+
+    std::recursive_mutex processed_samples_mutex;
     std::unordered_map<time_unit /*request time*/, packet> processed_samples;
 
     HRESULT set_input_stream_type();
@@ -66,7 +73,7 @@ public:
     explicit transform_h264_encoder(const media_session_t& session);
 
     HRESULT initialize(const CComPtr<ID3D11Device>&);
-    stream_h264_encoder_t create_stream();
+    media_stream_t create_stream();
 };
 
 typedef std::shared_ptr<transform_h264_encoder> transform_h264_encoder_t;

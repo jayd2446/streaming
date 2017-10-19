@@ -45,6 +45,7 @@ class media_stream;
 // request packets allow for seamless topology switching;
 // the old topology stays alive for as long as the request packet
 // is alive
+#define INVALID_PACKET_NUMBER -1
 struct request_packet
 {
     media_topology_t topology;
@@ -62,7 +63,7 @@ public:
 
     struct give_sample_t
     {
-        media_topology::topology_t::iterator it;
+        media_stream* down_stream;
         // the stream stays alive as long as the rp is alive
         const media_stream* stream;
         media_sample_view_t sample_view;
@@ -86,10 +87,13 @@ private:
     CComPtr<async_callback_t> give_sample_callback;
     std::queue<give_sample_t> give_sample_requests;
 
+    DWORD serial_workqueue_id;
+
     void request_sample_cb(void*);
     void give_sample_cb(void*);
 public:
     media_session();
+    ~media_session();
 
     // returns the clock of the current topology;
     // components shouldn't store the reference because it might

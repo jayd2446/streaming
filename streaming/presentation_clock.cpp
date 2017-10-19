@@ -16,7 +16,7 @@ void ticks_to_time_unit(LARGE_INTEGER& ticks)
     ticks.QuadPart /= pc_frequency.QuadPart;
 }
 
-DWORD wait_work_queue = 0;
+DWORD wait_work_queue = MFASYNC_CALLBACK_QUEUE_MULTITHREADED;
 
 presentation_clock_sink::presentation_clock_sink() :
     wait_timer(CreateWaitableTimer(NULL, FALSE, NULL)),

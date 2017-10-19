@@ -43,7 +43,7 @@ public:
 private:
     transform_videoprocessor_t transform;
     CComPtr<async_callback_t> processing_callback;
-    media_sample_texture_t output_sample;
+    media_sample_texture_t output_sample, null_sample;
     CComPtr<ID3D11VideoContext> videocontext;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
     std::recursive_mutex mutex;

@@ -102,8 +102,6 @@ void stream_color_converter::processing_cb(void*)
         {
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view;
-            CComPtr<IDXGIKeyedMutex> mutex, mutex2;
-            CComPtr<IDXGISurface> surface, surface2;
 
             D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
             desc.FourCC = 0; // uses the same format the input resource has
@@ -147,22 +145,11 @@ void stream_color_converter::processing_cb(void*)
             this->videocontext->VideoProcessorSetStreamDestRect(
                 this->transform->videoprocessor, 0, TRUE, &source_rect);
 
-            // because the input texture uses shared keyed mutex the texture must be locked
-            // before operating it
-            CHECK_HR(hr = texture->QueryInterface(&surface));
-            CHECK_HR(hr = this->output_sample->texture->QueryInterface(&surface2));
-            CHECK_HR(hr = surface->QueryInterface(&mutex));
-            CHECK_HR(hr = surface2->QueryInterface(&mutex2));
-            CHECK_HR(hr = mutex->AcquireSync(1, INFINITE));
-            CHECK_HR(hr = mutex2->AcquireSync(1, INFINITE));
-
+            // blit
             const UINT stream_count = 1;
             CHECK_HR(hr = this->videocontext->VideoProcessorBlt(
                 this->transform->videoprocessor, this->output_view,
                 0, stream_count, &stream));
-
-            CHECK_HR(hr = mutex2->ReleaseSync(1));
-            CHECK_HR(hr = mutex->ReleaseSync(1));
         }
 
         this->output_sample->timestamp = this->pending_packet.sample_view->get_sample()->timestamp;
@@ -206,7 +193,7 @@ media_stream::result_t stream_color_converter::process_sample(
         // create output texture with nv12 color format
         D3D11_TEXTURE2D_DESC desc;
         texture->GetDesc(&desc);
-        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+        desc.MiscFlags = 0;
         /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
         desc.Usage = D3D11_USAGE_DEFAULT;
         desc.Format = DXGI_FORMAT_NV12;
@@ -214,9 +201,6 @@ media_stream::result_t stream_color_converter::process_sample(
             &desc, NULL, &this->output_sample->texture));
         CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->resource));
         CHECK_HR(hr = this->output_sample->resource->GetSharedHandle(&this->output_sample->shared_handle));
-        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->mutex));
-        CHECK_HR(hr = this->output_sample->mutex->AcquireSync(0, INFINITE));
-        CHECK_HR(hr = this->output_sample->mutex->ReleaseSync(1));
 
         // create output view
         D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;

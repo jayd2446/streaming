@@ -96,17 +96,14 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
     HRESULT hr = S_OK;
 
     CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
-    CComPtr<IDXGIKeyedMutex> mutex = sample_view->get_sample<media_sample_texture>()->mutex;
     if(texture)
     {
-        scoped_lock lock(this->context_mutex);
         this->drawn = true;
 
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
 
-        CHECK_HR(hr = mutex->AcquireSync(1, INFINITE));
-
+        scoped_lock lock(this->context_mutex);
         CHECK_HR(hr = texture->QueryInterface(&surface));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
             surface,
@@ -118,8 +115,6 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
         this->d2d1devctx->BeginDraw();
         this->d2d1devctx->DrawBitmap(bitmap);
         this->d2d1devctx->EndDraw();
-
-        CHECK_HR(hr = mutex->ReleaseSync(1));
     }
     else
         this->drawn = false;

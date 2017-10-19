@@ -150,7 +150,10 @@ media_stream::result_t stream_mpeg::process_sample(
 /////////////////////////////////////////////////////////////////
 
 
-stream_mpeg_host::stream_mpeg_host(const sink_mpeg_t& sink) : sink(sink), running(false)
+stream_mpeg_host::stream_mpeg_host(const sink_mpeg_t& sink) : 
+    sink(sink), 
+    running(false),
+    unavailable(0)
 {
 }
 
@@ -222,14 +225,14 @@ sample timestamps in the source)
                 {
                     // this commented line will skip the loop and calculate the
                     // next frame
-                    /*const time_unit current_time2 = t->get_current_time();
-                    scheduled_time = current_time2;*/
+                    const time_unit current_time2 = t->get_current_time();
+                    scheduled_time = current_time2;
 
-                    if((scheduled_time - LAG_BEHIND) >= 0)
+                    /*if((scheduled_time - LAG_BEHIND) >= 0)
                     {
                         CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(
                             0, scheduled_time - LAG_BEHIND));
-                    }
+                    }*/
 
                     // frame request was late
                     std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
@@ -237,6 +240,7 @@ sample timestamps in the source)
                     scheduled_time += pull_interval;
                     scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
                 }
+                // TODO: schedule new callback should be optimized
                 while(!this->schedule_new_callback(scheduled_time));
             }
         }
@@ -249,7 +253,23 @@ done:
 
 void stream_mpeg_host::dispatch_request(time_unit due_time)
 {
+    /*
+    TODO: media session should have a is switch topology function for checking
+    for new topology
+
+    media session should dispatch work straight to source streams;
+    also, it should decide based on the stream which work queue to use
+
+    the work is dispatched to sources the same way its done in give_sample function
+    except that work queue is decided based on the source(displaycapture5 needs synchronized queue)
+    */
     const time_unit request_time = due_time - LAG_BEHIND;
+
+    if(this->unavailable > 240)
+    {
+        std::cout << "BREAK" << std::endl;
+        DebugBreak();
+    }
 
     // let the source texture queue saturate a bit
     if(request_time >= 0)
@@ -263,6 +283,7 @@ void stream_mpeg_host::dispatch_request(time_unit due_time)
         {
             if((*it)->available)
             {
+                this->unavailable = 0;
                 (*it)->available = false;
                 // increase the packet number and add it to the rp
                 rp.packet_number = this->packet_number++;
@@ -284,6 +305,9 @@ void stream_mpeg_host::dispatch_request(time_unit due_time)
                 return;
             }
         }
+
+        std::cout << "--SAMPLE REQUEST DROPPED IN SINK_MPEG--" << std::endl;
+        this->unavailable++;
     }
 }
 
@@ -297,42 +321,22 @@ media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp, cons
 {
     assert(false);
     return OK;
-    //// dispatch the request to a worker stream
-    //std::unique_lock<std::recursive_mutex> lock(this->worker_streams_mutex);
-    //for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
-    //{
-    //    if((*it)->available)
-    //    {
-    //        (*it)->available = false;
-    //        lock.unlock();
-    //        
-    //        // deadlock happens because the available property is set
-    //        // even if there's a sample on a queue; the next request will thus wait,
-    //        // and a deadlock will occur because the packet numbers aren't consecutive anymore
-
-    //        // add a packet to the packets queue
-    //        std::unique_lock<std::recursive_mutex> lock(this->sink->packets_mutex);
-    //        sink_mpeg::packet p;
-    //        p.rp = rp;
-    //        this->sink->packets[rp.request_time] = p;
-    //        lock.unlock();
-
-    //        /*std::cout << rp.packet_number << std::endl;*/
-
-    //        return (*it)->request_sample(rp, this);
-    //    }
-    //}
-
-    //std::cout << "--SAMPLE REQUEST DROPPED IN STREAM_MPEG_HOST--" << std::endl;
-    //return OK;
 }
 
 media_stream::result_t stream_mpeg_host::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
+    HRESULT hr = S_OK;
+
     std::unique_lock<std::recursive_mutex> lock(this->sink->packets_mutex);
     auto it = this->sink->packets.find(rp.request_time);
     assert(it != this->sink->packets.end());
+
+    // TODO: the source should just stall if all the input samples are occupied
+    // (or maybe not, because it seems that the mpeg file sink takes the input sample 
+    // timestamps into consideration)
+
+    // TODO: this throttles the capture process
 
     // the encoder will just give an empty texture sample if the input sample was empty
     if(sample_view->get_sample<media_sample_memorybuffer>())
@@ -342,7 +346,13 @@ media_stream::result_t stream_mpeg_host::process_sample(
         this->sink->new_packet();
     }
     else
+    {
         this->sink->packets.erase(it);
+        CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(0, rp.request_time));
+    }
 
+done:
+    if(FAILED(hr))
+        throw std::exception();
     return OK;
 }

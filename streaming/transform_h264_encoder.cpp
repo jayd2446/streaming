@@ -5,7 +5,6 @@
 #include <iostream>
 #include <cassert>
 
-#pragma comment(lib, "Evr.lib")
 #pragma comment(lib, "dxguid.lib")
 
 void CHECK_HR(HRESULT hr)
@@ -17,10 +16,9 @@ void CHECK_HR(HRESULT hr)
 
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session) :
     media_source(session),
-    last_packet_number(-1),
+    last_packet_number(INVALID_PACKET_NUMBER),
     encoder_requests(0)
 {
-    this->processing_callback.Attach(new async_callback_t(&transform_h264_encoder::processing_cb));
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
     this->process_output_callback.Attach(new async_callback_t(&transform_h264_encoder::process_output_cb));
     this->process_input_callback.Attach(new async_callback_t(&transform_h264_encoder::process_input_cb));
@@ -42,29 +40,13 @@ HRESULT transform_h264_encoder::set_input_stream_type()
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
     CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
-    CHECK_HR(hr = this->encoder->SetInputType(0, input_type, 0));
+    CHECK_HR(hr = this->encoder->SetInputType(this->input_id, input_type, 0));
 done:
     return hr;
 }
 
 HRESULT transform_h264_encoder::set_output_stream_type()
 {
-    /*HRESULT hr = S_OK;
-
-    CComPtr<IMFMediaType> output_type;
-    for(DWORD index = 0;; index++)
-    {
-        CComPtr<IMFMediaType> type;
-        GUID subtype;
-        CHECK_HR(hr = this->encoder->GetOutputAvailableType(0, index, &type));
-        CHECK_HR(hr = type->GetGUID(MF_MT_SUBTYPE, &subtype));
-        if(IsEqualGUID(subtype, MFVideoFormat_H264))
-        {
-            output_type = type;
-            break;
-        }
-    }*/
-
     HRESULT hr = S_OK;
     CHECK_HR(hr = MFCreateMediaType(&this->output_type));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
@@ -76,7 +58,7 @@ HRESULT transform_h264_encoder::set_output_stream_type()
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
     CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
-    CHECK_HR(hr = this->encoder->SetOutputType(0, this->output_type, 0));
+    CHECK_HR(hr = this->encoder->SetOutputType(this->output_id, this->output_type, 0));
 done:
     return hr;
 }
@@ -86,14 +68,15 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     HRESULT hr = S_OK;
     CComPtr<ICodecAPI> codec;
     VARIANT v;
-    v.vt = VT_UI4;
-    v.ulVal = eAVEncCommonRateControlMode_CBR;
 
     CHECK_HR(hr = this->encoder->QueryInterface(&codec));
+
+    v.vt = VT_UI4;
+    v.ulVal = eAVEncCommonRateControlMode_CBR;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonRateControlMode, &v));
-    /*v.vt = VT_BOOL;
+    v.vt = VT_BOOL;
     v.ulVal = VARIANT_FALSE;
-    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));*/
+    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));
 
 done:
     return hr;
@@ -160,26 +143,26 @@ void transform_h264_encoder::processing_cb(void*)
         scoped_lock lock(this->encoder_mutex);
         packet p;
         {
-            scoped_lock lock(this->samples_mutex);
+            scoped_lock lock_(this->requests_mutex);
             scoped_lock lock2(this->processed_samples_mutex);
 
-            if(!this->encoder_requests || this->samples.empty())
+            if(!this->encoder_requests || this->requests.empty())
                 return;
 
             // pull the next sample from the queue
-            auto first_item = this->samples.begin();
-            if(this->last_packet_number != -1 && first_item->first != (this->last_packet_number + 1))
+            auto first_item = this->requests.begin();
+            if(first_item->rp.packet_number != (this->last_packet_number + 1))
                 return;
 
-            p = first_item->second;
-            this->samples.erase(first_item);
+            p = *first_item;
+            this->requests.pop_front();
 
             // update the last packet number
             this->last_packet_number = p.rp.packet_number;
 
             // pass if the sample has no data
             if(!p.sample_view->get_sample<media_sample_texture>()->texture)
-                return;
+                continue;
 
             // add the sample to the processed samples queue
             assert(this->processed_samples.find(p.rp.request_time) == this->processed_samples.end());
@@ -194,14 +177,14 @@ void transform_h264_encoder::processing_cb(void*)
         CComPtr<IMFSample> sample;
         DWORD len;
 
-        // (cant lock the texture because the unlocking can happen in another thread)
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
             p.sample_view->get_sample<media_sample_texture>()->texture, 0, FALSE, &buffer));
         CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
         CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
         CHECK_HR(hr = buffer->SetCurrentLength(len));
-        CHECK_HR(hr = MFCreateVideoSampleFromSurface(NULL, &sample));
+        // do not use MFCreateVideoSampleFromSurface because it creates evr thread
+        CHECK_HR(hr = MFCreateSample(&sample));
         CHECK_HR(hr = sample->AddBuffer(buffer));
 #define FPS60_INTERVAL 166667
         CHECK_HR(hr = sample->SetSampleTime(p.rp.request_time));
@@ -210,7 +193,7 @@ void transform_h264_encoder::processing_cb(void*)
         duration -= ((3 * duration) % 500000) / 3;
         const time_unit t = duration - p.rp.request_time;
         CHECK_HR(hr = sample->SetSampleDuration(t));*/
-        CHECK_HR(hr = this->encoder->ProcessInput(0, sample, 0));
+        CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));
     }
 
 done:
@@ -233,7 +216,7 @@ void transform_h264_encoder::process_output_cb(void*)
 
     MFT_OUTPUT_DATA_BUFFER output;
     DWORD status = 0;
-    output.dwStreamID = 0;
+    output.dwStreamID = this->output_id;
     if(mft_provides_samples)
         output.pSample = NULL;
     else
@@ -255,16 +238,9 @@ void transform_h264_encoder::process_output_cb(void*)
         p = it->second;
         this->processed_samples.erase(it);
     }
-    static LONGLONG last_sample_time = -1;
 
-//#define FPS60_INTERVAL 166667
     sample->timestamp = time;//p.sample_view->get_sample()->timestamp;
     sample->sample.Attach(output.pSample);
-
-    if(time < last_sample_time)
-        time = 0;
-    else
-        last_sample_time = time;
 
     /*CHECK_HR(hr = sample->sample->SetSampleTime(p.rp.request_time));*/
     /*CHECK_HR(hr = sample->sample->SetSampleDuration(FPS60_INTERVAL));*/
@@ -329,11 +305,13 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
     if(input_stream_count != 1 || output_stream_count != 1)
         CHECK_HR(hr = MF_E_TOPO_CODEC_NOT_FOUND);
 
-    DWORD input_id, output_id;
     hr = this->encoder->GetStreamIDs(
-        input_stream_count, &input_id, output_stream_count, &output_id);
-    if(hr != E_NOTIMPL)
-        CHECK_HR(hr = MF_E_TOPO_CODEC_NOT_FOUND);
+        input_stream_count, &this->input_id, output_stream_count, &this->output_id);
+    if(hr == E_NOTIMPL)
+        this->input_id = this->output_id = 0;
+    else if(FAILED(hr))
+        CHECK_HR(hr);
+
 
     // set the encoder parameters
     CHECK_HR(hr = this->set_encoder_parameters());
@@ -353,8 +331,8 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
         goto done;*/
 
     // get the buffer requirements for the encoder
-    CHECK_HR(hr = this->encoder->GetInputStreamInfo(0, &this->input_stream_info));
-    CHECK_HR(hr = this->encoder->GetOutputStreamInfo(0, &this->output_stream_info));
+    CHECK_HR(hr = this->encoder->GetInputStreamInfo(this->input_id, &this->input_stream_info));
+    CHECK_HR(hr = this->encoder->GetOutputStreamInfo(this->output_id, &this->output_stream_info));
 
     // associate a dxgidevicemanager with the encoder
     CHECK_HR(hr = MFCreateDXGIDeviceManager(&this->reset_token, &this->devmngr));
@@ -394,9 +372,9 @@ done:
     return hr;
 }
 
-stream_h264_encoder_t transform_h264_encoder::create_stream()
+media_stream_t transform_h264_encoder::create_stream()
 {
-    return stream_h264_encoder_t(
+    return media_stream_t(
         new stream_h264_encoder(this->shared_from_this<transform_h264_encoder>()));
 }
 
@@ -413,8 +391,23 @@ stream_h264_encoder::stream_h264_encoder(const transform_h264_encoder_t& transfo
 
 media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, const media_stream*)
 {
+    // TODO: the mpeg sink should use the timestamp from the sample,
+    // not request time(request time might be greatly drifted if there's system overhead)
+
+    {
+        // push a placeholder packet to queue
+        scoped_lock lock(this->transform->requests_mutex);
+        transform_h264_encoder::packet p;
+        p.rp.packet_number = INVALID_PACKET_NUMBER;
+        this->transform->requests.push_back(p);
+    }
+
     if(!this->transform->session->request_sample(this, rp, false))
+    {
+        scoped_lock lock(this->transform->requests_mutex);
+        this->transform->requests.pop_back();
         return FATAL_ERROR;
+    }
     return OK;
 }
 
@@ -424,18 +417,22 @@ media_stream::result_t stream_h264_encoder::process_sample(
     media_stream::result_t res = OK;
 
     {
-        scoped_lock lock(this->transform->samples_mutex);
         transform_h264_encoder::packet p;
         p.rp = rp;
         p.sample_view = sample_view;
         p.stream = this;
-        assert(this->transform->samples.find(rp.packet_number) == this->transform->samples.end());
-        this->transform->samples[rp.packet_number] = p;
+
+        scoped_lock lock_(this->transform->requests_mutex);
+        this->transform->requests[p.rp.packet_number - this->transform->last_packet_number - 1] =
+            p;
     }
+
+    /*std::cout << rp.packet_number << std::endl;*/
+
+    this->transform->processing_cb(NULL);
 
     if(!sample_view->get_sample<media_sample_texture>()->texture)
         res = this->transform->session->give_sample(this, sample_view, rp, false) ? OK : FATAL_ERROR;
 
-    this->transform->processing_cb(NULL);
     return res;
 }

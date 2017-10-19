@@ -75,6 +75,7 @@ stream_videoprocessor::stream_videoprocessor(
     const transform_videoprocessor_t& transform) :
     transform(transform),
     output_sample(new media_sample_texture),
+    null_sample(new media_sample_texture),
     view_initialized(false),
     primary_stream(NULL)
 {
@@ -98,7 +99,7 @@ void stream_videoprocessor::processing_cb(void*)
     HRESULT hr = S_OK;
     {
         // lock the output sample
-        media_sample_view_t sample_view(new media_sample_view(this->output_sample));
+        media_sample_view_t sample_view;
 
         CComPtr<ID3D11Texture2D> texture = 
             this->pending_request2.sample_view->get_sample<media_sample_texture>()->texture;
@@ -107,10 +108,10 @@ void stream_videoprocessor::processing_cb(void*)
 
         if(texture && texture2)
         {
+            sample_view.reset(new media_sample_view(this->output_sample));
+
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view[2];
-            CComPtr<IDXGIKeyedMutex> mutex, mutex2, mutex3;
-            CComPtr<IDXGISurface> surface, surface2, surface3;
 
             D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
             desc.FourCC = 0; // uses the same format the input resource has
@@ -167,18 +168,6 @@ void stream_videoprocessor::processing_cb(void*)
             this->videocontext->VideoProcessorSetStreamDestRect(
                 this->transform->videoprocessor, 1, TRUE, &rect);
 
-            // because the input texture uses shared keyed mutex the texture must be locked
-            // before operating it
-            CHECK_HR(hr = texture->QueryInterface(&surface));
-            CHECK_HR(hr = texture2->QueryInterface(&surface2));
-            CHECK_HR(hr = this->output_sample->texture->QueryInterface(&surface3));
-            CHECK_HR(hr = surface->QueryInterface(&mutex));
-            CHECK_HR(hr = surface2->QueryInterface(&mutex2));
-            CHECK_HR(hr = surface3->QueryInterface(&mutex3));
-            CHECK_HR(hr = mutex->AcquireSync(1, INFINITE));
-            CHECK_HR(hr = mutex2->AcquireSync(1, INFINITE));
-            CHECK_HR(hr = mutex3->AcquireSync(1, INFINITE));
-
             // dxva 2 and direct3d11 video seems to be similar
             // https://msdn.microsoft.com/en-us/library/windows/desktop/cc307964(v=vs.85).aspx#Video_Process_Blit
             // the video processor alpha blends the input streams to the target output
@@ -186,11 +175,9 @@ void stream_videoprocessor::processing_cb(void*)
             CHECK_HR(hr = this->videocontext->VideoProcessorBlt(
                 this->transform->videoprocessor, this->output_view,
                 0, stream_count, stream));
-
-            CHECK_HR(hr = mutex3->ReleaseSync(1));
-            CHECK_HR(hr = mutex2->ReleaseSync(1));
-            CHECK_HR(hr = mutex->ReleaseSync(1));
         }
+        else
+            sample_view.reset(new media_sample_view(this->null_sample));
 
         // use the earliest timestamp
         this->output_sample->timestamp = 
@@ -241,7 +228,7 @@ media_stream::result_t stream_videoprocessor::process_sample(
         // create output texture with same format as the sample
         D3D11_TEXTURE2D_DESC desc;
         texture->GetDesc(&desc);
-        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+        desc.MiscFlags = 0;
         /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
         desc.Usage = D3D11_USAGE_DEFAULT;
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -249,9 +236,6 @@ media_stream::result_t stream_videoprocessor::process_sample(
             &desc, NULL, &this->output_sample->texture));
         CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->resource));
         CHECK_HR(hr = this->output_sample->resource->GetSharedHandle(&this->output_sample->shared_handle));
-        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->mutex));
-        CHECK_HR(hr = this->output_sample->mutex->AcquireSync(0, INFINITE));
-        CHECK_HR(hr = this->output_sample->mutex->ReleaseSync(1));
 
         // create output view
         D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
