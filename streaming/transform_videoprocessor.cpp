@@ -8,17 +8,20 @@
 #undef min
 #endif
 
-transform_videoprocessor::transform_videoprocessor(const media_session_t& session) :
-    media_source(session)
+transform_videoprocessor::transform_videoprocessor(
+    const media_session_t& session, std::recursive_mutex& context_mutex) :
+    media_source(session), context_mutex(context_mutex)
 {
 }
 
-HRESULT transform_videoprocessor::initialize(const CComPtr<ID3D11Device>& d3d11dev)
+HRESULT transform_videoprocessor::initialize(
+    const CComPtr<ID3D11Device>& d3d11dev, ID3D11DeviceContext* devctx)
 {
     HRESULT hr = S_OK;
 
     this->d3d11dev = d3d11dev;
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->videodevice));
+    CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
     
     // check the supported capabilities of the video processor
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc;
@@ -58,10 +61,10 @@ done:
     return hr;
 }
 
-stream_videoprocessor_t transform_videoprocessor::create_stream(ID3D11DeviceContext* devctx)
+stream_videoprocessor_t transform_videoprocessor::create_stream()
 {
     return stream_videoprocessor_t(
-        new stream_videoprocessor(devctx, this->shared_from_this<transform_videoprocessor>()));
+        new stream_videoprocessor(this->shared_from_this<transform_videoprocessor>()));
 }
 
 
@@ -70,9 +73,7 @@ stream_videoprocessor_t transform_videoprocessor::create_stream(ID3D11DeviceCont
 /////////////////////////////////////////////////////////////////
 
 
-stream_videoprocessor::stream_videoprocessor(
-    ID3D11DeviceContext* devctx,
-    const transform_videoprocessor_t& transform) :
+stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& transform) :
     transform(transform),
     output_sample(new media_sample_texture),
     null_sample(new media_sample_texture),
@@ -80,13 +81,6 @@ stream_videoprocessor::stream_videoprocessor(
     primary_stream(NULL)
 {
     this->processing_callback.Attach(new async_callback_t(&stream_videoprocessor::processing_cb));
-
-    HRESULT hr = S_OK;
-    CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
 }
 
 void stream_videoprocessor::processing_cb(void*)
@@ -123,6 +117,8 @@ void stream_videoprocessor::processing_cb(void*)
             CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
                 texture2, this->transform->enumerator, &desc, &input_view[1]));
 
+            // TODO: do not create input views every time
+
             // convert
             D3D11_VIDEO_PROCESSOR_STREAM stream[2];
             RECT source_rect;
@@ -145,34 +141,36 @@ void stream_videoprocessor::processing_cb(void*)
                 stream[i].ppFutureSurfacesRight = NULL;
             }
 
+            scoped_lock lock(this->transform->context_mutex);
+
             // set the target rectangle for the output
             // (sets the rectangle where the output blit on the output texture will appear)
-            this->videocontext->VideoProcessorSetOutputTargetRect(
+            this->transform->videocontext->VideoProcessorSetOutputTargetRect(
                 this->transform->videoprocessor, TRUE, &source_rect);
 
             // set the source rectangle of the streams
             // (the part of the stream texture which will be included in the blit)
-            this->videocontext->VideoProcessorSetStreamSourceRect(
+            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
                 this->transform->videoprocessor, 0, TRUE, &source_rect);
-            this->videocontext->VideoProcessorSetStreamSourceRect(
+            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
                 this->transform->videoprocessor, 1, TRUE, &source_rect);
 
             // set the destination rectangle of the streams
             // (where the stream will appear in the output blit)
-            this->videocontext->VideoProcessorSetStreamDestRect(
+            this->transform->videocontext->VideoProcessorSetStreamDestRect(
                 this->transform->videoprocessor, 0, TRUE, &source_rect);
             RECT rect;
             rect.top = rect.left = 0;
             rect.right = 1920 / 3;
             rect.bottom = 1080 / 3;
-            this->videocontext->VideoProcessorSetStreamDestRect(
+            this->transform->videocontext->VideoProcessorSetStreamDestRect(
                 this->transform->videoprocessor, 1, TRUE, &rect);
 
             // dxva 2 and direct3d11 video seems to be similar
             // https://msdn.microsoft.com/en-us/library/windows/desktop/cc307964(v=vs.85).aspx#Video_Process_Blit
             // the video processor alpha blends the input streams to the target output
             const UINT stream_count = 2;
-            CHECK_HR(hr = this->videocontext->VideoProcessorBlt(
+            CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
                 this->transform->videoprocessor, this->output_view,
                 0, stream_count, stream));
         }

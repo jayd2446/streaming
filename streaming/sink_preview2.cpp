@@ -3,8 +3,8 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-sink_preview2::sink_preview2(const media_session_t& session) : 
-    media_sink(session), drawn(false)
+sink_preview2::sink_preview2(const media_session_t& session, std::recursive_mutex& context_mutex) : 
+    media_sink(session), context_mutex(context_mutex)
 {
 }
 
@@ -98,8 +98,6 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
     CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
     if(texture)
     {
-        this->drawn = true;
-
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
 
@@ -115,12 +113,10 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
         this->d2d1devctx->BeginDraw();
         this->d2d1devctx->DrawBitmap(bitmap);
         this->d2d1devctx->EndDraw();
-    }
-    else
-        this->drawn = false;
 
-    if(this->drawn)
+        // dxgi functions need to be synchronized with the context mutex
         this->swapchain->Present(0, 0);
+    }
 
 done:
     if(FAILED(hr))

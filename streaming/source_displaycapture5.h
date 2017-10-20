@@ -29,8 +29,10 @@ private:
 
     std::recursive_mutex requests_mutex;
     std::queue<request_t> requests;
+
+    std::recursive_mutex& context_mutex;
 public:
-    explicit source_displaycapture5(const media_session_t& session);
+    source_displaycapture5(const media_session_t& session, std::recursive_mutex& context_mutex);
 
     bool capture_frame(media_sample_texture_t&);
 

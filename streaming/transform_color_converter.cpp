@@ -9,17 +9,20 @@
 //        throw std::exception();
 //}
 
-transform_color_converter::transform_color_converter(const media_session_t& session) :
-    media_source(session)
+transform_color_converter::transform_color_converter(
+    const media_session_t& session, std::recursive_mutex& context_mutex) :
+    media_source(session), context_mutex(context_mutex)
 {
 }
 
-HRESULT transform_color_converter::initialize(const CComPtr<ID3D11Device>& d3d11dev)
+HRESULT transform_color_converter::initialize(
+    const CComPtr<ID3D11Device>& d3d11dev, ID3D11DeviceContext* devctx)
 {
     HRESULT hr = S_OK;
 
     this->d3d11dev = d3d11dev;
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->videodevice));
+    CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
     
     // check the supported capabilities of the video processor
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc;
@@ -59,10 +62,10 @@ done:
     return hr;
 }
 
-media_stream_t transform_color_converter::create_stream(ID3D11DeviceContext* devctx)
+media_stream_t transform_color_converter::create_stream()
 {
     return media_stream_t(
-        new stream_color_converter(devctx, this->shared_from_this<transform_color_converter>()));
+        new stream_color_converter(this->shared_from_this<transform_color_converter>()));
 }
 
 
@@ -71,21 +74,12 @@ media_stream_t transform_color_converter::create_stream(ID3D11DeviceContext* dev
 /////////////////////////////////////////////////////////////////
 
 
-stream_color_converter::stream_color_converter(
-    ID3D11DeviceContext* devctx,
-    const transform_color_converter_t& transform) :
+stream_color_converter::stream_color_converter(const transform_color_converter_t& transform) :
     transform(transform),
     output_sample(new media_sample_texture),
     view_initialized(false)
 {
     this->processing_callback.Attach(new async_callback_t(&stream_color_converter::processing_cb));
-
-    HRESULT hr = S_OK;
-    CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
 }
 
 void stream_color_converter::processing_cb(void*)
@@ -130,24 +124,26 @@ void stream_color_converter::processing_cb(void*)
             stream.pInputSurfaceRight = NULL;
             stream.ppFutureSurfacesRight = NULL;
 
+            scoped_lock lock(this->transform->context_mutex);
+
             // set the target rectangle for the output
             // (sets the rectangle where the output blit on the output texture will appear)
-            this->videocontext->VideoProcessorSetOutputTargetRect(
+            this->transform->videocontext->VideoProcessorSetOutputTargetRect(
                 this->transform->videoprocessor, TRUE, &source_rect);
 
             // set the source rectangle of the stream
             // (the part of the stream texture which will be included in the blit)
-            this->videocontext->VideoProcessorSetStreamSourceRect(
+            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
                 this->transform->videoprocessor, 0, TRUE, &source_rect);
 
             // set the destination rectangle of the stream
             // (where the stream will appear in the output blit)
-            this->videocontext->VideoProcessorSetStreamDestRect(
+            this->transform->videocontext->VideoProcessorSetStreamDestRect(
                 this->transform->videoprocessor, 0, TRUE, &source_rect);
 
             // blit
             const UINT stream_count = 1;
-            CHECK_HR(hr = this->videocontext->VideoProcessorBlt(
+            CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
                 this->transform->videoprocessor, this->output_view,
                 0, stream_count, &stream));
         }

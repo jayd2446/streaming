@@ -25,11 +25,14 @@ private:
     CComPtr<ID3D11VideoDevice> videodevice;
     CComPtr<ID3D11VideoProcessor> videoprocessor;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
-public:
-    explicit transform_videoprocessor(const media_session_t& session);
+    CComPtr<ID3D11VideoContext> videocontext;
 
-    HRESULT initialize(const CComPtr<ID3D11Device>&);
-    stream_videoprocessor_t create_stream(ID3D11DeviceContext*);
+    std::recursive_mutex& context_mutex;
+public:
+    transform_videoprocessor(const media_session_t& session, std::recursive_mutex& context_mutex);
+
+    HRESULT initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext*);
+    stream_videoprocessor_t create_stream();
 };
 
 typedef std::shared_ptr<transform_videoprocessor> transform_videoprocessor_t;
@@ -44,7 +47,6 @@ private:
     transform_videoprocessor_t transform;
     CComPtr<async_callback_t> processing_callback;
     media_sample_texture_t output_sample, null_sample;
-    CComPtr<ID3D11VideoContext> videocontext;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
     std::recursive_mutex mutex;
     bool view_initialized;
@@ -56,9 +58,7 @@ private:
 
     void processing_cb(void*);
 public:
-    stream_videoprocessor(
-        ID3D11DeviceContext*,
-        const transform_videoprocessor_t& transform);
+    explicit stream_videoprocessor(const transform_videoprocessor_t& transform);
 
     // the secondary stream is blended on to the primary stream;
     // primary stream must be in the same topology as this stream

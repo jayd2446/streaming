@@ -11,6 +11,8 @@
 
 // color space converter
 
+// TODO: color space converter can be implemented by videoprocessor
+
 class transform_color_converter : public media_source
 {
     friend class stream_color_converter;
@@ -19,14 +21,17 @@ public:
 private:
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;
+    CComPtr<ID3D11VideoContext> videocontext;
     // all interfaces that derive from D3D11DeviceChild are free-threaded(multithreading safe)
     CComPtr<ID3D11VideoProcessor> videoprocessor;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
-public:
-    explicit transform_color_converter(const media_session_t& session);
 
-    HRESULT initialize(const CComPtr<ID3D11Device>&);
-    media_stream_t create_stream(ID3D11DeviceContext*);
+    std::recursive_mutex& context_mutex;
+public:
+    transform_color_converter(const media_session_t& session, std::recursive_mutex& context_mutex);
+
+    HRESULT initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext* devctx);
+    media_stream_t create_stream();
 };
 
 typedef std::shared_ptr<transform_color_converter> transform_color_converter_t;
@@ -41,16 +46,13 @@ private:
     transform_color_converter_t transform;
     CComPtr<async_callback_t> processing_callback;
     media_sample_texture_t output_sample;
-    CComPtr<ID3D11VideoContext> videocontext;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
     bool view_initialized;
     packet pending_packet;
 
     void processing_cb(void*);
 public:
-    stream_color_converter(
-        ID3D11DeviceContext*,
-        const transform_color_converter_t& transform);
+    explicit stream_color_converter(const transform_color_converter_t& transform);
 
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     // called by the downstream from media session

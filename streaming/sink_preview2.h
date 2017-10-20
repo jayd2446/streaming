@@ -21,7 +21,8 @@ class sink_preview2 : public media_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    std::recursive_mutex samples_mutex, context_mutex;
+    std::recursive_mutex samples_mutex;
+    std::recursive_mutex& context_mutex;
 
     HWND hwnd;
     CComPtr<ID2D1Factory1> d2d1factory;
@@ -35,11 +36,10 @@ private:
     CComPtr<ID2D1Bitmap1> d2dtarget_bitmap;
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
-    bool drawn;
 
     void draw_sample(const media_sample_view_t& sample_view, request_packet& rp);
 public:
-    explicit sink_preview2(const media_session_t& session);
+    sink_preview2(const media_session_t& session, std::recursive_mutex& context_mutex);
 
     // initializes the window
     void initialize(

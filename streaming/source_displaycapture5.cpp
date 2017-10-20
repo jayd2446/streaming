@@ -7,9 +7,11 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-source_displaycapture5::source_displaycapture5(const media_session_t& sessio) : 
+source_displaycapture5::source_displaycapture5(
+    const media_session_t& session, std::recursive_mutex& context_mutex) : 
     media_source(session),
-    newest_sample(new media_sample_texture)
+    newest_sample(new media_sample_texture),
+    context_mutex(context_mutex)
 {
 }
 
@@ -61,13 +63,11 @@ done:
     return hr;
 }
 
-// display capture mutex needed because for some reason acquirenextframe and
-// releaseframe can deadlock with each other
-std::recursive_mutex displaycapture_mutex;
 
 bool source_displaycapture5::capture_frame(media_sample_texture_t& sample)
 {
-    scoped_lock lock(displaycapture_mutex);
+    // dxgi functions need to be synchronized with the context mutex
+    scoped_lock lock(this->context_mutex);
 
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;
@@ -91,13 +91,7 @@ bool source_displaycapture5::capture_frame(media_sample_texture_t& sample)
     // TODO: do not copy if the frame hasnt changed
     /*if(frame_info.LastPresentTime.QuadPart != 0)*/
     {
-        /*CComPtr<IDXGIKeyedMutex> frame_mutex;*/
-
-        /*CHECK_HR(hr = sample->texture->QueryInterface(&frame_mutex));*/
-        /*CHECK_HR(hr = frame_mutex->AcquireSync(key, INFINITE));*/
-
         this->d3d11devctx->CopyResource(sample->texture, screen_frame);
-        /*CHECK_HR(hr = frame_mutex->ReleaseSync(key));*/
 
         // update the newest sample
         std::atomic_exchange(&this->newest_sample, sample);

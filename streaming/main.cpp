@@ -62,7 +62,6 @@ it seems that the amd h264 encoder creates minimal artifacts if the color conver
 */
 
 void create_streams(
-    ID3D11DeviceContext* devctx,
     const media_topology_t& topology,
     const sink_preview2_t& preview_sink2,
     const sink_mpeg_t& mpeg_sink,
@@ -78,10 +77,10 @@ void create_streams(
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
-        stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream(devctx);
+        stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream();
         stream_mpeg_t worker_stream = mpeg_sink->create_worker_stream();
         media_stream_t encoder_stream = h264_encoder_transform->create_stream();
-        media_stream_t color_converter_stream = color_converter_transform->create_stream(devctx);
+        media_stream_t color_converter_stream = color_converter_transform->create_stream();
         media_stream_t source_stream = displaycapture_source->create_stream();
         media_stream_t source_stream2 = displaycapture_source2->create_stream();
         media_stream_t preview_stream = preview_sink2->create_stream();
@@ -146,6 +145,7 @@ int main()
     CComPtr<IDXGISwapChain> swapchain;
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11DeviceContext> d3d11devctx;
+    std::recursive_mutex context_mutex;
 
     hr = D3D11CreateDevice(
         NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
@@ -167,16 +167,20 @@ int main()
         hr = h264_encoder_transform->initialize(d3d11dev);
 
         // create and initialize the color converter transform
-        transform_color_converter_t color_converter_transform(new transform_color_converter(session));
-        hr = color_converter_transform->initialize(d3d11dev);
+        transform_color_converter_t color_converter_transform(
+            new transform_color_converter(session, context_mutex));
+        hr = color_converter_transform->initialize(d3d11dev, d3d11devctx);
 
         // create and initialize the video processor transform
-        transform_videoprocessor_t videoprocessor_transform(new transform_videoprocessor(session));
-        hr = videoprocessor_transform->initialize(d3d11dev);
+        transform_videoprocessor_t videoprocessor_transform(
+            new transform_videoprocessor(session, context_mutex));
+        hr = videoprocessor_transform->initialize(d3d11dev, d3d11devctx);
 
         // create and initialize the display capture source
-        source_displaycapture5_t displaycapture_source(new source_displaycapture5(session));
-        source_displaycapture5_t displaycapture_source2(new source_displaycapture5(session));
+        source_displaycapture5_t displaycapture_source(
+            new source_displaycapture5(session, context_mutex));
+        source_displaycapture5_t displaycapture_source2(
+            new source_displaycapture5(session, context_mutex));
         hr = displaycapture_source->initialize(0, d3d11dev, d3d11devctx);
         hr |= displaycapture_source2->initialize(1, d3d11dev, d3d11devctx);
         if(FAILED(hr))
@@ -188,7 +192,7 @@ int main()
 
         // create and initialize the preview window sink
         /*sink_preview_t preview_sink(new sink_preview(session));*/
-        sink_preview2_t preview_sink2(new sink_preview2(session));
+        sink_preview2_t preview_sink2(new sink_preview2(session, context_mutex));
         preview_sink2->initialize(
             WINDOW_WIDTH, WINDOW_HEIGHT,
             hwnd, d3d11dev, d3d11devctx, swapchain);
@@ -199,7 +203,6 @@ int main()
 
         // initialize the topology
         create_streams(
-            d3d11devctx,
             topology,
             preview_sink2,
             mpeg_sink,
@@ -229,7 +232,6 @@ int main()
                     {
                         topology.reset(new media_topology);
                         create_streams(
-                            d3d11devctx,
                             topology,
                             preview_sink2,
                             mpeg_sink,
@@ -243,7 +245,6 @@ int main()
                     {
                         topology.reset(new media_topology);
                         create_streams(
-                            d3d11devctx,
                             topology,
                             preview_sink2,
                             mpeg_sink,
@@ -308,7 +309,9 @@ int main()
     topology = NULL;*/
 
     // main should wait for all threads to terminate before terminating itself;
-    // this sleep fakes that functionality
+    // this sleep fakes that functionality;
+    // TODO: there now exists a chance that the context mutex has been destroyed while
+    // a work queue item is dispatching;
     std::cout << "ending..." << std::endl;
     Sleep(1000);
     hr = MFShutdown();
