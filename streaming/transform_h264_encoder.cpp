@@ -7,12 +7,12 @@
 
 #pragma comment(lib, "dxguid.lib")
 
-//void CHECK_HR(HRESULT hr)
-//{
-//    if(FAILED(hr))
-//        throw std::exception();
-//}
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+void CHECK_HR(HRESULT hr)
+{
+    if(FAILED(hr))
+        throw std::exception();
+}
+//#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session) :
     media_source(session),
