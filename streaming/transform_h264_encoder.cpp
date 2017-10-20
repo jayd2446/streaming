@@ -33,7 +33,8 @@ HRESULT transform_h264_encoder::set_input_stream_type()
     CComPtr<IMFMediaType> input_type;
     CHECK_HR(hr = MFCreateMediaType(&input_type));
     CHECK_HR(hr = input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
-    CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));
+    /*CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));*/
+    CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
     CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, 60, 1));
     CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, 1920, 1080));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
@@ -180,14 +181,16 @@ void transform_h264_encoder::processing_cb(void*)
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
             p.sample_view->get_sample<media_sample_texture>()->texture, 0, FALSE, &buffer));
-        CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
-        /*CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
+        /*CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
+        CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
         CHECK_HR(hr = buffer->SetCurrentLength(len));*/
         // do not use MFCreateVideoSampleFromSurface because it creates evr thread
         CHECK_HR(hr = MFCreateSample(&sample));
         CHECK_HR(hr = sample->AddBuffer(buffer));
-#define FPS60_INTERVAL 166667
+        UINT64 duration;
+        CHECK_HR(hr = MFFrameRateToAverageTimePerFrame(60, 1, &duration));
         CHECK_HR(hr = sample->SetSampleTime(p.rp.request_time));
+        CHECK_HR(hr = sample->SetSampleDuration(duration));
         /*time_unit duration = p.rp.request_time;
         duration += FPS60_INTERVAL;
         duration -= ((3 * duration) % 500000) / 3;
@@ -204,6 +207,8 @@ done:
 void transform_h264_encoder::process_output_cb(void*)
 {
     HRESULT hr = S_OK;
+
+    // TODO: the call order can be ensured
 
     // the processed packets might arrive out of order
 
@@ -354,8 +359,8 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
 
     // start the encoder
     CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
-    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));
     CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, NULL));
+    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));
 
 done:
     // release allocated memory

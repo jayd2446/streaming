@@ -80,7 +80,7 @@ void create_streams(
         stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream();
         stream_mpeg_t worker_stream = mpeg_sink->create_worker_stream();
         media_stream_t encoder_stream = h264_encoder_transform->create_stream();
-        media_stream_t color_converter_stream = color_converter_transform->create_stream();
+        /*media_stream_t color_converter_stream = color_converter_transform->create_stream();*/
         media_stream_t source_stream = displaycapture_source->create_stream();
         media_stream_t source_stream2 = displaycapture_source2->create_stream();
         media_stream_t preview_stream = preview_sink2->create_stream();
@@ -91,9 +91,9 @@ void create_streams(
 
         topology->connect_streams(source_stream, transform_stream);
         topology->connect_streams(source_stream2, transform_stream);
-        topology->connect_streams(transform_stream, color_converter_stream);
+        /*topology->connect_streams(transform_stream, color_converter_stream);*/
         topology->connect_streams(transform_stream, preview_stream);
-        topology->connect_streams(color_converter_stream, encoder_stream);
+        topology->connect_streams(transform_stream, encoder_stream);
         topology->connect_streams(encoder_stream, worker_stream);
         topology->connect_streams(worker_stream, mpeg_stream);
     }
