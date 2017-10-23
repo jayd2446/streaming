@@ -9,12 +9,8 @@
 #include <mfapi.h>
 #include <atlbase.h>
 
-// TODO: time unit should probably be defined here
-
 class presentation_clock;
 typedef std::shared_ptr<presentation_clock> presentation_clock_t;
-
-void ticks_to_time_unit(LARGE_INTEGER&);
 
 // TODO: scheduling assumes clock increments based on real time(the time source should 
 // implement scheduling)
@@ -34,6 +30,11 @@ private:
     CHandle wait_timer;
     MFWORKITEM_KEY callback_key;
     time_unit scheduled_time;
+
+    static const time_unit second_in_100_nanoseconds = 10000000;
+    time_unit pull_interval;
+    time_unit ts, common;
+    time_unit get_remainder(time_unit t) const;
 
     // schedules the next callback in the list
     bool schedule_callback(time_unit due_time);
@@ -56,6 +57,10 @@ public:
     presentation_clock_sink();
     virtual ~presentation_clock_sink();
 
+    void set_pull_rate(int64_t fps_num, int64_t fps_den);
+    time_unit get_pull_interval() const {return this->pull_interval;}
+    time_unit get_next_due_time(time_unit) const;
+
     // adds this sink to the list of sinks in the presentation clock
     bool register_sink(presentation_clock_t&);
     // (not needed when using shared ptrs instead of weak ptrs)
@@ -71,13 +76,14 @@ public:
 
 typedef std::shared_ptr<presentation_clock_sink> presentation_clock_sink_t;
 
+// the clock resolution must be restricted to microsecond resolution so that
+// the scheduling is consistent
+
 // TODO: multithreading safety needs to be ensured
 class presentation_clock
 {
     friend class presentation_clock_sink;
 public:
-    // if clock is relocated to session, this vector should include weak ptrs
-    // to avoid circular dependency
     typedef std::vector<presentation_clock_sink_t> vector_t;
 private:
     vector_t sinks;
@@ -85,15 +91,13 @@ private:
 
     time_unit time_off;
     LARGE_INTEGER start_time;
-    mutable LARGE_INTEGER current_time_ticks;
     mutable time_unit current_time;
     bool running;
 public:
     presentation_clock();
     ~presentation_clock();
 
-    // returns the internal time which is used to calculate the current time
-    LARGE_INTEGER get_start_time_internal() const {return this->start_time;}
+    time_unit performance_counter_to_time_unit(LARGE_INTEGER) const;
 
     time_unit get_current_time() const;
     void set_current_time(time_unit t);

@@ -10,19 +10,24 @@ typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 #undef max
 #endif
 
-void ticks_to_time_unit(LARGE_INTEGER& ticks)
-{
-    ticks.QuadPart *= 1000000 * 10;
-    ticks.QuadPart /= pc_frequency.QuadPart;
-}
-
 DWORD wait_work_queue = MFASYNC_CALLBACK_QUEUE_MULTITHREADED;
+
+// https://stackoverflow.com/questions/10956543/gcd-function-in-c-sans-cmath-library
+time_unit calc_gcd(time_unit u, time_unit v) {
+    while ( v != 0) {
+        time_unit r = u % v;
+        u = v;
+        v = r;
+    }
+    return u;
+}
 
 presentation_clock_sink::presentation_clock_sink() :
     wait_timer(CreateWaitableTimer(NULL, FALSE, NULL)),
     callback_key(0),
     scheduled_time(std::numeric_limits<time_unit>::max()),
-    unregistered(true)
+    unregistered(true),
+    ts(0)
 {
     this->callback.Attach(new async_callback_t(&presentation_clock_sink::callback_cb));
     // TODO: make the work queue static
@@ -194,6 +199,33 @@ bool presentation_clock_sink::schedule_new_callback(time_unit t)
     return this->schedule_callback(t);
 }
 
+void presentation_clock_sink::set_pull_rate(int64_t fps_num, int64_t fps_den)
+{
+    const time_unit t_per_frame = (second_in_100_nanoseconds * fps_den) / fps_num;
+    this->pull_interval = t_per_frame + 1;
+
+    const time_unit t_overflow = ((t_per_frame + 1) * fps_num) - (second_in_100_nanoseconds * fps_den);
+    const time_unit gcd = calc_gcd(fps_num - t_overflow, t_overflow);
+    const time_unit t_max = (fps_num - t_overflow) / gcd;
+    const time_unit t_min = t_overflow / gcd;
+
+    this->ts = t_max + t_min;
+    this->common = (t_max * (t_per_frame + 1)) + (t_min * t_per_frame);
+}
+
+time_unit presentation_clock_sink::get_remainder(time_unit t) const
+{
+    assert(this->ts > 0);
+    return ((t * this->ts) % this->common) / this->ts;
+}
+
+time_unit presentation_clock_sink::get_next_due_time(time_unit t) const
+{
+    t += this->pull_interval;
+    t -= this->get_remainder(t);
+    return t;
+}
+
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
@@ -205,12 +237,20 @@ presentation_clock::presentation_clock() :
     current_time(0),
     time_off(0)
 {
-    this->current_time_ticks.QuadPart = this->start_time.QuadPart = 0;
+    this->start_time.QuadPart = 0;
 }
 
 presentation_clock::~presentation_clock()
 {
     /*assert(this->sinks.empty());*/
+}
+
+time_unit presentation_clock::performance_counter_to_time_unit(LARGE_INTEGER t2) const
+{
+    t2.QuadPart -= this->start_time.QuadPart;
+    t2.QuadPart *= 1000000 * 10;
+    t2.QuadPart /= pc_frequency.QuadPart;
+    return t2.QuadPart + this->time_off;
 }
 
 time_unit presentation_clock::get_current_time() const
@@ -221,25 +261,29 @@ time_unit presentation_clock::get_current_time() const
     // calculate the new current time
     LARGE_INTEGER current_time;
     QueryPerformanceCounter(&current_time);
-    current_time.QuadPart -= this->start_time.QuadPart;
-    this->current_time_ticks.QuadPart = current_time.QuadPart;
-    current_time.QuadPart *= 1000000 * 10;
-    current_time.QuadPart /= pc_frequency.QuadPart;
-    this->current_time = current_time.QuadPart + this->time_off;
+    this->current_time = this->performance_counter_to_time_unit(current_time);
+
+    // truncate to microsecond resolution
+    this->current_time /= 10;
+    this->current_time *= 10;
 
     return this->current_time;
 }
 
 void presentation_clock::set_current_time(time_unit t)
 {
-    this->current_time = this->time_off = t;
+    this->current_time = t;
+
+    // truncate to microsecond resolution
+    this->current_time /= 10;
+    this->time_off = (this->current_time *= 10);
+
     QueryPerformanceCounter(&this->start_time);
-    this->start_time.QuadPart -= this->current_time_ticks.QuadPart;
 }
 
 bool presentation_clock::clock_start(time_unit time, bool set_time, int packet_number)
 {
-    /*assert(packet_number >= 0);*/
+    assert(packet_number >= 0);
 
     bool stop_all = false;
     {
