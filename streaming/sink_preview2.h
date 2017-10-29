@@ -21,7 +21,6 @@ class sink_preview2 : public media_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    std::recursive_mutex samples_mutex;
     std::recursive_mutex& context_mutex;
 
     HWND hwnd;

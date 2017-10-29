@@ -25,7 +25,7 @@ private:
     CComPtr<ID3D11DeviceContext> d3d11devctx;
 
     std::recursive_mutex capture_frame_mutex;
-    media_sample_texture_t newest_sample;
+    media_buffer_texture_t newest_buffer;
 
     std::recursive_mutex requests_mutex;
     std::queue<request_t> requests;
@@ -34,7 +34,7 @@ private:
 public:
     source_displaycapture5(const media_session_t& session, std::recursive_mutex& context_mutex);
 
-    bool capture_frame(media_sample_texture_t&);
+    bool capture_frame(const media_buffer_texture_t&, time_unit& timestamp);
 
     media_stream_t create_stream();
     // after initializing starts the capturing
@@ -53,7 +53,8 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_displaycapture5_t source;
-    media_sample_texture_t sample;
+    media_sample_t sample;
+    const media_buffer_texture_t buffer;
     CComPtr<async_callback_t> capture_frame_callback;
 
     void capture_frame_cb(void*);

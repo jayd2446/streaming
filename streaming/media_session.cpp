@@ -7,16 +7,41 @@ media_session::media_session()
 {
     this->give_sample_callback.Attach(new async_callback_t(&media_session::give_sample_cb));
     this->request_sample_callback.Attach(new async_callback_t(&media_session::request_sample_cb));
-
-    // TODO: remove serial work queue
-    if(FAILED(MFAllocateSerialWorkQueue(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &this->serial_workqueue_id)))
-        throw std::exception();
 }
 
 media_session::~media_session()
 {
-    const HRESULT hr = MFUnlockWorkQueue(this->serial_workqueue_id);
-    assert(SUCCEEDED(hr));
+}
+
+bool media_session::switch_topology_immediate(const media_topology_t& new_topology, time_unit time_point)
+{
+    scoped_lock lock(this->topology_switch_mutex);
+
+    this->switch_topology(new_topology);
+
+    // topologies are assumed to share the same time source
+    presentation_clock_t clock;
+    media_topology_t topology = this->new_topology;
+
+    // reset the new topology to null
+    this->new_topology = NULL;
+
+    // stop the old topology and copy its packet number if it exists
+    if(this->get_current_clock(clock))
+    {
+        clock->clock_stop(time_point);
+
+        media_topology_t old_topology = std::atomic_load(&this->current_topology);
+        topology->packet_number = old_topology->packet_number;
+    }
+
+    // switch to the new topology
+    std::atomic_exchange(&this->current_topology, topology);
+
+    // start the new topology
+    if(!this->get_current_clock(clock))
+        throw std::exception();
+    return clock->clock_start(time_point);
 }
 
 bool media_session::get_current_clock(presentation_clock_t& clock) const
@@ -32,104 +57,78 @@ bool media_session::get_current_clock(presentation_clock_t& clock) const
 
 void media_session::switch_topology(const media_topology_t& topology)
 {
-    if(!std::atomic_load(&this->current_topology))
-        std::atomic_exchange(&this->current_topology, topology);
-    else
-        std::atomic_exchange(&this->new_topology, topology);
+    scoped_lock lock(this->topology_switch_mutex);
+    this->new_topology = topology;
 }
 
-bool media_session::start_playback(time_unit time_start)
+bool media_session::start_playback(const media_topology_t& topology, time_unit time_point)
 {
-    // TODO: add parameter for playback topology
-    // (so that switch_topology doesnt have to set it)
+    return this->switch_topology_immediate(topology, time_point);
+}
+
+void media_session::stop_playback()
+{
+    // TODO: stop play back should switch to a topology that has the same time source
+    // but no streams
 
     presentation_clock_t clock;
     if(!this->get_current_clock(clock))
-        return false;
-
-    return clock->clock_start(time_start);
-}
-
-bool media_session::stop_playback()
-{
-    // TODO: stop_playback might in turn automatically set the topology
-    // to null
-
-    presentation_clock_t clock;
-    if(!this->get_current_clock(clock))
-        return false;
+        throw std::exception();
 
     clock->clock_stop();
-    return true;
 }
+
+
+
+#include <iostream>
 
 bool media_session::request_sample(
     const media_stream* stream, 
     request_packet& rp,
     bool is_sink)
 {
-    // dispatch the request call to a work queue if it's coming from a sink
-    media_topology_t topology;
     if(is_sink)
     {
         // if the call is coming from sink, it is assumed that no subsequent is_sink
         // calls are made before this has been processed
 
+        // packet numbers must be consecutive and newer packet number must correspond
+        // to the newest topology;
+        // after the clock stop call, the stream won't be able to dispatch new requests
+        // because the topology isn't active anymore
+
+        this->topology_switch_mutex.lock();
+
         assert(!rp.topology);
 
         // check if there's a topology switch
-        topology = std::atomic_load(&this->new_topology);
-        if(topology)
+        if(this->new_topology)
         {
-            presentation_clock_t clock, old_clock;
-
-            // TODO: for even more precise set_current_time,
-            // the old clock shouldnt be stopped at all
-            // (requires a temporary clock to be set)
-
-            // rp.topology is null when it's coming from the sink
-            std::atomic_exchange(&this->new_topology, rp.topology);
-            // stop the current topology
-            if(!this->get_current_clock(old_clock))
-                throw std::exception();
-            old_clock->clock_stop();
-            // switch to the new topology
-            std::atomic_exchange(&this->current_topology, topology);
-            // start the new topology at the previous clock time
-            if(!this->get_current_clock(clock))
-                throw std::exception();
-            // sets the clock to old time and starts the timer
-            // with the request time stamp
-            clock->set_current_time(old_clock->get_current_time());
-            clock->clock_start(rp.timestamp, false, rp.packet_number);
-
+            this->switch_topology_immediate(this->new_topology, rp.timestamp);
+            this->topology_switch_mutex.unlock();
             return false;
         }
 
         rp.topology = std::atomic_load(&this->current_topology);
-
-        //request_sample_t request;
-        //request.stream = stream;
-        //request.rp = rp;
-
-        //{
-        //    scoped_lock lock(this->request_sample_mutex);
-        //    this->request_sample_requests.push(request);
-        //}
-
-        //// dispatch this function to a work queue
-        //const HRESULT hr = this->request_sample_callback->mf_put_work_item(
-        //    this->shared_from_this<media_session>(), this->serial_workqueue_id);
-        //if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        //    throw std::exception();
-        //return true;
     }
 
-    topology = rp.topology;
-    assert(topology);
+    assert(rp.topology);
 
-    media_topology::topology_t::iterator it = topology->topology_reverse.find(stream);
-    assert(it != topology->topology_reverse.end());
+    media_topology::topology_t::iterator it = rp.topology->topology_reverse.find(stream);
+    assert(is_sink || it != rp.topology->topology_reverse.end());
+    if(it == rp.topology->topology_reverse.end())
+    {
+        assert(is_sink);
+        this->topology_switch_mutex.unlock();
+        return false;
+    }
+
+    if(is_sink)
+    {   
+        rp.packet_number = rp.topology->packet_number++;
+        /*std::cout << rp.packet_number << std::endl;*/
+        this->topology_switch_mutex.unlock();
+    }
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
         if((*jt)->request_sample(rp, stream) == media_stream::FATAL_ERROR)
@@ -249,7 +248,9 @@ void media_session::give_sample_cb(void*)
 
 void media_session::shutdown()
 {
+    scoped_lock lock(this->topology_switch_mutex);
+
     media_topology_t null_topology;
     std::atomic_exchange(&this->current_topology, null_topology);
-    std::atomic_exchange(&this->new_topology, null_topology);
+    this->new_topology = null_topology;
 }

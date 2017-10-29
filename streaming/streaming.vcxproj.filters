@@ -54,6 +54,15 @@
     <ClCompile Include="source_displaycapture5.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source_audio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source_loopback.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transform_aac_encoder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -111,6 +120,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="source_displaycapture5.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_audio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_loopback.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="request_packet.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="transform_aac_encoder.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

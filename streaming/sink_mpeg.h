@@ -4,6 +4,8 @@
 #include "media_stream.h"
 #include "presentation_clock.h"
 #include "transform_h264_encoder.h"
+#include "transform_aac_encoder.h"
+#include "source_loopback.h"
 #include <memory>
 #include <vector>
 #include <mutex>
@@ -65,18 +67,27 @@ private:
     CComPtr<IMFMediaSink> mpeg_media_sink;
     CComPtr<IMFSinkWriter> sink_writer;
     CComPtr<IMFByteStream> byte_stream;
-    CComPtr<IMFMediaType> mpeg_file_type;
+    CComPtr<IMFMediaType> mpeg_file_type, mpeg_file_type_audio;
+    std::recursive_mutex writing_mutex;
+
+    media_session_t audio_session;
+    source_loopback_t loopback_source;
+    transform_aac_encoder_t aac_encoder_transform;
+    std::shared_ptr<sink_mpeg> mpeg_sink;
 
     void new_packet();
     void processing_cb(void*);
+
+    bool parent;
+
+    sink_mpeg(const media_session_t& session, const CComPtr<IMFSinkWriter>&);
 public:
-    explicit sink_mpeg(const media_session_t& session);
+    sink_mpeg(const media_session_t& session);
     ~sink_mpeg();
 
-    void initialize(
-        const CComPtr<IMFMediaType>& input_type);
+    void initialize(const CComPtr<IMFMediaType>& input_type);
     // the host stream will dispatch the request to streams
-    // directly without media session's involvement
+    // directly without media session's involvement;
     stream_mpeg_host_t create_host_stream(presentation_clock_t&);
     // streams must be connected to the host stream
     stream_mpeg_t create_worker_stream();
@@ -118,21 +129,29 @@ private:
     std::atomic_int32_t packet_number;
     std::atomic<time_unit> due_time;
     stream_h264_encoder_t encoder_stream;
+    stream_aac_encoder_t encoder_aac_stream;
 
     int unavailable;
 
+    // the audio topology is switched to the session
+    // when the video topology starts
+    media_topology_t audio_topology;
+
+    void set_audio_session(time_unit time_point);
+
     // presentation_clock_sink
-    bool on_clock_start(time_unit, int packet_number);
+    bool on_clock_start(time_unit);
     void on_clock_stop(time_unit);
     void scheduled_callback(time_unit due_time);
 
     void schedule_new(time_unit due_time);
-    void dispatch_request(time_unit due_time);
+    void dispatch_request(time_unit request_time);
 public:
     explicit stream_mpeg_host(const sink_mpeg_t& sink);
 
     void add_worker_stream(const stream_mpeg_t& worker_stream);
     void set_encoder_stream(const stream_h264_encoder_t& e) {this->encoder_stream = e;}
+    void set_encoder_stream(const stream_aac_encoder_t& e) {this->encoder_aac_stream = e;}
 
     bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}
     result_t request_sample(request_packet&, const media_stream* = NULL);

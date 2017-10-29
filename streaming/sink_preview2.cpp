@@ -95,7 +95,7 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
 {
     HRESULT hr = S_OK;
 
-    CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
+    CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;
     if(texture)
     {
         CComPtr<ID2D1Bitmap1> bitmap;

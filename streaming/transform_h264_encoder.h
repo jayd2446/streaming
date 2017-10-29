@@ -21,19 +21,16 @@ typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
 // the encoder currently acts as a sink;
 // the first packet must be 0
 
+// TODO: encoder must be drained so that it won't cause the driver to hang
+// and crash
 class transform_h264_encoder : public media_source
 {
     friend class stream_h264_encoder;
 public:
-    struct packet 
-    {
-        request_packet rp; 
-        media_sample_view_t sample_view;
-        // request packet ensures that the stream will stay alive
-        stream_h264_encoder* stream;
-    };
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
+    typedef request_queue<WORKER_STREAMS> request_queue_t;
+    typedef request_queue_t::request_t request_t;
 private:
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -49,15 +46,10 @@ private:
     std::recursive_mutex encoder_mutex, events_mutex;
     std::atomic_int32_t encoder_requests;
 
-    int last_packet_number;
-    std::recursive_mutex requests_mutex;
-    std::deque<packet> requests;
-
-    std::recursive_mutex processed_requests_mutex;
-    std::deque<packet> processed_requests;
+    request_queue_t requests;
 
     std::recursive_mutex processed_samples_mutex;
-    std::unordered_map<time_unit /*request time*/, packet> processed_samples;
+    std::unordered_map<time_unit /*request time*/, request_t> processed_samples;
 
     HRESULT set_input_stream_type();
     HRESULT set_output_stream_type();
@@ -80,7 +72,6 @@ typedef std::shared_ptr<transform_h264_encoder> transform_h264_encoder_t;
 
 class stream_h264_encoder : public media_stream
 {
-    friend class stream_mpeg_host;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:

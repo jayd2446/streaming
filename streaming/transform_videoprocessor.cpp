@@ -7,6 +7,9 @@
 #ifdef min
 #undef min
 #endif
+#ifdef max
+#undef max
+#endif
 
 transform_videoprocessor::transform_videoprocessor(
     const media_session_t& session, std::recursive_mutex& context_mutex) :
@@ -75,8 +78,9 @@ stream_videoprocessor_t transform_videoprocessor::create_stream()
 
 stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& transform) :
     transform(transform),
-    output_sample(new media_sample_texture),
-    null_sample(new media_sample_texture),
+    output_sample(new media_sample),
+    output_buffer(new media_buffer_texture),
+    output_buffer_null(new media_buffer_texture),
     view_initialized(false),
     primary_stream(NULL)
 {
@@ -96,12 +100,13 @@ void stream_videoprocessor::processing_cb(void*)
         media_sample_view_t sample_view;
 
         CComPtr<ID3D11Texture2D> texture = 
-            this->pending_request2.sample_view->get_sample<media_sample_texture>()->texture;
+            this->pending_request2.sample_view->get_buffer<media_buffer_texture>()->texture;
         CComPtr<ID3D11Texture2D> texture2 =
-            this->pending_request.sample_view->get_sample<media_sample_texture>()->texture;
+            this->pending_request.sample_view->get_buffer<media_buffer_texture>()->texture;
 
         if(texture && texture2)
         {
+            this->output_sample->buffer = this->output_buffer;
             sample_view.reset(new media_sample_view(this->output_sample));
 
             // create the input view for the sample to be converted
@@ -175,9 +180,13 @@ void stream_videoprocessor::processing_cb(void*)
                 0, stream_count, stream));
         }
         else
-            sample_view.reset(new media_sample_view(this->null_sample));
+        {
+            this->output_sample->buffer = this->output_buffer_null;
+            sample_view.reset(new media_sample_view(this->output_sample));
+        }
 
-        // use the earliest timestamp
+        // use the earliest timestamp;
+        // actually, max must be used so that the timestamp stays incremental
         this->output_sample->timestamp = 
             std::min(
             this->pending_request2.sample_view->get_sample()->timestamp, 
@@ -211,7 +220,7 @@ media_stream::result_t stream_videoprocessor::request_sample(
 media_stream::result_t stream_videoprocessor::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp, const media_stream* prev_stream)
 {
-    CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
+    CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;
 
     // this function needs to be locked because media session dispatches the process sample calls
     // to work queues in a same node
@@ -227,20 +236,18 @@ media_stream::result_t stream_videoprocessor::process_sample(
         D3D11_TEXTURE2D_DESC desc;
         texture->GetDesc(&desc);
         desc.MiscFlags = 0;
-        /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
         desc.Usage = D3D11_USAGE_DEFAULT;
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-            &desc, NULL, &this->output_sample->texture));
-        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->resource));
-        CHECK_HR(hr = this->output_sample->resource->GetSharedHandle(&this->output_sample->shared_handle));
+            &desc, NULL, &this->output_buffer->texture));
+        CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));
 
         // create output view
         D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
         view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
         view_desc.Texture2D.MipSlice = 0;
         CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-            this->output_sample->texture, this->transform->enumerator,
+            this->output_buffer->texture, this->transform->enumerator,
             &view_desc, &this->output_view));
     }
 

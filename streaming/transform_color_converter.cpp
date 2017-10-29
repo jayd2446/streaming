@@ -76,7 +76,9 @@ media_stream_t transform_color_converter::create_stream()
 
 stream_color_converter::stream_color_converter(const transform_color_converter_t& transform) :
     transform(transform),
-    output_sample(new media_sample_texture),
+    output_sample(new media_sample),
+    output_buffer(new media_buffer_texture),
+    output_buffer_null(new media_buffer_texture),
     view_initialized(false)
 {
     this->processing_callback.Attach(new async_callback_t(&stream_color_converter::processing_cb));
@@ -88,12 +90,16 @@ void stream_color_converter::processing_cb(void*)
 
     {
         // lock the output sample
-        media_sample_view_t sample_view(new media_sample_view(this->output_sample));
+        media_sample_view_t sample_view;
 
         CComPtr<ID3D11Texture2D> texture = 
-            this->pending_packet.sample_view->get_sample<media_sample_texture>()->texture;
+            this->pending_packet.sample_view->get_buffer<media_buffer_texture>()->texture;
+
         if(texture)
         {
+            this->output_sample->buffer = this->output_buffer;
+            sample_view.reset(new media_sample_view(this->output_sample));
+
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view;
 
@@ -147,6 +153,11 @@ void stream_color_converter::processing_cb(void*)
                 this->transform->videoprocessor, this->output_view,
                 0, stream_count, &stream));
         }
+        else
+        {
+            this->output_sample->buffer = this->output_buffer_null;
+            sample_view.reset(new media_sample_view(this->output_sample));
+        }
 
         this->output_sample->timestamp = this->pending_packet.sample_view->get_sample()->timestamp;
         
@@ -179,31 +190,29 @@ media_stream::result_t stream_color_converter::process_sample(
     // TODO: resources shouldn't be initialized here because of the multithreaded
     // nature they might be initialized more than once
 
-    CComPtr<ID3D11Texture2D> texture = sample_view->get_sample<media_sample_texture>()->texture;
+    HRESULT hr = S_OK;
+    CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;
 
     if(!this->view_initialized && texture)
     {
         this->view_initialized = true;
-        HRESULT hr = S_OK;
 
         // create output texture with nv12 color format
         D3D11_TEXTURE2D_DESC desc;
         texture->GetDesc(&desc);
         desc.MiscFlags = 0;
-        /*desc.BindFlags = D3D11_BIND_RENDER_TARGET;*/
         desc.Usage = D3D11_USAGE_DEFAULT;
         desc.Format = DXGI_FORMAT_NV12;
         CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-            &desc, NULL, &this->output_sample->texture));
-        CHECK_HR(hr = this->output_sample->texture->QueryInterface(&this->output_sample->resource));
-        CHECK_HR(hr = this->output_sample->resource->GetSharedHandle(&this->output_sample->shared_handle));
+            &desc, NULL, &this->output_buffer->texture));
+        CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));
 
         // create output view
         D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
         view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
         view_desc.Texture2D.MipSlice = 0;
         CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-            this->output_sample->texture, this->transform->enumerator,
+            this->output_buffer->texture, this->transform->enumerator,
             &view_desc, &this->output_view));
     }
 

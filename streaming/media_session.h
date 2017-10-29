@@ -4,6 +4,7 @@
 #include "presentation_clock.h"
 #include "async_callback.h"
 #include "enable_shared_from_this.h"
+#include "request_packet.h"
 #include <memory>
 #include <vector>
 #include <map>
@@ -41,20 +42,6 @@ new request will be made)
 
 class media_stream;
 
-// request packet has a reference to the topology it belongs to;
-// request packets allow for seamless topology switching;
-// the old topology stays alive for as long as the request packet
-// is alive
-#define INVALID_PACKET_NUMBER -1
-struct request_packet
-{
-    media_topology_t topology;
-    time_unit request_time;
-    time_unit timestamp;
-    // cant be a negative number
-    int packet_number;
-};
-
 class media_session : public enable_shared_from_this
 {
 public:
@@ -77,7 +64,10 @@ public:
         request_packet rp;
     };
 private:
-    media_topology_t current_topology, new_topology;
+    media_topology_t current_topology;
+
+    std::recursive_mutex topology_switch_mutex;
+    media_topology_t new_topology;
 
     std::recursive_mutex request_sample_mutex;
     CComPtr<async_callback_t> request_sample_callback;
@@ -86,8 +76,6 @@ private:
     std::recursive_mutex give_sample_mutex;
     CComPtr<async_callback_t> give_sample_callback;
     std::queue<give_sample_t> give_sample_requests;
-
-    DWORD serial_workqueue_id;
 
     void request_sample_cb(void*);
     void give_sample_cb(void*);
@@ -100,12 +88,17 @@ public:
     // create a cyclic dependency between clock and components;
     // returns false if the clock is NULL
     bool get_current_clock(presentation_clock_t&) const;
-    void switch_topology(const media_topology_t& new_topology);
 
-    // returns false if any of the sinks couldn't be started or stopped
-    bool start_playback(time_unit time_start);
-    // returns false if there's no current topology
-    bool stop_playback();
+    void switch_topology(const media_topology_t& new_topology);
+    // starts the new topology immediately;
+    // returns the clock_start return value
+    bool switch_topology_immediate(const media_topology_t& new_topology, time_unit time_point);
+
+    // returns false if any of the sinks couldn't be started or stopped;
+    // throws if there's no clock available
+    bool start_playback(const media_topology_t& topology, time_unit time_point);
+    // throws if there's no clock available
+    void stop_playback();
 
     // event firing functions will return true only if the media session isn't shutdown
     // and the node is added to the media session's topology and the request sample doesn't
@@ -120,25 +113,25 @@ public:
 
     // TODO: use same return values for media streams and media session
 
-    // request_sample returns false if the topology is switched
+    // request_sample returns false if the stream isn't found on the active topology;
+    // request_sample won't fail when the is_sink is false
     bool request_sample(
         const media_stream* this_input_stream, 
         request_packet&,
         bool is_sink);
     // is_source flag is used for the media session to able to translate the sample times;
-    // sample_view cannot be NULL
+    // sample_view cannot be NULL;
+    // TODO: give sample must not fail
     bool give_sample(
         const media_stream* this_output_stream, 
         const media_sample_view_t& sample_view,
         request_packet&,
         bool is_source);
 
-    // changes the format of this_output_stream and changes the input stream of the
-    // downstream;
-    // returns false if the format negotiation failed
-    bool change_format(media_stream* this_output_stream /*, mediatype new_format*/) const;
-
-    // breaks the circular dependency between components and the session
+    // breaks the circular dependency between components and the session;
+    // make sure that the pipeline has finished processing all the request packets
+    // before calling this;
+    // the session is considered invalid after calling this
     void shutdown();
 };
 

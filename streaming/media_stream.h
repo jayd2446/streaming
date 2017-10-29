@@ -30,7 +30,8 @@ public:
     // implements input stream functionality
     virtual result_t request_sample(request_packet&, const media_stream* previous_stream) = 0;
     // processes the new sample and optionally calls media_session::give_sample;
-    // implements output stream functionality
+    // implements output stream functionality;
+    // sample view can be NULL
     virtual result_t process_sample(
         const media_sample_view_t&, request_packet&, const media_stream* previous_stream) = 0;
 

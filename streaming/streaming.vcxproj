@@ -84,6 +84,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WORKER_STREAMS=3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -95,6 +96,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WORKER_STREAMS=3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -108,7 +110,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WORKER_STREAMS=3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -123,7 +125,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WORKER_STREAMS=3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -139,6 +141,9 @@
     <ClCompile Include="sink_mpeg.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture5.cpp" />
+    <ClCompile Include="source_audio.cpp" />
+    <ClCompile Include="source_loopback.cpp" />
+    <ClCompile Include="transform_aac_encoder.cpp" />
     <ClCompile Include="transform_color_converter.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
@@ -172,9 +177,13 @@
     <ClInclude Include="media_stream.h" />
     <ClInclude Include="media_topology.h" />
     <ClInclude Include="enable_shared_from_this.h" />
+    <ClInclude Include="request_packet.h" />
     <ClInclude Include="sink_mpeg.h" />
     <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="source_displaycapture5.h" />
+    <ClInclude Include="source_audio.h" />
+    <ClInclude Include="source_loopback.h" />
+    <ClInclude Include="transform_aac_encoder.h" />
     <ClInclude Include="transform_color_converter.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>

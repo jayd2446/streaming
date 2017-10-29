@@ -5,7 +5,7 @@
 //#include "source_displaycapture.h"
 //#include "source_displaycapture2.h"
 //#include "source_displaycapture3.h"
-#include "source_displaycapture4.h"
+//#include "source_displaycapture4.h"
 #include "source_displaycapture5.h"
 //#include "sink_preview.h"
 #include "media_session.h"
@@ -15,6 +15,9 @@
 #include "transform_color_converter.h"
 #include "sink_mpeg.h"
 #include "sink_preview2.h"
+#include "source_audio.h"
+#include "source_loopback.h"
+#include "transform_aac_encoder.h"
 #include <mutex>
 
 #pragma comment(lib, "Mfplat.lib")
@@ -33,7 +36,8 @@ LARGE_INTEGER pc_frequency;
 #define OUTPUT_MONITOR 0
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-#define WORKER_STREAMS 3
+// defined in project settings
+//#define WORKER_STREAMS 3
 
 // TODO: work queue dispatching should be used when the thread might enter a waiting state
 // (gpu dispatching etc)
@@ -61,6 +65,9 @@ it seems that the amd h264 encoder creates minimal artifacts if the color conver
 
 */
 
+#undef max
+//}
+
 void create_streams(
     const media_topology_t& topology,
     const sink_preview2_t& preview_sink2,
@@ -74,13 +81,37 @@ void create_streams(
     HRESULT hr = S_OK;
 
     stream_mpeg_host_t mpeg_stream = mpeg_sink->create_host_stream(topology->get_clock());
+    /*stream_mpeg_host_t mpeg_stream_audio = mpeg_sink->create_host_stream(topology->get_clock());*/
+
+    // 87,5 fps with speed;
+    // 76,3 fps with balanced;
+    // 46,1 fps with quality
+    // (full hd)
+
+    // 48000*1000/1024, 1000
+    mpeg_stream->set_pull_rate(60, 1);
+    /*mpeg_stream_audio->set_pull_rate(48000*1000/1024, 1000*2);*/
+
+    /*for(time_unit i = 0;; i = mpeg_stream->get_next_due_time(i))
+    {
+        time_unit next_pull = mpeg_stream->get_next_due_time(i);
+        std::cout << next_pull << ", " << (i + mpeg_stream->get_pull_interval()) << std::endl;
+        system("pause");
+    }*/
+
+    /*for(time_unit i = 0; i < std::numeric_limits<time_unit>::max(); i = mpeg_stream->get_next_due_time(i))
+    {
+        time_unit next_pull = mpeg_stream->get_next_due_time(i);
+        std::cout << next_pull << ", " << (i + mpeg_stream->get_pull_interval()) << std::endl;
+    }*/
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
+        // video
         stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream();
         stream_mpeg_t worker_stream = mpeg_sink->create_worker_stream();
         media_stream_t encoder_stream = h264_encoder_transform->create_stream();
-        /*media_stream_t color_converter_stream = color_converter_transform->create_stream();*/
+        media_stream_t color_converter_stream = color_converter_transform->create_stream();
         media_stream_t source_stream = displaycapture_source->create_stream();
         media_stream_t source_stream2 = displaycapture_source2->create_stream();
         media_stream_t preview_stream = preview_sink2->create_stream();
@@ -91,11 +122,23 @@ void create_streams(
 
         topology->connect_streams(source_stream, transform_stream);
         topology->connect_streams(source_stream2, transform_stream);
-        /*topology->connect_streams(transform_stream, color_converter_stream);*/
+        topology->connect_streams(transform_stream, color_converter_stream);
         topology->connect_streams(transform_stream, preview_stream);
-        topology->connect_streams(transform_stream, encoder_stream);
+        topology->connect_streams(color_converter_stream, encoder_stream);
         topology->connect_streams(encoder_stream, worker_stream);
         topology->connect_streams(worker_stream, mpeg_stream);
+
+        // audio
+        /*stream_mpeg_t worker_stream_audio = mpeg_sink->create_worker_stream();
+        media_stream_t aac_encoder_stream = aac_encoder_transform->create_stream();
+        media_stream_t audio_source_stream = loopback_source->create_stream(topology->get_clock());
+
+        mpeg_stream_audio->set_encoder_stream(std::dynamic_pointer_cast<stream_aac_encoder>(aac_encoder_stream));
+        mpeg_stream_audio->add_worker_stream(worker_stream_audio);
+
+        topology->connect_streams(audio_source_stream, aac_encoder_stream);
+        topology->connect_streams(aac_encoder_stream, worker_stream_audio);
+        topology->connect_streams(worker_stream_audio, mpeg_stream_audio);*/
     }
 
     // (each thread gets approximately 20ms time slice)
@@ -131,11 +174,12 @@ int main()
     hr = MFStartup(MFSTARTUP_NOSOCKET);
 
     //// register all media foundation standard work queues as playback
-    DWORD taskgroup_id = 0;
+    /*DWORD taskgroup_id = 0;
     if(FAILED(MFRegisterPlatformWithMMCSS(L"Capture", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
-        throw std::exception();
+        throw std::exception();*/
 
     HWND hwnd = create_window();
+    /*ShowWindow(hwnd, SW_FORCEMINIMIZE);*/
 
     QueryPerformanceFrequency(&pc_frequency);
 
@@ -158,9 +202,12 @@ int main()
     {
         UINT outputmonitor_index = OUTPUT_MONITOR;
 
+        // create time source
+        presentation_time_source_t time_source(new presentation_time_source);
+
         // create the session and the topology
         media_session_t session(new media_session);
-        media_topology_t topology(new media_topology);
+        media_topology_t topology(new media_topology(time_source));
 
         // create and initialize the h264 encoder transform
         transform_h264_encoder_t h264_encoder_transform(new transform_h264_encoder(session));
@@ -197,6 +244,14 @@ int main()
             WINDOW_WIDTH, WINDOW_HEIGHT,
             hwnd, d3d11dev, d3d11devctx, swapchain);
 
+        //// create the audio loopback source
+        //source_loopback_t loopback_source(new source_loopback(session));
+        //loopback_source->initialize();
+
+        //// create the aac encoder transform
+        //transform_aac_encoder_t aac_encoder_transform(new transform_aac_encoder(session));
+        //aac_encoder_transform->initialize(loopback_source->waveformat_type);
+
         // create the mpeg sink
         sink_mpeg_t mpeg_sink(new sink_mpeg(session));
         mpeg_sink->initialize(h264_encoder_transform->output_type);
@@ -212,11 +267,12 @@ int main()
             color_converter_transform,
             h264_encoder_transform);
 
-        // add the topology to the media session
-        session->switch_topology(topology);
+        // start the time source
+        time_source->set_current_time(0);
+        time_source->start();
 
-        // start the media session
-        session->start_playback(0);
+        // start the media session with the topology
+        session->start_playback(topology, 0);
 
         bool switched_topology = false;
         MSG msg = {};
@@ -230,7 +286,7 @@ int main()
 
                     if(outputmonitor_index)
                     {
-                        topology.reset(new media_topology);
+                        topology.reset(new media_topology(time_source));
                         create_streams(
                             topology,
                             preview_sink2,
@@ -243,7 +299,7 @@ int main()
                     }
                     else
                     {
-                        topology.reset(new media_topology);
+                        topology.reset(new media_topology(time_source));
                         create_streams(
                             topology,
                             preview_sink2,
@@ -255,37 +311,74 @@ int main()
                             h264_encoder_transform);
                     }
 
+                    /*presentation_clock_t clock;
+                    session->get_current_clock(clock);*/
+
+                    // to make sure that the timestamps correlate to packet numbers,
+                    // request times must not be used for timestamps;
+                    // packet numbers are used for components to stay in track how many
+                    // requests need to be served
+
+                    /*
+                    in video, the packet number and request time correlation can be assumed,
+                    but in audio not;
+                    that is because the audio topology is switched immediately
+                    */
+
+                    // when using topology switch immediate, h264 encoder optimization cannot
+                    // be used;
+                    // the request time might be inversed if a new event fires in between
+                    // the call to switch topology immediate and get_current_time;
+                    // there exists a chance that the new topology is started with a request time
+                    // older than what the old topology is currently processing
+                    /*session->switch_topology_immediate(topology, clock->get_current_time());*/
                     session->switch_topology(topology);
+
+
+                    /*
+
+                    the components(mainly sources) should be started @ the initialization;
+                    source_loopback and others will choose the first sample
+                    based on the request time and discard previous samples;
+                    at the clock_start, sources should discard all but one sample;
+
+                    the timestamps need to be aligned if they don't use request time;
+
+
+
+
+                    the timestamps should be adjusted by floor function,
+                    this is because early video is not so noticeable as late video
+                    compared to audio;
+                    the video-audio desync is noticeable after 40ms,
+                    while max desync in 30fps video is 33.33 ms
+                    <=> floor(timestamp);
+
+                    --------------------------------------------------------------------
+
+                    actually, only audio timestamps need to be aligned so that there's
+                    no glitching in the playback
+
+                    --------------------------------------------------------------------
+
+                    video timestamps aligned to sink sample rate vs
+                    raw timestamps boils down to the question of whether possible
+                    timestamp drift of max sample rate is tolerated or not;
+                    timestamps aligned to sink sample rate allow for
+                    seamless topology switching;
+                    (@ 60fps, video should be aligned)
+
+                    audio timestamps must be aligned to aac encoder sample rate always
+                    so that there aren't audio glitches; the drift isn't noticeable
+                    at any audio sample rate, though
+                    
+                    --------------------------------------------------------------------
+
+                    sinks should perform the align for video
+
+                    */
+
                 }
-
-                /*for(int i = 0; i < 25001; i++)*/
-                //{
-                //    outputmonitor_index = (outputmonitor_index + 1) % 2;
-
-                //    // switch topology
-                //    topology.reset(new media_topology);
-
-                //    sink_stream = preview_sink->create_stream(topology->get_clock());
-                //    source_stream = displaycapture_source->create_stream();
-                //    source_stream2 = displaycapture_source2->create_stream();
-                //    transform_stream = videoprocessor_transform->create_stream();
-                //    color_converter_stream = color_converter_transform->create_stream();
-
-                //    bool b = true;
-                //    if(!outputmonitor_index)
-                //    {
-                //        b &= topology->connect_streams(source_stream, transform_stream);
-                //        b &= topology->connect_streams(source_stream2, transform_stream);
-                //    }
-                //    else
-                //    {
-                //        b &= topology->connect_streams(source_stream2, transform_stream);
-                //        b &= topology->connect_streams(source_stream, transform_stream);
-                //    }
-                //    b &= topology->connect_streams(transform_stream, color_converter_stream);
-                //    b &= topology->connect_streams(color_converter_stream, sink_stream);
-                //    session->switch_topology(topology);
-                //}
             }
             else
             {

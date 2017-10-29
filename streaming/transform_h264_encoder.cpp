@@ -16,7 +16,6 @@ void CHECK_HR(HRESULT hr)
 
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session) :
     media_source(session),
-    last_packet_number(INVALID_PACKET_NUMBER),
     encoder_requests(0)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
@@ -33,8 +32,8 @@ HRESULT transform_h264_encoder::set_input_stream_type()
     CComPtr<IMFMediaType> input_type;
     CHECK_HR(hr = MFCreateMediaType(&input_type));
     CHECK_HR(hr = input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
-    /*CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));*/
-    CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
+    CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));
+    /*CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));*/
     CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, 60, 1));
     CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, 1920, 1080));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
@@ -142,35 +141,40 @@ void transform_h264_encoder::processing_cb(void*)
     {
         // encoder needs to be locked so that the samples are submitted in right order
         scoped_lock lock(this->encoder_mutex);
-        packet p;
+        request_t request;
+        time_unit timestamp;
+
         {
-            scoped_lock lock_(this->requests_mutex);
             scoped_lock lock2(this->processed_samples_mutex);
 
-            if(!this->encoder_requests || this->requests.empty())
-                return;
-
             // pull the next sample from the queue
-            auto first_item = this->requests.begin();
-            if(first_item->rp.packet_number != (this->last_packet_number + 1))
+            if(!this->encoder_requests || !this->requests.pop(request))
                 return;
 
-            p = *first_item;
-            this->requests.pop_front();
-
-            // update the last packet number
-            this->last_packet_number = p.rp.packet_number;
-
-            // pass if the sample has no data
-            if(!p.sample_view->get_sample<media_sample_texture>()->texture)
+            // pass the null sample to downstream and continue;
+            // the passing must be done like this so that request queue doesn't corrupt;
+            // null samples are generated only at the very startup of the session, though
+            if(!request.sample_view->get_buffer<media_buffer_texture>()->texture)
+            {
+                this->session->give_sample(request.stream, request.sample_view, request.rp, false);
                 continue;
+            }
 
+            timestamp = request.sample_view->get_sample()->timestamp;
+
+            // TODO: remove processed samples queue because it might introduce bugs
             // add the sample to the processed samples queue
-            assert(this->processed_samples.find(p.rp.request_time) == this->processed_samples.end());
-            this->processed_samples[p.rp.request_time] = p;
+            assert(this->processed_samples.find(timestamp) == this->processed_samples.end());
+            this->processed_samples[timestamp] = request;
 
             this->encoder_requests--;
         }
+
+        static time_unit last_time_stamp = timestamp - 1;
+        if(timestamp <= last_time_stamp)
+            DebugBreak();
+        else
+            last_time_stamp = timestamp;
 
         // submit the sample to the encoder
         CComPtr<IMFMediaBuffer> buffer;
@@ -180,7 +184,7 @@ void transform_h264_encoder::processing_cb(void*)
 
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
-            p.sample_view->get_sample<media_sample_texture>()->texture, 0, FALSE, &buffer));
+            request.sample_view->get_buffer<media_buffer_texture>()->texture, 0, FALSE, &buffer));
         /*CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
         CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
         CHECK_HR(hr = buffer->SetCurrentLength(len));*/
@@ -189,13 +193,8 @@ void transform_h264_encoder::processing_cb(void*)
         CHECK_HR(hr = sample->AddBuffer(buffer));
         UINT64 duration;
         CHECK_HR(hr = MFFrameRateToAverageTimePerFrame(60, 1, &duration));
-        CHECK_HR(hr = sample->SetSampleTime(p.rp.request_time));
-        CHECK_HR(hr = sample->SetSampleDuration(duration));
-        /*time_unit duration = p.rp.request_time;
-        duration += FPS60_INTERVAL;
-        duration -= ((3 * duration) % 500000) / 3;
-        const time_unit t = duration - p.rp.request_time;
-        CHECK_HR(hr = sample->SetSampleDuration(t));*/
+        CHECK_HR(hr = sample->SetSampleTime(timestamp));
+        /*CHECK_HR(hr = sample->SetSampleDuration(duration));*/
         CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));
     }
 
@@ -211,10 +210,11 @@ void transform_h264_encoder::process_output_cb(void*)
     // TODO: the call order can be ensured
 
     // the processed packets might arrive out of order
-
-    media_sample_memorybuffer_t sample(new media_sample_memorybuffer);
+    media_buffer_memorybuffer* buffer;
+    media_sample_t sample(new media_sample);
+    sample->buffer.reset(buffer = new media_buffer_memorybuffer);
     media_sample_view_t sample_view(new media_sample_view(sample));
-    packet p;
+    request_t request;
 
     const DWORD mft_provides_samples =
         this->output_stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
@@ -233,25 +233,20 @@ void transform_h264_encoder::process_output_cb(void*)
     LONGLONG time;
     CHECK_HR(hr = output.pSample->GetSampleTime(&time));
     /*CHECK_HR(hr = output.pSample->ConvertToContiguousBuffer(&buffer));*/
-    //// release the mft allocated buffer
-    //output.pSample->Release();
 
     {
         scoped_lock lock(this->processed_samples_mutex);
         auto it = this->processed_samples.find(time);
         assert(it != this->processed_samples.end());
-        p = it->second;
+        request = it->second;
         this->processed_samples.erase(it);
     }
 
-    sample->timestamp = time;//p.sample_view->get_sample()->timestamp;
-    sample->sample.Attach(output.pSample);
+    sample->timestamp = time;
+    buffer->sample.Attach(output.pSample);
 
-    /*CHECK_HR(hr = sample->sample->SetSampleTime(p.rp.request_time));*/
-    /*CHECK_HR(hr = sample->sample->SetSampleDuration(FPS60_INTERVAL));*/
-
-    p.sample_view = sample_view;
-    this->session->give_sample(p.stream, p.sample_view, p.rp, false);
+    request.sample_view = sample_view;
+    this->session->give_sample(request.stream, request.sample_view, request.rp, false);
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -399,45 +394,23 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, c
     // TODO: the mpeg sink should use the timestamp from the sample,
     // not request time(request time might be greatly drifted if there's system overhead)
 
-    {
-        // push a placeholder packet to queue
-        scoped_lock lock(this->transform->requests_mutex);
-        transform_h264_encoder::packet p;
-        p.rp.packet_number = INVALID_PACKET_NUMBER;
-        this->transform->requests.push_back(p);
-    }
-
     if(!this->transform->session->request_sample(this, rp, false))
-    {
-        scoped_lock lock(this->transform->requests_mutex);
-        this->transform->requests.pop_back();
         return FATAL_ERROR;
-    }
     return OK;
 }
 
 media_stream::result_t stream_h264_encoder::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
-    media_stream::result_t res = OK;
+    transform_h264_encoder::request_t request;
+    request.stream = this;
+    request.sample_view = sample_view;
+    request.rp = rp;
 
-    {
-        transform_h264_encoder::packet p;
-        p.rp = rp;
-        p.sample_view = sample_view;
-        p.stream = this;
-
-        scoped_lock lock_(this->transform->requests_mutex);
-        this->transform->requests[p.rp.packet_number - this->transform->last_packet_number - 1] =
-            p;
-    }
+    this->transform->requests.push(request);
 
     /*std::cout << rp.packet_number << std::endl;*/
 
     this->transform->processing_cb(NULL);
-
-    if(!sample_view->get_sample<media_sample_texture>()->texture)
-        res = this->transform->session->give_sample(this, sample_view, rp, false) ? OK : FATAL_ERROR;
-
-    return res;
+    return OK;
 }

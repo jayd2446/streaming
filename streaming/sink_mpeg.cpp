@@ -5,22 +5,43 @@
 #pragma comment(lib, "Mf.lib")
 #pragma comment(lib, "Mfreadwrite.lib")
 
-#define LAG_BEHIND 1000000/*(FPS60_INTERVAL * 6)*/
+//#define LAG_BEHIND 1000000/*(FPS60_INTERVAL * 6)*/
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-sink_mpeg::sink_mpeg(const media_session_t& session) : media_sink(session)
+sink_mpeg::sink_mpeg(const media_session_t& session) : 
+    media_sink(session), parent(true)
 {
+    this->processing_callback.Attach(new async_callback_t(&sink_mpeg::processing_cb));
+
+    this->audio_session.reset(new media_session);
+    this->loopback_source.reset(new source_loopback(this->audio_session));
+    this->loopback_source->initialize();
+    this->aac_encoder_transform.reset(new transform_aac_encoder(this->audio_session));
+    this->aac_encoder_transform->initialize(this->loopback_source->waveformat_type);
+}
+
+sink_mpeg::sink_mpeg(const media_session_t& session, const CComPtr<IMFSinkWriter>& writer) : 
+    media_sink(session), parent(false)
+{
+    this->sink_writer = writer;
+
     this->processing_callback.Attach(new async_callback_t(&sink_mpeg::processing_cb));
 }
 
 sink_mpeg::~sink_mpeg()
 {
-    HRESULT hr = this->sink_writer->Finalize();
-    if(FAILED(hr))
-        std::cout << "finalizing failed" << std::endl;
+    if(this->parent)
+    {
+        this->audio_session->stop_playback();
+        this->audio_session->shutdown();
 
-    this->sink_writer.Release();
-    this->mpeg_media_sink->Shutdown();
+        HRESULT hr = this->sink_writer->Finalize();
+        if(FAILED(hr))
+            std::cout << "finalizing failed" << std::endl;
+
+        this->sink_writer.Release();
+        this->mpeg_media_sink->Shutdown();
+    }
 }
 
 stream_mpeg_host_t sink_mpeg::create_host_stream(presentation_clock_t& clock)
@@ -38,7 +59,11 @@ stream_mpeg_t sink_mpeg::create_worker_stream()
 
 void sink_mpeg::new_packet()
 {
-    scoped_lock lock(this->packets_mutex);
+    std::unique_lock<std::recursive_mutex> lock(this->writing_mutex, std::try_to_lock);
+    if(!lock.owns_lock())
+        return;
+
+    std::unique_lock<std::recursive_mutex> packets_lock(this->packets_mutex);
     while(!this->packets.empty())
     {
         packet p;
@@ -49,15 +74,19 @@ void sink_mpeg::new_packet()
         p = first_item->second;
         this->packets.erase(first_item);
 
+        packets_lock.unlock();
+
         // push the sample to the processed samples queue
         scoped_lock lock(this->processed_packets_mutex);
         this->processed_packets.push(p);
 
+        this->processing_cb(NULL);
         // initiate the write
-        const HRESULT hr = this->processing_callback->mf_put_work_item(
+        /*const HRESULT hr = this->processing_callback->mf_put_work_item(
             this->shared_from_this<sink_mpeg>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
         if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw std::exception();
+            throw std::exception();*/
+        packets_lock.lock();
     }
 }
 
@@ -73,9 +102,24 @@ void sink_mpeg::processing_cb(void*)
 
     HRESULT hr = S_OK;
     // send the sample to the sink writer
-    CHECK_HR(hr = this->sink_writer->WriteSample(
-        0, 
-        p.sample_view->get_sample<media_sample_memorybuffer>()->sample));
+    media_buffer_samples_t samples = p.sample_view->get_buffer<media_buffer_samples>();
+    if(samples)
+    {
+        /*std::cout << "writing audio..." << std::endl;*/
+        for(auto it = samples->samples.begin(); it != samples->samples.end(); it++)
+        {
+            CHECK_HR(hr = this->sink_writer->WriteSample(
+                1, 
+                *it));
+        }
+    }
+    else
+    {
+        /*std::cout << "writing video..." << std::endl;*/
+        CHECK_HR(hr = this->sink_writer->WriteSample(
+            0,
+            p.sample_view->get_buffer<media_buffer_memorybuffer>()->sample));
+    }
 
 done:
     if(FAILED(hr))
@@ -87,6 +131,7 @@ void sink_mpeg::initialize(const CComPtr<IMFMediaType>& input_type)
     HRESULT hr = S_OK;
     CComPtr<IMFAttributes> sink_writer_attributes;
     this->mpeg_file_type = input_type;
+    this->mpeg_file_type_audio = this->aac_encoder_transform->output_type;
 
     // create file
     CHECK_HR(hr = MFCreateFile(
@@ -95,7 +140,7 @@ void sink_mpeg::initialize(const CComPtr<IMFMediaType>& input_type)
 
     // create mpeg 4 media sink
     CHECK_HR(hr = MFCreateMPEG4MediaSink(
-        this->byte_stream, this->mpeg_file_type, NULL, &this->mpeg_media_sink));
+        this->byte_stream, this->mpeg_file_type, this->mpeg_file_type_audio, &this->mpeg_media_sink));
 
     // configure the sink writer
     CHECK_HR(hr = MFCreateAttributes(&sink_writer_attributes, 1));
@@ -108,6 +153,8 @@ void sink_mpeg::initialize(const CComPtr<IMFMediaType>& input_type)
 
     // start accepting data
     CHECK_HR(hr = this->sink_writer->BeginWriting());
+
+    this->mpeg_sink.reset(new sink_mpeg(this->audio_session, this->sink_writer));
 
 done:
     if(FAILED(hr))
@@ -157,11 +204,41 @@ stream_mpeg_host::stream_mpeg_host(const sink_mpeg_t& sink) :
 {
 }
 
-bool stream_mpeg_host::on_clock_start(time_unit t, int packet_number)
+void stream_mpeg_host::set_audio_session(time_unit time_point)
+{
+    presentation_clock_t clock;
+    if(!this->get_clock(clock))
+        throw std::exception();
+
+    media_topology_t topology(new media_topology(clock->get_time_source()));
+    stream_mpeg_host_t mpeg_stream_audio = this->sink->mpeg_sink->create_host_stream(topology->get_clock());
+    mpeg_stream_audio->set_pull_rate(48000*1000/1024, 1000*2);
+
+    for(int i = 0; i < WORKER_STREAMS; i++)
+    {
+        stream_mpeg_t worker_stream_audio = this->sink->mpeg_sink->create_worker_stream();
+        media_stream_t aac_encoder_stream = this->sink->aac_encoder_transform->create_stream();
+        media_stream_t audio_source_stream = this->sink->loopback_source->create_stream(topology->get_clock());
+
+        mpeg_stream_audio->set_encoder_stream(std::dynamic_pointer_cast<stream_aac_encoder>(aac_encoder_stream));
+        mpeg_stream_audio->add_worker_stream(worker_stream_audio);
+
+        topology->connect_streams(audio_source_stream, aac_encoder_stream);
+        topology->connect_streams(aac_encoder_stream, worker_stream_audio);
+        topology->connect_streams(worker_stream_audio, mpeg_stream_audio);
+    }
+
+    if(!this->sink->audio_session->switch_topology_immediate(topology, time_point))
+        throw std::exception();
+}
+
+bool stream_mpeg_host::on_clock_start(time_unit t)
 {
     /*std::cout << "playback started: " << packet_number << ", " << (ptrdiff_t)this << std::endl;*/
+
+    if(!this->encoder_aac_stream)
+        this->set_audio_session(t); // switch the topology in the audio session
     this->running = true;
-    this->packet_number = packet_number;
     this->scheduled_callback(t);
     return true;
 }
@@ -169,6 +246,14 @@ bool stream_mpeg_host::on_clock_start(time_unit t, int packet_number)
 void stream_mpeg_host::on_clock_stop(time_unit t)
 {
     /*std::cout << "playback stopped" << ", " << (ptrdiff_t)this << std::endl;*/
+    if(this->encoder_aac_stream)
+    {
+        // TODO: add preroll clock sink notification
+
+        // TODO: set the audio cut off point for the incoming packets
+        /*DebugBreak();*/
+    }
+
     this->running = false;
     this->clear_queue();
 }
@@ -177,6 +262,9 @@ void stream_mpeg_host::scheduled_callback(time_unit due_time)
 {
     if(!this->running)
         return;
+
+    // the call order must be this way so that consecutive packet numbers
+    // match consecutive request times
 
     // initiate the request
     // (the initial request call from sink must be synchronized)
@@ -198,20 +286,11 @@ void stream_mpeg_host::schedule_new(time_unit due_time)
         if(!bb)
             return;
 
-        const time_unit pull_interval = 166667;
         const time_unit current_time = t->get_current_time();
-        time_unit scheduled_time = due_time;
-
-        scheduled_time += pull_interval;
-        scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+        time_unit scheduled_time = this->get_next_due_time(due_time);
 
         if(!this->schedule_new_callback(scheduled_time))
         {
-            /*
-TODO: schedule_new can retroactively dispatch a request even if the calculated scheduled time
-has already been surpassed(this means that the lag behind constant is between the max and min of
-sample timestamps in the source)
-            */
             if(scheduled_time > current_time)
             {
                 // the scheduled time is so close to current time that the callback cannot be set
@@ -220,11 +299,8 @@ sample timestamps in the source)
             }
             else
             {
-                // TODO: calculate here how many frame requests missed
                 do
                 {
-                    // this commented line will skip the loop and calculate the
-                    // next frame
                     const time_unit current_time2 = t->get_current_time();
                     scheduled_time = current_time2;
 
@@ -234,11 +310,10 @@ sample timestamps in the source)
                             0, scheduled_time - LAG_BEHIND));
                     }*/
 
-                    // frame request was late
+                    // at least one frame request was late
                     std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
 
-                    scheduled_time += pull_interval;
-                    scheduled_time -= ((3 * scheduled_time) % 500000) / 3;
+                    scheduled_time = this->get_next_due_time(scheduled_time);
                 }
                 // TODO: schedule new callback should be optimized
                 while(!this->schedule_new_callback(scheduled_time));
@@ -251,33 +326,20 @@ done:
         throw std::exception();
 }
 
-void stream_mpeg_host::dispatch_request(time_unit due_time)
+void stream_mpeg_host::dispatch_request(time_unit request_time)
 {
-    /*
-    TODO: media session should have a is switch topology function for checking
-    for new topology
-
-    media session should dispatch work straight to source streams;
-    also, it should decide based on the stream which work queue to use
-
-    the work is dispatched to sources the same way its done in give_sample function
-    except that work queue is decided based on the source(displaycapture5 needs synchronized queue)
-    */
-    const time_unit request_time = due_time - LAG_BEHIND;
-
     if(this->unavailable > 240)
     {
         std::cout << "BREAK" << std::endl;
         DebugBreak();
     }
 
-    // let the source texture queue saturate a bit
-    if(request_time >= 0)
-    {
-        request_packet rp;
-        rp.request_time = request_time;
-        rp.timestamp = due_time;
+    request_packet rp;
+    rp.request_time = request_time;
+    rp.timestamp = request_time;
 
+    /*if(request_time >= (SECOND_IN_TIME_UNIT / 2))
+    {*/
         scoped_lock lock(this->worker_streams_mutex);
         for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
         {
@@ -308,7 +370,7 @@ void stream_mpeg_host::dispatch_request(time_unit due_time)
 
         std::cout << "--SAMPLE REQUEST DROPPED IN SINK_MPEG--" << std::endl;
         this->unavailable++;
-    }
+    /*}*/
 }
 
 void stream_mpeg_host::add_worker_stream(const stream_mpeg_t& worker_stream)
@@ -339,7 +401,13 @@ media_stream::result_t stream_mpeg_host::process_sample(
     // TODO: this throttles the capture process
 
     // the encoder will just give an empty texture sample if the input sample was empty
-    if(sample_view->get_sample<media_sample_memorybuffer>())
+    if(!sample_view || sample_view->get_buffer<media_buffer_texture>())
+    {
+        this->sink->packets.erase(it);
+        /*CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(0, rp.request_time));*/
+    }
+    else if(sample_view->get_buffer<media_buffer_samples>() || 
+        sample_view->get_buffer<media_buffer_memorybuffer>())
     {
         it->second.sample_view = sample_view;
         lock.unlock();
@@ -348,7 +416,7 @@ media_stream::result_t stream_mpeg_host::process_sample(
     else
     {
         this->sink->packets.erase(it);
-        CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(0, rp.request_time));
+        /*CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(0, rp.request_time));*/
     }
 
 done:
