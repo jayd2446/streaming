@@ -1,5 +1,6 @@
 #include "transform_aac_encoder.h"
 #include <Mferror.h>
+#include <iostream>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
@@ -29,8 +30,19 @@ void transform_aac_encoder::processing_cb(void*)
 
             media_buffer_samples_t output_samples_buffer(new media_buffer_samples);
 
+#undef min
             for(auto it = samples_buffer->samples.begin(); it != samples_buffer->samples.end(); it++)
             {
+                static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min(), dur;
+                LONGLONG ts;
+                (*it)->GetSampleTime(&ts);
+                (*it)->GetSampleDuration(&dur);
+                
+                if(ts <= ts_)
+                    DebugBreak();
+                ts_ = ts;
+                /*std::cout << "ts: " << ts << ", dur+ts: " << ts + dur << std::endl;*/
+
             back:
                 hr = this->encoder->ProcessInput(this->input_id, *it, 0);
                 if(hr == MF_E_NOTACCEPTING)
@@ -65,8 +77,6 @@ done:
     if(hr != MF_E_NOTACCEPTING && FAILED(hr))
         throw std::exception();
 }
-
-#include <iostream>
 
 bool transform_aac_encoder::process_output_cb(request_t* request, media_buffer_samples_t& out)
 {

@@ -9,7 +9,12 @@
 components must be multithreading safe, streams don't have to be;
 components can be shared between topologies, but must not be shared between sessions;
 streams must not be shared between topologies because they are assumed to be singlethreaded
-and to ensure there aren't overlapping rps
+and to ensure there aren't overlapping rps;
+
+only one topology is active in a session at a time
+
+if changing the time source, new session must be created,
+which also means that components need to be reinitialized
 */
 
 // TODO: improve topology traverse speed

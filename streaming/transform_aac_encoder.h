@@ -13,8 +13,7 @@ class transform_aac_encoder : public media_source
     friend class stream_aac_encoder;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef request_queue<WORKER_STREAMS> request_queue_t;
-    typedef request_queue_t::request_t request_t;
+    typedef request_queue::request_t request_t;
 private:
     CComPtr<IMFTransform> encoder;
     CComPtr<IMFMediaType> input_type;
@@ -22,7 +21,7 @@ private:
     MFT_OUTPUT_STREAM_INFO output_stream_info;
 
     std::recursive_mutex encoder_mutex;
-    request_queue_t requests;
+    request_queue requests;
 
     DWORD input_id, output_id;
 

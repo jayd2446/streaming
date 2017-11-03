@@ -273,7 +273,7 @@ void presentation_clock_sink::set_pull_rate(int64_t fps_num, int64_t fps_den)
     this->fps_den = fps_den;
     this->fps_num = fps_num;
     this->fps_den_in_time_unit = this->fps_den * SECOND_IN_TIME_UNIT;
-    this->pull_interval = this->fps_den_in_time_unit / fps_num + 1;
+    this->pull_interval = this->fps_den_in_time_unit / this->fps_num + 1;
 }
 
 time_unit presentation_clock_sink::get_remainder(time_unit t) const

@@ -29,8 +29,7 @@ class transform_h264_encoder : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
-    typedef request_queue<WORKER_STREAMS> request_queue_t;
-    typedef request_queue_t::request_t request_t;
+    typedef request_queue::request_t request_t;
 private:
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -46,7 +45,7 @@ private:
     std::recursive_mutex encoder_mutex, events_mutex;
     std::atomic_int32_t encoder_requests;
 
-    request_queue_t requests;
+    request_queue requests;
 
     std::recursive_mutex processed_samples_mutex;
     std::unordered_map<time_unit /*request time*/, request_t> processed_samples;

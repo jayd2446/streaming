@@ -83,6 +83,7 @@ public:
     media_session();
     ~media_session();
 
+    bool get_current_topology(media_topology_t&) const;
     // returns the clock of the current topology;
     // components shouldn't store the reference because it might
     // create a cyclic dependency between clock and components;

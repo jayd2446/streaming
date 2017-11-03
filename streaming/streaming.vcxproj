@@ -138,10 +138,12 @@
     <ClCompile Include="media_sample.cpp" />
     <ClCompile Include="media_session.cpp" />
     <ClCompile Include="media_topology.cpp" />
+    <ClCompile Include="request_packet.cpp" />
+    <ClCompile Include="sink_audio.cpp" />
     <ClCompile Include="sink_mpeg.cpp" />
+    <ClCompile Include="sink_mpeg2.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture5.cpp" />
-    <ClCompile Include="source_audio.cpp" />
     <ClCompile Include="source_loopback.cpp" />
     <ClCompile Include="transform_aac_encoder.cpp" />
     <ClCompile Include="transform_color_converter.cpp">
@@ -178,11 +180,13 @@
     <ClInclude Include="media_topology.h" />
     <ClInclude Include="enable_shared_from_this.h" />
     <ClInclude Include="request_packet.h" />
+    <ClInclude Include="sink_audio.h" />
     <ClInclude Include="sink_mpeg.h" />
+    <ClInclude Include="sink_mpeg2.h" />
     <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="source_displaycapture5.h" />
-    <ClInclude Include="source_audio.h" />
     <ClInclude Include="source_loopback.h" />
+    <ClInclude Include="stream_worker.h" />
     <ClInclude Include="transform_aac_encoder.h" />
     <ClInclude Include="transform_color_converter.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>

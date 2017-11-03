@@ -13,6 +13,29 @@ media_session::~media_session()
 {
 }
 
+bool media_session::get_current_topology(media_topology_t& topology) const
+{
+    topology = std::atomic_load(&this->current_topology);
+    return !!topology;
+}
+
+bool media_session::get_current_clock(presentation_clock_t& clock) const
+{
+    media_topology_t topology;
+
+    if(!this->get_current_topology(topology))
+        return false;
+
+    clock = topology->clock;
+    return !!clock;
+}
+
+void media_session::switch_topology(const media_topology_t& topology)
+{
+    scoped_lock lock(this->topology_switch_mutex);
+    this->new_topology = topology;
+}
+
 bool media_session::switch_topology_immediate(const media_topology_t& new_topology, time_unit time_point)
 {
     scoped_lock lock(this->topology_switch_mutex);
@@ -42,23 +65,6 @@ bool media_session::switch_topology_immediate(const media_topology_t& new_topolo
     if(!this->get_current_clock(clock))
         throw std::exception();
     return clock->clock_start(time_point);
-}
-
-bool media_session::get_current_clock(presentation_clock_t& clock) const
-{
-    media_topology_t topology(std::atomic_load(&this->current_topology));
-
-    if(!topology)
-        return false;
-
-    clock = topology->clock;
-    return !!clock;
-}
-
-void media_session::switch_topology(const media_topology_t& topology)
-{
-    scoped_lock lock(this->topology_switch_mutex);
-    this->new_topology = topology;
 }
 
 bool media_session::start_playback(const media_topology_t& topology, time_unit time_point)
@@ -109,7 +115,7 @@ bool media_session::request_sample(
             return false;
         }
 
-        rp.topology = std::atomic_load(&this->current_topology);
+        this->get_current_topology(rp.topology);
     }
 
     assert(rp.topology);
