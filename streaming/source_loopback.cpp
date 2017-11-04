@@ -19,24 +19,29 @@
 
 void source_loopback::convert_32bit_float_to_bitdepth_pcm(
     UINT32 frames, UINT32 channels,
-    const float* in, bit_depth_t* out)
+    const float* in, bit_depth_t* out, bool silent)
 {
     assert(sizeof(bit_depth_t) <= sizeof(int32_t));
     // frame has a sample for each channel
     const UINT32 samples = frames * channels;
     for(UINT32 i = 0; i < samples; i++)
     {
-        // convert
-        const double sample = in[i];
-        int32_t sample_converted = (int32_t)(sample * std::numeric_limits<bit_depth_t>::max());
+        if(!silent)
+        {
+            // convert
+            const double sample = in[i];
+            int32_t sample_converted = (int32_t)(sample * std::numeric_limits<bit_depth_t>::max());
 
-        // clamp
-        if(sample_converted > std::numeric_limits<bit_depth_t>::max())
-            sample_converted = std::numeric_limits<bit_depth_t>::max();
-        else if(sample_converted < std::numeric_limits<bit_depth_t>::min())
-            sample_converted = std::numeric_limits<bit_depth_t>::min();
+            // clamp
+            if(sample_converted > std::numeric_limits<bit_depth_t>::max())
+                sample_converted = std::numeric_limits<bit_depth_t>::max();
+            else if(sample_converted < std::numeric_limits<bit_depth_t>::min())
+                sample_converted = std::numeric_limits<bit_depth_t>::min();
 
-        out[i] = (bit_depth_t)sample_converted;
+            out[i] = (bit_depth_t)sample_converted;
+        }
+        else
+            out[i] = 0;
     }
 }
 
@@ -55,14 +60,22 @@ source_loopback::~source_loopback()
 
 HRESULT source_loopback::add_event_to_wait_queue()
 {
+    // TODO: call MFLockSharedWorkQueue
+    // and MFUnlockWorkQueue @ destructor
+
     HRESULT hr = S_OK;
 
-    CComPtr<IMFAsyncResult> asyncresult;
-    CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->process_callback->native, NULL, &asyncresult));
-    // use the priority of 1 for audio
-    CHECK_HR(hr = this->process_callback->mf_put_waiting_work_item(
+    //CComPtr<IMFAsyncResult> asyncresult;
+    //CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->process_callback->native, NULL, &asyncresult));
+    //// use the priority of 1 for audio
+    //CHECK_HR(hr = this->process_callback->mf_put_waiting_work_item(
+    //    this->shared_from_this<source_loopback>(),
+    //    this->process_event, 1, asyncresult, &this->callback_key));
+
+    // schedule a work item for a half of the buffer duration
+    CHECK_HR(hr = this->process_callback->mf_schedule_work_item(
         this->shared_from_this<source_loopback>(),
-        this->process_event, 1, asyncresult, &this->callback_key));
+        -this->buffer_actual_duration / MILLISECOND_IN_TIMEUNIT / 2, &this->callback_key));
 
 done:
     return hr;
@@ -85,7 +98,7 @@ done:
 
 void source_loopback::process_cb(void*)
 {
-    ResetEvent(this->process_event);
+    /*ResetEvent(this->process_event);*/
 
     std::unique_lock<std::recursive_mutex> lock(this->process_mutex, std::try_to_lock);
     if(!lock.owns_lock())
@@ -116,6 +129,7 @@ void source_loopback::process_cb(void*)
 
         CHECK_HR(hr = MFCreateSample(&sample));
 
+        bool silent = false;
         // set the stream time and sample base
         sample_base_t base = {-1, -1};
         if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
@@ -125,7 +139,10 @@ void source_loopback::process_cb(void*)
             base.sample = (LONGLONG)devposition;
         }
         if(flags & AUDCLNT_BUFFERFLAGS_SILENT)
+        {
+            silent = true;
             std::cout << "SILENT" << std::endl;
+        }
         else
             /*std::cout << "OK" << std::endl*/;
 
@@ -135,7 +152,8 @@ void source_loopback::process_cb(void*)
         CHECK_HR(hr = MFCreateMemoryBuffer(frames * frame_len, &buffer));
         CHECK_HR(hr = buffer->Lock(&buffer_data, NULL, NULL));
         convert_32bit_float_to_bitdepth_pcm(
-            frames, this->channels, (float*)data, (bit_depth_t*)buffer_data);
+            frames, this->channels, 
+            (float*)data, (bit_depth_t*)buffer_data, silent);
         CHECK_HR(hr = buffer->Unlock());
         CHECK_HR(hr = buffer->SetCurrentLength(frames * frame_len));
         CHECK_HR(hr = sample->AddBuffer(buffer));
@@ -157,9 +175,11 @@ void source_loopback::process_cb(void*)
         CHECK_HR(hr = this->audio_capture_client->ReleaseBuffer(frames));
     }
 
-    // TODO: devposition should be checked elsewhere
-    UINT64 devposition;
-    CHECK_HR(hr = this->audio_clock->GetPosition(&devposition, &this->device_time_position));
+    // (the function isn't called constantly)
+    //// TODO: devposition should be checked elsewhere if this function isn't called
+    //// constantly
+    //UINT64 devposition;
+    //CHECK_HR(hr = this->audio_clock->GetPosition(&devposition, &this->device_time_position));
 
 done:
     if(getbuffer)
@@ -169,6 +189,7 @@ done:
 
     lock.unlock();
     this->add_event_to_wait_queue();
+    this->serve_requests();
 }
 
 void source_loopback::serve_cb(void*)
@@ -187,15 +208,22 @@ void source_loopback::serve_cb(void*)
         if(!this->session->get_current_clock(clock))
             return;
 
+        //// update the device position
+        //{
+        //    scoped_lock lock(this->process_mutex);
+        //    // TODO: devposition should be checked elsewhere
+        //    UINT64 devposition;
+        //    CHECK_HR(hr = this->audio_clock->GetPosition(&devposition, &this->device_time_position));
+        //}
+        //const time_unit tp_device = 
+        //    clock->get_time_source()->system_time_to_time_source((time_unit)this->device_time_position);
+
         bool dispatch = false;
         media_buffer_samples_t samples(new media_buffer_samples);
         media_sample_t sample(new media_sample);
         sample->buffer = samples;
 
         const time_unit request_time = request.rp.request_time;
-
-        // TODO: serve_cb should probably be called periodically, instead
-        // of sink calling it
 
         // samples are served up to the request point;
         // straddling sample is not consumed
@@ -227,11 +255,14 @@ void source_loopback::serve_cb(void*)
             const time_unit tp_end = tp_start + (time_unit)(sample_duration * sample_dur);
 
             // the tp base has shifted; dispatch the collected samples
-            if(tp_base >= request_time)
-                dispatch = true;
+            /*if(tp_base >= request_time)
+                dispatch = true;*/
             // too new sample for the request
             if(tp_start >= request_time)
+            {
+                dispatch = true;
                 break;
+            }
             // request can be dispatched
             if(tp_end >= request_time)
                 dispatch = true;
@@ -263,7 +294,7 @@ void source_loopback::serve_cb(void*)
                 CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
                 CHECK_HR(hr = (*it)->SetSampleDuration(sample_offset_end));
 
-                dispatch = true;
+                /*dispatch = true;*/
             }
             else
                 consumed_samples++;
@@ -277,15 +308,14 @@ void source_loopback::serve_cb(void*)
             if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
                 samples->samples.push_back(sample);
 
-            if(dispatch)
-                break;
+            /*if(dispatch)
+                break;*/
         }
 
-        // TODO: device time position might be updated before this thread is executed
+        // TODO: stale requests should be checked other way
         // request is considered stale if the device time has already passed the request time
         // and there isn't any samples to serve
-        if(consumed_samples == 0 && request_time <=
-            clock->get_time_source()->system_time_to_time_source(this->device_time_position))
+        if(/*consumed_samples == 0 && */request_time <= (clock->get_current_time() - SECOND_IN_TIME_UNIT))
             dispatch = true;
         /*else if(consumed_samples > 0)
             dispatch = true;*/
@@ -315,7 +345,7 @@ done:
         throw std::exception();
 }
 
-media_stream::result_t source_loopback::serve_requests()
+void source_loopback::serve_requests()
 {
     const HRESULT hr = this->serve_callback->mf_put_work_item(
         this->shared_from_this<source_loopback>(),
@@ -323,9 +353,7 @@ media_stream::result_t source_loopback::serve_requests()
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     else if(hr == MF_E_SHUTDOWN)
-        return media_stream::FATAL_ERROR;
-
-    return media_stream::OK;
+        return;
 }
 
 HRESULT source_loopback::initialize()
@@ -335,6 +363,7 @@ HRESULT source_loopback::initialize()
     CComPtr<IMMDeviceEnumerator> enumerator;
     CComPtr<IMMDevice> device;
     WAVEFORMATEX* engine_format = NULL;
+    UINT32 buffer_frame_count;
 
     CHECK_HR(hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
@@ -345,8 +374,10 @@ HRESULT source_loopback::initialize()
     CHECK_HR(hr = this->audio_client->GetMixFormat(&engine_format));
 
     CHECK_HR(hr = this->audio_client->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 
-        0, 0, engine_format, NULL));
+        AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, 
+        0, BUFFER_DURATION, engine_format, NULL));
+
+    CHECK_HR(hr = this->audio_client->GetBufferSize(&buffer_frame_count));
 
     CHECK_HR(hr = this->audio_client->GetService(
         __uuidof(IAudioCaptureClient), (void**)&this->audio_capture_client));
@@ -372,15 +403,21 @@ HRESULT source_loopback::initialize()
     // set block align
     CHECK_HR(hr = this->waveformat_type->GetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, &this->block_align));
 
-    // create manual reset event handle
-    this->process_event.Attach(CreateEvent(
-        NULL, TRUE, FALSE, NULL));  
-    if(!this->process_event)
-        CHECK_HR(hr = E_FAIL);
+    // calculate the actual duration of the allocated buffer
+    this->buffer_actual_duration = 
+        (REFERENCE_TIME)((double)SECOND_IN_TIME_UNIT * buffer_frame_count / this->samples_per_second);
 
-    CHECK_HR(hr = this->audio_client->SetEventHandle(this->process_event));
+    //// create manual reset event handle
+    //this->process_event.Attach(CreateEvent(
+    //    NULL, TRUE, FALSE, NULL));  
+    //if(!this->process_event)
+    //    CHECK_HR(hr = E_FAIL);
 
-    // set the event to mf queue
+    //CHECK_HR(hr = this->audio_client->SetEventHandle(this->process_event));
+
+    //// set the event to mf queue
+    //CHECK_HR(hr = this->add_event_to_wait_queue());
+
     CHECK_HR(hr = this->add_event_to_wait_queue());
 
     // start capturing
@@ -432,7 +469,7 @@ media_stream::result_t stream_loopback::request_sample(request_packet& rp, const
     request.rp = rp;
 
     this->source->requests.push(request);
-    return this->source->serve_requests();
+    return OK;
 }
 
 media_stream::result_t stream_loopback::process_sample(

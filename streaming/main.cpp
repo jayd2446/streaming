@@ -85,7 +85,7 @@ void create_streams(
     HRESULT hr = S_OK;
 
     stream_mpeg2_t mpeg_stream = mpeg_sink->create_stream(topology->get_clock());
-    stream_audio_t audio_stream = audio_sink->create_stream(audio_topology->get_clock());
+    stream_audio_t audio_stream = audio_sink->create_stream(audio_topology->get_clock(), loopback_source);
 
     mpeg_sink->set_new_audio_topology(audio_stream, audio_topology);
 

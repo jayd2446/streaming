@@ -11,7 +11,7 @@
 
 // implements time that is based on high frequency clock;
 // source times must be restricted to microsecond resolution
-// TODO: multithreading safety needs to be ensured
+// TODO: multithreading safety needs to be ensured;
 class presentation_time_source
 {
 private:

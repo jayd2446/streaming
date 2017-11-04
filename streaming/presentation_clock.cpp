@@ -23,20 +23,29 @@ presentation_time_source::presentation_time_source() : running(false), current_t
 
 time_unit presentation_time_source::performance_counter_to_time_unit(LARGE_INTEGER t2) const
 {
-    t2.QuadPart -= this->start_time.QuadPart;
+    /*t2.QuadPart -= this->start_time.QuadPart;
     t2.QuadPart *= 1000000;
     t2.QuadPart /= pc_frequency.QuadPart;
-    return t2.QuadPart * 10 + this->time_off;
+    return t2.QuadPart * 10 + this->time_off;*/
+    double t = (double)t2.QuadPart;
+    t -= this->start_time.QuadPart;
+    t *= 1000000;
+    t /= pc_frequency.QuadPart;
+    return (time_unit)(t* 10 + this->time_off);
 }
 
 time_unit presentation_time_source::system_time_to_time_source(time_unit t) const
 {
-    LARGE_INTEGER t2 = this->start_time;
-    t2.QuadPart *= 1000000 * 10;
-    t2.QuadPart /= pc_frequency.QuadPart;
-    /*t2.QuadPart *= 10;*/
+    //LARGE_INTEGER t2 = this->start_time;
+    //t2.QuadPart *= 1000000 * 10;
+    //t2.QuadPart /= pc_frequency.QuadPart;
+    ///*t2.QuadPart *= 10;*/
 
-    return (t - t2.QuadPart) + this->time_off;
+    //return (t - t2.QuadPart) + this->time_off;
+    double t2 = (double)this->start_time.QuadPart;
+    t2 *= 1000000 * 10;
+    t2 /= pc_frequency.QuadPart;
+    return (time_unit)((t - t2) + this->time_off);
 }
 
 time_unit presentation_time_source::get_current_time() const

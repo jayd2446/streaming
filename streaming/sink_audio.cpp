@@ -52,9 +52,9 @@ void sink_audio::initialize(const CComPtr<IMFSinkWriter>& writer)
     this->writer = writer;
 }
 
-stream_audio_t sink_audio::create_stream(presentation_clock_t& clock)
+stream_audio_t sink_audio::create_stream(presentation_clock_t& clock, const source_loopback_t& source)
 {
-    stream_audio_t stream(new stream_audio(this->shared_from_this<sink_audio>()));
+    stream_audio_t stream(new stream_audio(this->shared_from_this<sink_audio>(), source));
     stream->register_sink(clock);
 
     return stream;
@@ -71,7 +71,8 @@ stream_audio_worker_t sink_audio::create_worker_stream()
 /////////////////////////////////////////////////////////////////
 
 
-stream_audio::stream_audio(const sink_audio_t& sink) : sink(sink), unavailable(0)
+stream_audio::stream_audio(const sink_audio_t& sink, const source_loopback_t& source) : 
+    sink(sink), source(source), unavailable(0)
 {
 }
 
@@ -114,10 +115,14 @@ void stream_audio::dispatch_request(request_packet& rp)
             (*it)->available = false;
 
             result_t res = (*it)->request_sample(rp, this);
+            // serve the requests from the audio source queue
+            /*this->source->serve_requests();*/
             return;
         }
     }
 
+    // serve the requests from the audio source queue
+    /*this->source->serve_requests();*/
     std::cout << "--SAMPLE REQUEST DROPPED IN AUDIO_SINK--" << std::endl;
     this->unavailable++;
 }
@@ -131,6 +136,7 @@ void stream_audio::add_worker_stream(const stream_audio_worker_t& worker_stream)
 media_stream::result_t stream_audio::request_sample(
     request_packet& rp, const media_stream*)
 {
+    rp.flags = 0;
     this->dispatch_request(rp);
     return OK;
 }

@@ -4,6 +4,7 @@
 #include "stream_worker.h"
 #include "request_packet.h"
 #include "async_callback.h"
+#include "source_loopback.h"
 #include <vector>
 #include <mutex>
 #include <cassert>
@@ -39,7 +40,7 @@ public:
 
     void initialize(const CComPtr<IMFSinkWriter>& writer);
 
-    stream_audio_t create_stream(presentation_clock_t&);
+    stream_audio_t create_stream(presentation_clock_t&, const source_loopback_t&);
     // worker streams duplicate the topology so that individual branches can be
     // multithreaded
     stream_audio_worker_t create_worker_stream();
@@ -51,6 +52,7 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     sink_audio_t sink;
+    source_loopback_t source;
 
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_audio_worker_t> worker_streams;
@@ -65,7 +67,7 @@ private:
 
     void dispatch_request(request_packet&);
 public:
-    explicit stream_audio(const sink_audio_t& sink);
+    stream_audio(const sink_audio_t& sink, const source_loopback_t& source);
 
     void add_worker_stream(const stream_audio_worker_t& worker_stream);
 

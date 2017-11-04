@@ -73,4 +73,12 @@ public:
         this->set_callback(parent);
         return MFPutWaitingWorkItem(hEvent, priority, result, key);
     }
+    HRESULT mf_schedule_work_item(
+        const std::weak_ptr<T>& parent,
+        INT64 timeout_ms,
+        MFWORKITEM_KEY* key)
+    {
+        this->set_callback(parent);
+        return MFScheduleWorkItem(&this->native, NULL, timeout_ms, key);
+    }
 };

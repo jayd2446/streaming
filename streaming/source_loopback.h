@@ -12,6 +12,11 @@
 
 #pragma comment(lib, "Mfplat.lib")
 
+// requests are served roughly twice in a buffer duration
+
+#define BUFFER_DURATION SECOND_IN_TIME_UNIT
+#define MILLISECOND_IN_TIMEUNIT (SECOND_IN_TIME_UNIT / 1000)
+
 class source_loopback;
 typedef std::shared_ptr<source_loopback> source_loopback_t;
 
@@ -30,7 +35,7 @@ public:
     typedef int16_t bit_depth_t;
     static void convert_32bit_float_to_bitdepth_pcm(
         UINT32 frames, UINT32 channels,
-        const float* in, bit_depth_t* out);
+        const float* in, bit_depth_t* out, bool silent);
 private:
     CComPtr<IAudioClient> audio_client;
     CComPtr<IAudioCaptureClient> audio_capture_client;
@@ -47,6 +52,7 @@ private:
     std::deque<CComPtr<IMFSample>> samples;
     sample_base_t stream_base;
     UINT64 device_time_position;
+    REFERENCE_TIME buffer_actual_duration;
 
     bool started;
 
@@ -59,8 +65,8 @@ private:
     HRESULT create_waveformat_type(WAVEFORMATEX*);
     void process_cb(void*);
     void serve_cb(void*);
+    void serve_requests();
     HRESULT start();
-    media_stream::result_t serve_requests();
 public:
     CComPtr<IMFMediaType> waveformat_type;
 
