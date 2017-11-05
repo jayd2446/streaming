@@ -15,8 +15,7 @@ sink_audio::sink_audio(const media_session_t& session) : media_sink(session)
 void sink_audio::write_packets()
 {
     const HRESULT hr = this->write_packets_callback->mf_put_work_item(
-        this->shared_from_this<sink_audio>(),
-        MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        this->shared_from_this<sink_audio>());
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     else if(hr == MF_E_SHUTDOWN)
@@ -115,6 +114,7 @@ void stream_audio::dispatch_request(request_packet& rp)
             (*it)->available = false;
 
             result_t res = (*it)->request_sample(rp, this);
+            (res);
             // serve the requests from the audio source queue
             /*this->source->serve_requests();*/
             return;

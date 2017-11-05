@@ -78,7 +78,7 @@ done:
         throw std::exception();
 }
 
-bool transform_aac_encoder::process_output_cb(request_t* request, media_buffer_samples_t& out)
+bool transform_aac_encoder::process_output_cb(request_t*, media_buffer_samples_t& out)
 {
     HRESULT hr = S_OK;
 

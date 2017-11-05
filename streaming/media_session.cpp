@@ -1,7 +1,7 @@
 #include "media_session.h"
 #include "media_sink.h"
 #include <Mferror.h>
-#include <cassert>
+#include "assert.h"
 
 media_session::media_session()
 {
@@ -105,7 +105,7 @@ bool media_session::request_sample(
 
         this->topology_switch_mutex.lock();
 
-        assert(!rp.topology);
+        assert_(!rp.topology);
 
         // check if there's a topology switch
         if(this->new_topology)
@@ -118,13 +118,13 @@ bool media_session::request_sample(
         this->get_current_topology(rp.topology);
     }
 
-    assert(rp.topology);
+    assert_(rp.topology);
 
     media_topology::topology_t::iterator it = rp.topology->topology_reverse.find(stream);
-    assert(is_sink || it != rp.topology->topology_reverse.end());
+    assert_(is_sink || it != rp.topology->topology_reverse.end());
     if(it == rp.topology->topology_reverse.end())
     {
-        assert(is_sink);
+        assert_(is_sink);
         this->topology_switch_mutex.unlock();
         return false;
     }
@@ -153,10 +153,10 @@ bool media_session::give_sample(
 
     // is_source is used for translating time stamps to presentation time
     media_topology_t topology(rp.topology);
-    assert(topology);
+    assert_(topology);
 
     media_topology::topology_t::iterator it = topology->topology.find(stream);
-    assert(it != topology->topology.end());
+    assert_(it != topology->topology.end());
 
     // dispatch to work queue if there are more downstream nodes than 1
     if(it->second.next.size() > 1)
@@ -177,7 +177,7 @@ bool media_session::give_sample(
             }
 
             const HRESULT hr = this->give_sample_callback->mf_put_work_item(
-                this->shared_from_this<media_session>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+                this->shared_from_this<media_session>());
             if(FAILED(hr) && hr != MF_E_SHUTDOWN)
                 throw std::exception();
         }
@@ -228,10 +228,10 @@ void media_session::request_sample_cb(void*)
     }
 
     media_topology_t topology(request.rp.topology);
-    assert(topology);
+    assert_(topology);
 
     media_topology::topology_t::iterator it = topology->topology_reverse.find(request.stream);
-    assert(it != topology->topology_reverse.end());
+    assert_(it != topology->topology_reverse.end());
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
         if((*jt)->request_sample(request.rp, request.stream) == media_stream::FATAL_ERROR)

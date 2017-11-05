@@ -109,6 +109,7 @@ void create_streams(
             media_stream_t preview_stream = preview_sink2->create_stream();
 
             mpeg_stream->add_worker_stream(worker_stream);
+            mpeg_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
             transform_stream->set_primary_stream(source_stream.get());
 
             topology->connect_streams(source_stream, transform_stream);
@@ -233,9 +234,7 @@ int main()
 
         // create and initialize the preview window sink
         sink_preview2_t preview_sink2(new sink_preview2(session, context_mutex));
-        preview_sink2->initialize(
-            WINDOW_WIDTH, WINDOW_HEIGHT,
-            hwnd, d3d11dev, d3d11devctx, swapchain);
+        preview_sink2->initialize(WINDOW_WIDTH, WINDOW_HEIGHT, hwnd, d3d11dev);
 
         // create the mpeg2 sink
         sink_mpeg2_t mpeg_sink(new sink_mpeg2(session));
@@ -277,7 +276,6 @@ int main()
         // start the media session with the topology
         session->start_playback(topology, 0);
 
-        bool switched_topology = false;
         MSG msg = {};
         while(GetMessage(&msg, NULL, 0, 0))
         {

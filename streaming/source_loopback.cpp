@@ -2,7 +2,7 @@
 #include <initguid.h>
 #include <mmdeviceapi.h>
 #include <Mferror.h>
-#include <cassert>
+#include "assert.h"
 #include <iostream>
 #include <limits>
 #include <cmath>
@@ -21,7 +21,7 @@ void source_loopback::convert_32bit_float_to_bitdepth_pcm(
     UINT32 frames, UINT32 channels,
     const float* in, bit_depth_t* out, bool silent)
 {
-    assert(sizeof(bit_depth_t) <= sizeof(int32_t));
+    assert_(sizeof(bit_depth_t) <= sizeof(int32_t));
     // frame has a sample for each channel
     const UINT32 samples = frames * channels;
     for(UINT32 i = 0; i < samples; i++)
@@ -48,21 +48,27 @@ void source_loopback::convert_32bit_float_to_bitdepth_pcm(
 source_loopback::source_loopback(const media_session_t& session) : 
     media_source(session), device_time_position(0), started(false)
 {
-    this->process_callback.Attach(new async_callback_t(&source_loopback::process_cb));
+    HRESULT hr = S_OK;
+    DWORD task_id;
+    CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &this->work_queue_id));
+
+    this->process_callback.Attach(new async_callback_t(&source_loopback::process_cb, this->work_queue_id));
     this->serve_callback.Attach(new async_callback_t(&source_loopback::serve_cb));
 
     this->stream_base.time = this->stream_base.sample = -1;
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
 }
 
 source_loopback::~source_loopback()
 {
+    MFUnlockWorkQueue(this->work_queue_id);
 }
 
 HRESULT source_loopback::add_event_to_wait_queue()
 {
-    // TODO: call MFLockSharedWorkQueue
-    // and MFUnlockWorkQueue @ destructor
-
     HRESULT hr = S_OK;
 
     //CComPtr<IMFAsyncResult> asyncresult;
@@ -106,7 +112,7 @@ void source_loopback::process_cb(void*)
 
     HRESULT hr = S_OK;
     // nextpacketsize and frames are equal
-    UINT32 nextpacketsize = 0, frames;
+    UINT32 nextpacketsize = 0, frames = 0;
     bool getbuffer = false;
     while(SUCCEEDED(hr = this->audio_capture_client->GetNextPacketSize(&nextpacketsize)) && 
         nextpacketsize)
@@ -194,10 +200,10 @@ done:
 
 void source_loopback::serve_cb(void*)
 {
-    // only one thread should be executing this
-    std::unique_lock<std::recursive_mutex> lock(this->serve_mutex, std::try_to_lock);
-    if(!lock.owns_lock())
-        return;
+    //// only one thread should be executing this
+    //std::unique_lock<std::recursive_mutex> lock2(this->serve_mutex, std::try_to_lock);
+    //if(!lock2.owns_lock())
+    //    return;
 
     HRESULT hr = S_OK;
     request_t request;
@@ -243,7 +249,7 @@ void source_loopback::serve_cb(void*)
                 (*it)->GetBlob(MF_MT_USER_DATA, (UINT8*)&stream_base, sizeof(sample_base_t), NULL));
             if(stream_base.time >= 0)
                 this->stream_base = stream_base;
-            assert(this->stream_base.time >= 0);
+            assert_(this->stream_base.time >= 0);
 
             const double sample_dur = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
             // samples are fetched often which means that sample_duration * sample_dur
@@ -292,7 +298,7 @@ void source_loopback::serve_cb(void*)
                 const LONGLONG new_sample_time = sample_time + sample_duration - sample_offset_end;
                 const LONGLONG new_sample_dur = sample_offset_end;
                 CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
-                CHECK_HR(hr = (*it)->SetSampleDuration(sample_offset_end));
+                CHECK_HR(hr = (*it)->SetSampleDuration(new_sample_dur));
 
                 /*dispatch = true;*/
             }
@@ -347,9 +353,7 @@ done:
 
 void source_loopback::serve_requests()
 {
-    const HRESULT hr = this->serve_callback->mf_put_work_item(
-        this->shared_from_this<source_loopback>(),
-        MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+    const HRESULT hr = this->serve_callback->mf_put_work_item(this->shared_from_this<source_loopback>());
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     else if(hr == MF_E_SHUTDOWN)

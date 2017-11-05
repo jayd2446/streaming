@@ -1,5 +1,5 @@
 #include "request_packet.h"
-#include <cassert>
+#include "assert.h"
 
 request_queue::request_queue(int first_packet_number) :
     first_packet_number(first_packet_number), last_packet_number(first_packet_number)
@@ -16,9 +16,10 @@ void request_queue::push(const request_t& request)
     scoped_lock lock(this->requests_mutex);
     if(request.rp.packet_number < this->first_packet_number)
     {
-        const int diff = this->first_packet_number - request.rp.packet_number;
+        assert_(false);
+        /*const int diff = this->first_packet_number - request.rp.packet_number;
         this->requests.insert(this->requests.begin(), diff, request);
-        this->first_packet_number = request.rp.packet_number;
+        this->first_packet_number = request.rp.packet_number;*/
     }
     else if(request.rp.packet_number > this->last_packet_number)
     {
@@ -29,7 +30,7 @@ void request_queue::push(const request_t& request)
     else if(request.rp.packet_number == this->first_packet_number &&
         request.rp.packet_number == this->last_packet_number)
     {
-        assert(this->requests.empty());
+        assert_(this->requests.empty());
         this->requests.push_back(request);
     }
     else
@@ -44,11 +45,11 @@ bool request_queue::pop(request_t& request)
         this->requests.pop_front();
 
         this->first_packet_number++;
-        if(this->first_packet_number > this->last_packet_number)
+        /*if(this->first_packet_number > this->last_packet_number)
         {
-            assert(this->requests.empty());
+            assert_(this->requests.empty());
             this->last_packet_number = this->first_packet_number;
-        }
+        }*/
 
         return true;
     }

@@ -44,9 +44,7 @@ public:
     void initialize(
         UINT32 window_width, UINT32 window_height,
         HWND, 
-        CComPtr<ID3D11Device>&, 
-        CComPtr<ID3D11DeviceContext>&,
-        CComPtr<IDXGISwapChain>&);
+        CComPtr<ID3D11Device>&);
     media_stream_t create_stream();
 };
 

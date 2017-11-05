@@ -1,5 +1,5 @@
 #include "sink_preview2.h"
-#include <cassert>
+#include "assert.h"
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
@@ -9,11 +9,9 @@ sink_preview2::sink_preview2(const media_session_t& session, std::recursive_mute
 }
 
 void sink_preview2::initialize(
-    UINT32 window_width, UINT32 window_height,
+    UINT32 /*window_width*/, UINT32 /*window_height*/,
     HWND hwnd, 
-    CComPtr<ID3D11Device>& d3d11dev, 
-    CComPtr<ID3D11DeviceContext>& d3d11devctx,
-    CComPtr<IDXGISwapChain>& swapchain)
+    CComPtr<ID3D11Device>& d3d11dev)
 {
     this->hwnd = hwnd;
     this->d3d11dev = d3d11dev;
@@ -91,7 +89,7 @@ done:
         throw std::exception();
 }
 
-void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_packet& rp)
+void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_packet&)
 {
     HRESULT hr = S_OK;
 
@@ -138,9 +136,9 @@ stream_preview2::stream_preview2(const sink_preview2_t& sink) : sink(sink)
 {
 }
 
-media_stream::result_t stream_preview2::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_preview2::request_sample(request_packet&, const media_stream*)
 {
-    assert(false);
+    assert_(false);
     return OK;
 }
 

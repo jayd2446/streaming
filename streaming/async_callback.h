@@ -5,8 +5,8 @@
 #include <mfapi.h>
 #include <atlbase.h>
 #include <memory>
-#include <cassert>
 #include <atomic>
+#include "assert.h"
 
 #pragma comment(lib, "Mfplat.lib")
 
@@ -31,11 +31,11 @@ private:
         if(parent)
             (parent.get()->*cb)((void*)res);
         else
-            // this assert might fail when the parent is currently @ the destructor;
+            // this assert_ might fail when the parent is currently @ the destructor;
             // the locking of the parent isn't possible anymore, but
             // the parent has still a reference to this in addition to the
             // media foundation callback having a reference to this
-            assert(this->RefCount == 1);
+            assert_(this->RefCount == 1);
         return S_OK;
     }
 public:
@@ -58,10 +58,10 @@ public:
     void invoke(void* unk) {this->mf_cb((IMFAsyncResult*)unk);}
 
     // the parent must be same for each call
-    HRESULT mf_put_work_item(const std::weak_ptr<T>& parent, DWORD queue) 
+    HRESULT mf_put_work_item(const std::weak_ptr<T>& parent) 
     {
         this->set_callback(parent);
-        return MFPutWorkItem(queue, &this->native, NULL);
+        return MFPutWorkItem(this->native.work_queue, &this->native, NULL);
     }
     HRESULT mf_put_waiting_work_item(
         const std::weak_ptr<T>& parent, 

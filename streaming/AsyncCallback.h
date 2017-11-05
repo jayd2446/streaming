@@ -53,7 +53,7 @@ public:
         *pdwFlags = this->flags;
         *pdwQueue = this->work_queue;
 
-        return S_OK;;
+        return S_OK;
     }
     HRESULT STDMETHODCALLTYPE Invoke(IMFAsyncResult* result) {return (this->parent->*Fn)(result);}
 };

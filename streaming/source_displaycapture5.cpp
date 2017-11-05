@@ -207,8 +207,7 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
 
     // dispatch the capture request
     const HRESULT hr = this->capture_frame_callback->mf_put_work_item(
-        this->shared_from_this<stream_displaycapture5>(),
-        MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        this->shared_from_this<stream_displaycapture5>());
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     else if(hr == MF_E_SHUTDOWN)

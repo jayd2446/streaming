@@ -7,7 +7,7 @@
 #include "source_loopback.h"
 #include <vector>
 #include <mutex>
-#include <cassert>
+#include "assert.h"
 
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -63,7 +63,7 @@ private:
     // presentation_clock_sink
     bool on_clock_start(time_unit);
     void on_clock_stop(time_unit);
-    void scheduled_callback(time_unit due_time) {assert(false);}
+    void scheduled_callback(time_unit) {assert_(false);}
 
     void dispatch_request(request_packet&);
 public:

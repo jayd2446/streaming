@@ -3,7 +3,7 @@
 #include <evr.h>
 #include <codecapi.h>
 #include <iostream>
-#include <cassert>
+#include "assert.h"
 
 #pragma comment(lib, "dxguid.lib")
 
@@ -107,8 +107,7 @@ void transform_h264_encoder::events_cb(void* unk)
     if(type == METransformNeedInput)
     {
         const HRESULT hr = this->process_input_callback->mf_put_work_item(
-            this->shared_from_this<transform_h264_encoder>(),
-            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+            this->shared_from_this<transform_h264_encoder>());
         if(FAILED(hr) && hr != MF_E_SHUTDOWN)
             throw std::exception();
         else if(hr == MF_E_SHUTDOWN)
@@ -117,15 +116,14 @@ void transform_h264_encoder::events_cb(void* unk)
     else if(type == METransformHaveOutput)
     {
         const HRESULT hr = this->process_output_callback->mf_put_work_item(
-            this->shared_from_this<transform_h264_encoder>(),
-            MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+            this->shared_from_this<transform_h264_encoder>());
         if(FAILED(hr) && hr != MF_E_SHUTDOWN)
             throw std::exception();
         else if(hr == MF_E_SHUTDOWN)
             return;
     }
     else
-        assert(false);
+        assert_(false);
 
 done:
     if(FAILED(hr))
@@ -164,7 +162,7 @@ void transform_h264_encoder::processing_cb(void*)
 
             // TODO: remove processed samples queue because it might introduce bugs
             // add the sample to the processed samples queue
-            assert(this->processed_samples.find(timestamp) == this->processed_samples.end());
+            assert_(this->processed_samples.find(timestamp) == this->processed_samples.end());
             this->processed_samples[timestamp] = request;
 
             this->encoder_requests--;
@@ -180,7 +178,6 @@ void transform_h264_encoder::processing_cb(void*)
         CComPtr<IMFMediaBuffer> buffer;
         CComPtr<IMF2DBuffer> buffer2d;
         CComPtr<IMFSample> sample;
-        DWORD len;
 
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
@@ -237,7 +234,7 @@ void transform_h264_encoder::process_output_cb(void*)
     {
         scoped_lock lock(this->processed_samples_mutex);
         auto it = this->processed_samples.find(time);
-        assert(it != this->processed_samples.end());
+        assert_(it != this->processed_samples.end());
         request = it->second;
         this->processed_samples.erase(it);
     }

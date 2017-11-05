@@ -1,5 +1,5 @@
 #include "media_sample.h"
-#include <cassert>
+#include "assert.h"
 #include <atomic>
 
 media_buffer::media_buffer() : 
@@ -28,8 +28,8 @@ void media_buffer::lock_read()
 void media_buffer::unlock_write()
 {
     scoped_lock lock(this->mutex);
-    assert(this->write_lock);
-    assert(this->read_lock);
+    assert_(this->write_lock);
+    assert_(this->read_lock);
     this->write_lock = false;
     this->cv.notify_all();
 }
@@ -61,7 +61,7 @@ media_sample_view::media_sample_view(const media_sample_t& sample, view_lock_t v
     else if(this->view_lock == view_lock_t::LOCK_BUFFERS)
         this->sample->buffer->lock();
     else
-        assert(false);
+        assert_(false);
 }
 
 media_sample_view::~media_sample_view()

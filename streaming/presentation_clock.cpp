@@ -1,6 +1,6 @@
 #include "presentation_clock.h"
 #include <Mferror.h>
-#include <cassert>
+#include "assert.h"
 #include <limits>
 
 extern LARGE_INTEGER pc_frequency;
@@ -75,14 +75,14 @@ void presentation_time_source::set_current_time(time_unit t)
 
 void presentation_time_source::start()
 {
-    assert(!this->running);
+    assert_(!this->running);
     this->set_current_time(this->get_current_time());
     this->running = true;
 }
 
 void presentation_time_source::stop()
 {
-    assert(this->running);
+    assert_(this->running);
     this->running = false;
 }
 
@@ -121,13 +121,13 @@ presentation_clock_sink::presentation_clock_sink() :
 
 presentation_clock_sink::~presentation_clock_sink()
 {
-    /*assert(this->unregistered);*/
+    /*assert_(this->unregistered);*/
     /*MFUnlockWorkQueue(this->callback.work_queue);*/
 }
 
 bool presentation_clock_sink::register_sink(presentation_clock_t& clock)
 {
-    assert(this->unregistered);
+    assert_(this->unregistered);
 
     scoped_lock lock(clock->mutex_sinks);
     clock->sinks.push_back(presentation_clock_sink_t(this->shared_from_this<presentation_clock_sink>()));
@@ -138,7 +138,7 @@ bool presentation_clock_sink::register_sink(presentation_clock_t& clock)
 
 //bool presentation_clock_sink::unregister_sink()
 //{
-//    assert(!this->unregistered);
+//    assert_(!this->unregistered);
 //
 //    presentation_clock_t clock;
 //    if(!this->get_clock(clock))
@@ -231,7 +231,7 @@ void presentation_clock_sink::callback_cb(void*)
         if(this->callbacks.empty())
             return;
 
-        assert(*this->callbacks.begin() == this->scheduled_time);
+        assert_(*this->callbacks.begin() == this->scheduled_time);
 
         due_time = *this->callbacks.begin();
         this->callbacks.erase(due_time);
@@ -274,7 +274,7 @@ bool presentation_clock_sink::schedule_new_callback(time_unit t)
 
 void presentation_clock_sink::scheduled_callback(time_unit)
 {
-    assert(false);
+    assert_(false);
 }
 
 void presentation_clock_sink::set_pull_rate(int64_t fps_num, int64_t fps_den)
@@ -287,7 +287,7 @@ void presentation_clock_sink::set_pull_rate(int64_t fps_num, int64_t fps_den)
 
 time_unit presentation_clock_sink::get_remainder(time_unit t) const
 {
-    assert(this->fps_num > 0);
+    assert_(this->fps_num > 0);
     return ((t * this->fps_num) % this->fps_den_in_time_unit) / this->fps_num;
 }
 
@@ -311,7 +311,7 @@ presentation_clock::presentation_clock(const presentation_time_source_t& time_so
 
 presentation_clock::~presentation_clock()
 {
-    /*assert(this->sinks.empty());*/
+    /*assert_(this->sinks.empty());*/
 }
 
 bool presentation_clock::clock_start(time_unit time_point)

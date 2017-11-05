@@ -2,7 +2,7 @@
 #include <iostream>
 #include <mfapi.h>
 #include <Mferror.h>
-#include <cassert>
+#include "assert.h"
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "D3D11.lib")
@@ -221,8 +221,8 @@ done:
         throw std::exception();
 
     // allocate and start the capture thread
-    assert(!this->capture_thread);
-    assert(!this->capture_thread_clock);
+    assert_(!this->capture_thread);
+    assert_(!this->capture_thread_clock);
     this->capture_thread_clock.reset(new presentation_clock);
     this->capture_thread.reset(new thread_capture(this->shared_from_this<source_displaycapture4>()));
     this->capture_thread->monitor_index = output_index;

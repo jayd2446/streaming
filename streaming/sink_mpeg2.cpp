@@ -30,8 +30,7 @@ sink_mpeg2::~sink_mpeg2()
 void sink_mpeg2::write_packets()
 {
     const HRESULT hr = this->write_packets_callback->mf_put_work_item(
-        this->shared_from_this<sink_mpeg2>(),
-        MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
+        this->shared_from_this<sink_mpeg2>());
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     else if(hr == MF_E_SHUTDOWN)
@@ -150,7 +149,7 @@ bool stream_mpeg2::on_clock_start(time_unit t)
     return true;
 }
 
-void stream_mpeg2::on_clock_stop(time_unit t)
+void stream_mpeg2::on_clock_stop(time_unit)
 {
     // TODO: audio session should be stopped here aswell
     this->running = false;
@@ -206,8 +205,7 @@ void stream_mpeg2::schedule_new(time_unit due_time)
 
 void stream_mpeg2::dispatch_request(request_packet& rp)
 {
-    if(this->unavailable > 240)
-        DebugBreak();
+    assert_(this->unavailable <= 240);
 
     // initiate the audio request
     // TODO: this if statement doesn't work for all pull rates
@@ -225,6 +223,7 @@ void stream_mpeg2::dispatch_request(request_packet& rp)
             (*it)->available = false;
 
             result_t res = (*it)->request_sample(rp, this);
+            (res);
             return;
         }
     }

@@ -6,9 +6,10 @@
 #include "async_callback.h"
 #include "sink_audio.h"
 #include "media_session.h"
+#include "transform_h264_encoder.h"
 #include <vector>
 #include <mutex>
-#include <cassert>
+#include "assert.h"
 
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -82,11 +83,13 @@ private:
     void schedule_new(time_unit due_time);
     void dispatch_request(request_packet&);
 public:
+    stream_h264_encoder_t encoder_stream;
+
     explicit stream_mpeg2(const sink_mpeg2_t& sink);
 
     void add_worker_stream(const stream_mpeg2_worker_t& worker_stream);
 
     bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}
-    result_t request_sample(request_packet&, const media_stream* = NULL) {assert(false); return OK;}
+    result_t request_sample(request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
     result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
 };

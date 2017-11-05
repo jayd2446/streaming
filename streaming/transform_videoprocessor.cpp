@@ -210,7 +210,7 @@ done:
 }
 
 media_stream::result_t stream_videoprocessor::request_sample(
-    request_packet& rp, const media_stream* prev_stream)
+    request_packet& rp, const media_stream*)
 {
     if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;

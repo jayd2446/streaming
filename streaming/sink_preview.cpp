@@ -393,7 +393,7 @@ media_stream::result_t stream_preview::request_sample(request_packet& rp, const 
         }
     }
 
-    /*assert(false);*/
+    /*assert_(false);*/
     return res;
 
     /*if(!this->sink->session->request_sample(this, rp, true))

@@ -42,6 +42,7 @@ private:
     CComPtr<IAudioClock> audio_clock;
     CHandle process_event;
     MFWORKITEM_KEY callback_key;
+    DWORD work_queue_id;
 
     std::recursive_mutex process_mutex;
     CComPtr<async_callback_t> process_callback;
