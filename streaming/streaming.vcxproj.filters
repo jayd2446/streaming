@@ -69,9 +69,6 @@
     <ClCompile Include="sink_mpeg2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="tp.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -150,9 +147,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="assert.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="tp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

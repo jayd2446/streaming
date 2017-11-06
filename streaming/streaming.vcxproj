@@ -145,7 +145,6 @@
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture5.cpp" />
     <ClCompile Include="source_loopback.cpp" />
-    <ClCompile Include="tp.cpp" />
     <ClCompile Include="transform_aac_encoder.cpp" />
     <ClCompile Include="transform_color_converter.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
@@ -189,7 +188,6 @@
     <ClInclude Include="source_displaycapture5.h" />
     <ClInclude Include="source_loopback.h" />
     <ClInclude Include="stream_worker.h" />
-    <ClInclude Include="tp.h" />
     <ClInclude Include="transform_aac_encoder.h" />
     <ClInclude Include="transform_color_converter.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
