@@ -75,6 +75,8 @@ private:
     // for debug
     int unavailable;
 
+    DWORD work_queue_id;
+
     // presentation_clock_sink
     bool on_clock_start(time_unit);
     void on_clock_stop(time_unit);
@@ -86,6 +88,7 @@ public:
     stream_h264_encoder_t encoder_stream;
 
     explicit stream_mpeg2(const sink_mpeg2_t& sink);
+    ~stream_mpeg2();
 
     void add_worker_stream(const stream_mpeg2_worker_t& worker_stream);
 

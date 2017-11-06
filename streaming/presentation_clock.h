@@ -98,6 +98,8 @@ public:
     //// TODO: rename this to something more fitting
     //bool unregister_sink();
 
+    void set_schedule_cb_work_queue(DWORD w) {this->callback->native.work_queue = w;}
+
     // can be NULL;
     // get_clock must be an atomic operation
     virtual bool get_clock(presentation_clock_t&) = 0;

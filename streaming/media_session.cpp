@@ -147,7 +147,7 @@ bool media_session::give_sample(
     const media_stream* stream, 
     const media_sample_view_t& sample_view, 
     request_packet& rp,
-    bool is_source)
+    bool /*is_source*/)
 {
     // TODO: media topology should be defined as const
 
@@ -158,62 +158,37 @@ bool media_session::give_sample(
     media_topology::topology_t::iterator it = topology->topology.find(stream);
     assert_(it != topology->topology.end());
 
-    // dispatch to work queue if there are more downstream nodes than 1
-    if(it->second.next.size() > 1)
-    {
-        for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        {
-            // dispatch to work queue
-            give_sample_t request;
-            request.stream = stream;
-            request.sample_view = sample_view;
-            request.rp = rp;
-            request.is_source = is_source;
-            request.down_stream = (*jt).get();
-
-            {
-                scoped_lock lock(this->give_sample_mutex);
-                this->give_sample_requests.push(request);
-            }
-
-            const HRESULT hr = this->give_sample_callback->mf_put_work_item(
-                this->shared_from_this<media_session>());
-            if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-                throw std::exception();
-        }
-    }
-    else
-    {
-        if(it->second.next.front()->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
-            return false;
-    }
-
-    /*if(it->second.next.size() > 1)*/
+    //// dispatch others to work queue if there are more downstream nodes than 1
+    //if(it->second.next.size() > 1)
     //{
-    //    // dispatch to work queue
+    //    for(auto jt = it->second.next.begin() + 1; jt != it->second.next.end(); jt++)
     //    {
+    //        // dispatch to work queue
     //        give_sample_t request;
     //        request.stream = stream;
     //        request.sample_view = sample_view;
     //        request.rp = rp;
     //        request.is_source = is_source;
-    //        request.it = it;
+    //        request.down_stream = (*jt).get();
 
-    //        scoped_lock lock(this->give_sample_mutex);
-    //        this->give_sample_requests.push(request);
+    //        {
+    //            scoped_lock lock(this->give_sample_mutex);
+    //            this->give_sample_requests.push(request);
+    //        }
+
+    //        const HRESULT hr = this->give_sample_callback->mf_put_work_item(
+    //            this->shared_from_this<media_session>());
+    //        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+    //            throw std::exception();
     //    }
-
-    //    const HRESULT hr = this->give_sample_callback->mf_put_work_item(
-    //        this->shared_from_this<media_session>(), MFASYNC_CALLBACK_QUEUE_MULTITHREADED);
-    //    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-    //        throw std::exception();
     //}
-    /*else
-    {
-        for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-            if((*jt)->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
-                return false;
-    }*/
+
+    //if(it->second.next.front()->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
+    //    return false;
+
+    for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
+        if((*jt)->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
+            return false;
 
     return true;
 }

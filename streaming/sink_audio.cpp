@@ -102,8 +102,7 @@ void stream_audio::on_clock_stop(time_unit t)
 
 void stream_audio::dispatch_request(request_packet& rp)
 {
-    if(this->unavailable > 240)
-        DebugBreak();
+    assert_(this->unavailable <= 240);
 
     scoped_lock lock(this->worker_streams_mutex);
     for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)

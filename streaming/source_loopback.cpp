@@ -154,7 +154,7 @@ void source_loopback::process_cb(void*)
 
         // convert and copy to buffer
         BYTE* buffer_data;
-        const size_t frame_len = this->get_block_align();
+        const UINT32 frame_len = this->get_block_align();
         CHECK_HR(hr = MFCreateMemoryBuffer(frames * frame_len, &buffer));
         CHECK_HR(hr = buffer->Lock(&buffer_data, NULL, NULL));
         convert_32bit_float_to_bitdepth_pcm(
@@ -167,6 +167,14 @@ void source_loopback::process_cb(void*)
         // set the time and duration in frames
         CHECK_HR(hr = sample->SetSampleTime(devposition));
         CHECK_HR(hr = sample->SetSampleDuration(frames));
+
+        static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min();
+        LONGLONG ts;
+
+        ts = devposition;
+        if(ts <= ts_)
+            DebugBreak();
+        ts_ = ts;
 
         // add the base info
         CHECK_HR(hr = sample->SetBlob(MF_MT_USER_DATA, (UINT8*)&base, sizeof(sample_base_t)));
@@ -200,10 +208,10 @@ done:
 
 void source_loopback::serve_cb(void*)
 {
-    //// only one thread should be executing this
-    //std::unique_lock<std::recursive_mutex> lock2(this->serve_mutex, std::try_to_lock);
-    //if(!lock2.owns_lock())
-    //    return;
+    // only one thread should be executing this
+    std::unique_lock<std::recursive_mutex> lock2(this->serve_mutex, std::try_to_lock);
+    if(!lock2.owns_lock())
+        return;
 
     HRESULT hr = S_OK;
     request_t request;

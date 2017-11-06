@@ -200,6 +200,9 @@ void stream_displaycapture5::capture_frame_cb(void*)
 
 media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp, const media_stream*)
 {
+    // TODO: decide if displaycapture should capture frames like in source loopback
+    // with capture thread priority
+
     {
         scoped_lock lock(this->source->requests_mutex);
         this->source->requests.push(std::make_pair(this, rp));

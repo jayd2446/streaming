@@ -123,10 +123,24 @@ stream_mpeg2_worker_t sink_mpeg2::create_worker_stream()
 
 stream_mpeg2::stream_mpeg2(const sink_mpeg2_t& sink) : sink(sink), unavailable(0), running(false)
 {
+    HRESULT hr = S_OK;
+    DWORD task_id;
+    CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &this->work_queue_id));
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
+}
+
+stream_mpeg2::~stream_mpeg2()
+{
+    MFUnlockWorkQueue(this->work_queue_id);
 }
 
 bool stream_mpeg2::on_clock_start(time_unit t)
 {
+    this->set_schedule_cb_work_queue(this->work_queue_id);
+
     // set the new audio topology for the audio session
     media_topology_t new_audio_topology = std::atomic_load(&this->sink->new_audio_topology);
     std::atomic_exchange(&this->sink->new_audio_topology, media_topology_t());

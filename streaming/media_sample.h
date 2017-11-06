@@ -20,7 +20,8 @@ public:
     // unique lock is the same as scoped lock
     typedef std::unique_lock<std::mutex> scoped_lock;
 private:
-    volatile bool read_lock, write_lock;
+    volatile int read_lock;
+    volatile bool write_lock;
     std::condition_variable cv;
     std::mutex mutex;
 public:
