@@ -20,6 +20,8 @@
 class source_loopback;
 typedef std::shared_ptr<source_loopback> source_loopback_t;
 
+// timestamps are aligned
+
 class source_loopback : public media_source
 {
     friend class stream_loopback;
@@ -33,9 +35,6 @@ public:
 
     // wasapi is always 32 bit float in shared mode
     typedef int16_t bit_depth_t;
-    static void convert_32bit_float_to_bitdepth_pcm(
-        UINT32 frames, UINT32 channels,
-        const float* in, bit_depth_t* out, bool silent);
 private:
     CComPtr<IAudioClient> audio_client;
     CComPtr<IAudioCaptureClient> audio_capture_client;
@@ -68,14 +67,21 @@ private:
     void serve_cb(void*);
     void serve_requests();
     HRESULT start();
+
+    double sine_var;
 public:
+    bool generate_sine;
     CComPtr<IMFMediaType> waveformat_type;
 
     explicit source_loopback(const media_session_t& session);
     ~source_loopback();
 
-    HRESULT initialize();
+    HRESULT initialize(bool capture = false);
     media_stream_t create_stream();
+
+    void convert_32bit_float_to_bitdepth_pcm(
+        UINT32 frames, UINT32 channels,
+        const float* in, bit_depth_t* out, bool silent);
 
     // returns the block align of the converted samples in the buffer
     UINT32 get_block_align() const {return sizeof(bit_depth_t) * this->channels;}
@@ -87,7 +93,6 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_loopback_t source;
-    media_sample_t sample;
 public:
     explicit stream_loopback(const source_loopback_t& source);
 

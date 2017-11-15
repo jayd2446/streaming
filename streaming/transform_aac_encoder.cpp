@@ -65,9 +65,7 @@ void transform_aac_encoder::processing_cb(void*)
             }
             else
             {
-                media_sample_t sample(new media_sample);
-                sample->buffer = output_samples_buffer;
-                media_sample_view_t sample_view(new media_sample_view(sample));
+                media_sample_view_t sample_view(new media_sample_view(output_samples_buffer));
                 this->session->give_sample(request.stream, sample_view, request.rp, false);
             }
         }
@@ -223,6 +221,7 @@ media_stream_t transform_aac_encoder::create_stream()
 {
     return media_stream_t(new stream_aac_encoder(this->shared_from_this<transform_aac_encoder>()));
 }
+
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////

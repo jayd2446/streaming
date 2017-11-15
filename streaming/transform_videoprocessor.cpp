@@ -78,7 +78,6 @@ stream_videoprocessor_t transform_videoprocessor::create_stream()
 
 stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& transform) :
     transform(transform),
-    output_sample(new media_sample),
     output_buffer(new media_buffer_texture),
     output_buffer_null(new media_buffer_texture),
     view_initialized(false),
@@ -106,8 +105,7 @@ void stream_videoprocessor::processing_cb(void*)
 
         if(texture && texture2)
         {
-            this->output_sample->buffer = this->output_buffer;
-            sample_view.reset(new media_sample_view(this->output_sample));
+            sample_view.reset(new media_sample_view(this->output_buffer));
 
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view[2];
@@ -180,17 +178,14 @@ void stream_videoprocessor::processing_cb(void*)
                 0, stream_count, stream));
         }
         else
-        {
-            this->output_sample->buffer = this->output_buffer_null;
-            sample_view.reset(new media_sample_view(this->output_sample));
-        }
+            sample_view.reset(new media_sample_view(this->output_buffer_null));
 
         // use the earliest timestamp;
         // actually, max must be used so that the timestamp stays incremental
-        this->output_sample->timestamp = 
+        sample_view->sample.timestamp =
             std::min(
-            this->pending_request2.sample_view->get_sample()->timestamp, 
-            this->pending_request.sample_view->get_sample()->timestamp);
+            this->pending_request2.sample_view->sample.timestamp, 
+            this->pending_request.sample_view->sample.timestamp);
 
         request_packet rp = this->pending_request.rp;
 

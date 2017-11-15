@@ -158,7 +158,7 @@ void transform_h264_encoder::processing_cb(void*)
                 continue;
             }
 
-            timestamp = request.sample_view->get_sample()->timestamp;
+            timestamp = request.sample_view->sample.timestamp;
 
             // TODO: remove processed samples queue because it might introduce bugs
             // add the sample to the processed samples queue
@@ -207,10 +207,9 @@ void transform_h264_encoder::process_output_cb(void*)
     // TODO: the call order can be ensured
 
     // the processed packets might arrive out of order
-    media_buffer_memorybuffer* buffer;
-    media_sample_t sample(new media_sample);
-    sample->buffer.reset(buffer = new media_buffer_memorybuffer);
-    media_sample_view_t sample_view(new media_sample_view(sample));
+    media_buffer_memorybuffer* buffer = NULL;
+    media_sample_view_t sample_view(
+        new media_sample_view(media_buffer_t(buffer = new media_buffer_memorybuffer)));
     request_t request;
 
     const DWORD mft_provides_samples =
@@ -239,7 +238,7 @@ void transform_h264_encoder::process_output_cb(void*)
         this->processed_samples.erase(it);
     }
 
-    sample->timestamp = time;
+    sample_view->sample.timestamp = time;
     buffer->sample.Attach(output.pSample);
 
     request.sample_view = sample_view;

@@ -53,7 +53,6 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_displaycapture5_t source;
-    media_sample_t sample;
     const media_buffer_texture_t buffer;
     CComPtr<async_callback_t> capture_frame_callback;
 

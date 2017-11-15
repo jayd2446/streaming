@@ -131,7 +131,6 @@ done:
 
 stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source) : 
     source(source),
-    sample(new media_sample),
     buffer(new media_buffer_texture)
 {
     this->capture_frame_callback.Attach(new async_callback_t(&stream_displaycapture5::capture_frame_cb));
@@ -143,9 +142,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
     // the cached texture, and this thread has already locked the sample;
     // unlocking the capture frame mutex must be ensured before trying to lock the
     // cache texture
-    std::atomic_exchange(&this->sample->buffer, (media_buffer_t&)this->buffer);
-
-    media_sample_view_t sample_view(new media_sample_view(this->sample));
+    media_sample_view_t sample_view(new media_sample_view(this->buffer));
     bool frame_captured;
     time_unit timestamp;
     source_displaycapture5::request_t request;
@@ -177,6 +174,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     // than the subsequent packet which is assigned with a valid timestamp
     if(!frame_captured)
     {
+        // TODO: media_sample_view can be allocated in the stack
+
         // sample view must be reset to null before assigning a new sample view,
         // that is because the media_sample_view would lock the sample before
         // sample_view releasing its own reference to another sample_view
@@ -184,16 +183,16 @@ void stream_displaycapture5::capture_frame_cb(void*)
         // TODO: do not repeatedly use dynamic allocation
         // use the newest buffer from the source;
         // the buffer switch must be here so that that sample_view.reset() unlocks the old buffer
-        this->sample->buffer = std::atomic_load(&this->source->newest_buffer);
-        sample_view.reset(new media_sample_view(this->sample, media_sample_view::READ_LOCK_BUFFERS));
+        sample_view.reset(new media_sample_view(
+            std::atomic_load(&this->source->newest_buffer), media_sample_view::READ_LOCK_BUFFERS));
     }
     else
     {
         // switch the buffer to read_lock_sample
-        this->sample->buffer->unlock_write();
+        sample_view->sample.buffer->unlock_write();
     }
 
-    this->sample->timestamp = request.second.request_time;
+    sample_view->sample.timestamp = request.second.request_time;
     /*this->sample->timestamp = timestamp;*/
     request.first->process_sample(sample_view, request.second, NULL);
 }

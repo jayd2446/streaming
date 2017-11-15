@@ -121,7 +121,6 @@ public:
         request_packet&,
         bool is_sink);
     // is_source flag is used for the media session to able to translate the sample times;
-    // sample_view cannot be NULL;
     // TODO: give sample must not fail
     bool give_sample(
         const media_stream* this_output_stream, 

@@ -29,7 +29,15 @@ void source_loopback::convert_32bit_float_to_bitdepth_pcm(
         if(!silent)
         {
             // convert
-            const double sample = in[i];
+            double sample;
+            if(!this->generate_sine)
+                sample = in[i];
+            else
+            {
+                sample = sin(this->sine_var) * 0.05;
+                if(i % channels == 0)
+                    this->sine_var += 0.1;
+            }
             int32_t sample_converted = (int32_t)(sample * std::numeric_limits<bit_depth_t>::max());
 
             // clamp
@@ -46,7 +54,8 @@ void source_loopback::convert_32bit_float_to_bitdepth_pcm(
 }
 
 source_loopback::source_loopback(const media_session_t& session) : 
-    media_source(session), device_time_position(0), started(false)
+    media_source(session), device_time_position(0), started(false), 
+    generate_sine(false), sine_var(0)
 {
     HRESULT hr = S_OK;
     DWORD task_id;
@@ -140,9 +149,17 @@ void source_loopback::process_cb(void*)
         sample_base_t base = {-1, -1};
         if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
         {
+            // TODO: to combat against a possible drift in the timestamps
+            // because of slightly inaccurate sample rate in a device,
+            // set a new base periodically,
+            // e.g once every second
+            // (actually, this shouldn't be done because it can cause the
+            // the audio buffer cutting operation to fail)
             std::cout << "DATA DISCONTINUITY" << std::endl;
             base.time = (LONGLONG)first_sample_timestamp;
             base.sample = (LONGLONG)devposition;
+            if(this->generate_sine)
+                base.time += SECOND_IN_TIME_UNIT / 200;
         }
         if(flags & AUDCLNT_BUFFERFLAGS_SILENT)
         {
@@ -168,13 +185,13 @@ void source_loopback::process_cb(void*)
         CHECK_HR(hr = sample->SetSampleTime(devposition));
         CHECK_HR(hr = sample->SetSampleDuration(frames));
 
-        static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min();
+        /*static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min();
         LONGLONG ts;
 
         ts = devposition;
         if(ts <= ts_)
             DebugBreak();
-        ts_ = ts;
+        ts_ = ts;*/
 
         // add the base info
         CHECK_HR(hr = sample->SetBlob(MF_MT_USER_DATA, (UINT8*)&base, sizeof(sample_base_t)));
@@ -234,9 +251,6 @@ void source_loopback::serve_cb(void*)
 
         bool dispatch = false;
         media_buffer_samples_t samples(new media_buffer_samples);
-        media_sample_t sample(new media_sample);
-        sample->buffer = samples;
-
         const time_unit request_time = request.rp.request_time;
 
         // samples are served up to the request point;
@@ -262,8 +276,9 @@ void source_loopback::serve_cb(void*)
             const double sample_dur = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
             // samples are fetched often which means that sample_duration * sample_dur
             // is unlikely to introduce rounding errors
-            const time_unit tp_base = 
-                clock->get_time_source()->system_time_to_time_source(this->stream_base.time);
+            const time_unit tp_base = (time_unit)
+                ((LONGLONG)(clock->get_time_source()->system_time_to_time_source(this->stream_base.time) /
+                sample_dur) * sample_dur);
             const time_unit tp_start = tp_base +
                 (time_unit)((sample_time - this->stream_base.sample) * sample_dur);
             const time_unit tp_end = tp_start + (time_unit)(sample_duration * sample_dur);
@@ -288,8 +303,8 @@ void source_loopback::serve_cb(void*)
             // offset_end is in bytes
             const DWORD offset_end = (UINT32)(tp_diff_end / sample_dur) * this->get_block_align();
 
-            if(((int)buflen - (int)offset_end) <= 0)
-                DebugBreak();
+
+            assert_(((int)buflen - (int)offset_end) > 0);
             CHECK_HR(hr = MFCreateMediaBufferWrapper(
                 oldbuffer, 0, buflen - offset_end, &buffer));
             CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
@@ -347,7 +362,12 @@ void source_loopback::serve_cb(void*)
             // dispatch the request
             media_sample_view_t sample_view;
             if(!samples->samples.empty())
-                sample_view.reset(new media_sample_view(sample));
+            {
+                sample_view.reset(new media_sample_view(samples));
+                samples->bit_depth = sizeof(bit_depth_t);
+                samples->channels = this->channels;
+                samples->sample_rate = this->samples_per_second;
+            }
             request.stream->process_sample(sample_view, request.rp, NULL);
         }
         else
@@ -368,7 +388,7 @@ void source_loopback::serve_requests()
         return;
 }
 
-HRESULT source_loopback::initialize()
+HRESULT source_loopback::initialize(bool capture)
 {
     HRESULT hr = S_OK;
 
@@ -380,13 +400,13 @@ HRESULT source_loopback::initialize()
     CHECK_HR(hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
         (void**)&enumerator));
-    CHECK_HR(hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device));
+    CHECK_HR(hr = enumerator->GetDefaultAudioEndpoint(capture ? eCapture : eRender, eConsole, &device));
 
     CHECK_HR(hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audio_client));
     CHECK_HR(hr = this->audio_client->GetMixFormat(&engine_format));
 
     CHECK_HR(hr = this->audio_client->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, 
+        AUDCLNT_SHAREMODE_SHARED, capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK, 
         0, BUFFER_DURATION, engine_format, NULL));
 
     CHECK_HR(hr = this->audio_client->GetBufferSize(&buffer_frame_count));
@@ -469,8 +489,7 @@ media_stream_t source_loopback::create_stream()
 
 
 stream_loopback::stream_loopback(const source_loopback_t& source) : 
-    source(source),
-    sample(new media_sample)
+    source(source)
 {
 }
 

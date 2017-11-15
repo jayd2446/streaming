@@ -51,24 +51,29 @@ void media_buffer::unlock()
 /////////////////////////////////////////////////////////////////
 
 
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
-media_sample_view::media_sample_view(const media_sample_t& sample, view_lock_t view_lock) :
-    sample(sample),
-    view_lock(view_lock)
+media_sample::media_sample(const media_buffer_t& buffer, time_unit timestamp) :
+    buffer(buffer), timestamp(timestamp)
 {
-    if(this->view_lock == view_lock_t::READ_LOCK_BUFFERS)
-        this->sample->buffer->lock_read();
-    else if(this->view_lock == view_lock_t::LOCK_BUFFERS)
-        this->sample->buffer->lock();
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+media_sample_view::media_sample_view(const media_buffer_t& buffer, view_lock_t view_lock) :
+    sample(buffer)
+{
+    if(view_lock == view_lock_t::READ_LOCK_BUFFERS)
+        this->sample.buffer->lock_read();
+    else if(view_lock == view_lock_t::LOCK_BUFFERS)
+        this->sample.buffer->lock();
     else
         assert_(false);
 }
 
 media_sample_view::~media_sample_view()
 {
-    this->sample->buffer->unlock();
+    this->sample.buffer->unlock();
 }

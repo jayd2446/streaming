@@ -44,11 +44,11 @@ typedef std::shared_ptr<media_buffer> media_buffer_t;
 class media_sample
 {
 public:
-    media_buffer_t buffer;
+    const media_buffer_t buffer;
     time_unit timestamp;
-};
 
-typedef std::shared_ptr<media_sample> media_sample_t;
+    explicit media_sample(const media_buffer_t& buffer, time_unit timestamp = 0);
+};
 
 // h264 memory buffer
 class media_buffer_memorybuffer : public media_buffer
@@ -72,6 +72,8 @@ typedef std::shared_ptr<media_buffer_aac> media_buffer_aac_t;
 class media_buffer_samples : public media_buffer
 {
 public:
+    // bit depth is assumed to be 16 bits always
+    UINT32 channels, bit_depth, sample_rate;
     std::deque<CComPtr<IMFSample>> samples;
 };
 
@@ -90,22 +92,20 @@ typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;
 class media_sample_view
 {
 public:
-    // TODO: when obsolete code is cleaned up enum class is not needed anymore
     enum view_lock_t
     {
         READ_LOCK_BUFFERS,
         LOCK_BUFFERS
     };
 private:
-    media_sample_t sample;
-    view_lock_t view_lock;
 public:
-    explicit media_sample_view(const media_sample_t& sample, view_lock_t = LOCK_BUFFERS);
+    media_sample sample;
+
+    explicit media_sample_view(const media_buffer_t& buffer, view_lock_t = LOCK_BUFFERS);
     ~media_sample_view();
 
-    const media_sample_t& get_sample() const {return this->sample;}
     template<typename T>
-    std::shared_ptr<T> get_buffer() const {return std::dynamic_pointer_cast<T>(this->sample->buffer);}
+    std::shared_ptr<T> get_buffer() const {return std::dynamic_pointer_cast<T>(this->sample.buffer);}
 };
 
-typedef std::shared_ptr<const media_sample_view> media_sample_view_t;
+typedef std::shared_ptr<media_sample_view> media_sample_view_t;

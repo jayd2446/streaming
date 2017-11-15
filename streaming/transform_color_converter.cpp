@@ -76,7 +76,6 @@ media_stream_t transform_color_converter::create_stream()
 
 stream_color_converter::stream_color_converter(const transform_color_converter_t& transform) :
     transform(transform),
-    output_sample(new media_sample),
     output_buffer(new media_buffer_texture),
     output_buffer_null(new media_buffer_texture),
     view_initialized(false)
@@ -97,8 +96,7 @@ void stream_color_converter::processing_cb(void*)
 
         if(texture)
         {
-            this->output_sample->buffer = this->output_buffer;
-            sample_view.reset(new media_sample_view(this->output_sample));
+            sample_view.reset(new media_sample_view(this->output_buffer));
 
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view;
@@ -154,12 +152,9 @@ void stream_color_converter::processing_cb(void*)
                 0, stream_count, &stream));
         }
         else
-        {
-            this->output_sample->buffer = this->output_buffer_null;
-            sample_view.reset(new media_sample_view(this->output_sample));
-        }
+            sample_view.reset(new media_sample_view(this->output_buffer_null));
 
-        this->output_sample->timestamp = this->pending_packet.sample_view->get_sample()->timestamp;
+        sample_view->sample.timestamp = this->pending_packet.sample_view->sample.timestamp;
         
         request_packet rp = this->pending_packet.rp;
 

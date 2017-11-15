@@ -44,7 +44,6 @@ public:
 private:
     transform_color_converter_t transform;
     CComPtr<async_callback_t> processing_callback;
-    media_sample_t output_sample;
     media_buffer_texture_t output_buffer, output_buffer_null;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
     bool view_initialized;
