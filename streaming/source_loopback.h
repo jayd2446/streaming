@@ -51,6 +51,7 @@ private:
     std::recursive_mutex samples_mutex;
     std::deque<CComPtr<IMFSample>> samples;
     sample_base_t stream_base;
+    frame_unit consumed_samples_end;
     UINT64 device_time_position;
     REFERENCE_TIME buffer_actual_duration;
 

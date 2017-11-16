@@ -55,7 +55,8 @@ void source_loopback::convert_32bit_float_to_bitdepth_pcm(
 
 source_loopback::source_loopback(const media_session_t& session) : 
     media_source(session), device_time_position(0), started(false), 
-    generate_sine(false), sine_var(0)
+    generate_sine(false), sine_var(0),
+    consumed_samples_end(std::numeric_limits<frame_unit>::min())
 {
     HRESULT hr = S_OK;
     DWORD task_id;
@@ -134,6 +135,7 @@ void source_loopback::process_cb(void*)
         UINT64 devposition;
 
         // TODO: source loopback must be reinitialized if the device becomes invalid
+        // TODO: use event based capturing
 
         // no excessive delay should happen between getbuffer and releasebuffer calls
         CHECK_HR(hr = this->audio_capture_client->GetBuffer(
@@ -144,9 +146,20 @@ void source_loopback::process_cb(void*)
 
         CHECK_HR(hr = MFCreateSample(&sample));
 
+        /*
+        the stream can stop in a way that doesn't trigger the data discontinuity
+        flag and the dev position won't advance;
+        only way to find the timestamp is via the inaccurate timestamp param
+        */
+
+        /*
+        maintain internally a time position for the last consumed sample
+        and use that as the time base if the provided time base is smaller
+        */
+
         bool silent = false;
         // set the stream time and sample base
-        sample_base_t base = {-1, -1};
+        sample_base_t base = {(LONGLONG)first_sample_timestamp, (LONGLONG)devposition};
         if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
         {
             // TODO: to combat against a possible drift in the timestamps
@@ -271,7 +284,11 @@ void source_loopback::serve_cb(void*)
             const frame_unit frame_base = (frame_unit)
                 (clock->get_time_source()->system_time_to_time_source(this->stream_base.time) / 
                 sample_duration);
-            const frame_unit frame_pos = frame_base + (sample_pos - this->stream_base.sample);
+            // frame pos is continuous unless the device position has been incremented
+            // enough to skip frames
+            const frame_unit frame_pos = std::max(
+                frame_base + (sample_pos - this->stream_base.sample), 
+                this->consumed_samples_end);
             const frame_unit frame_end = frame_pos + sample_dur;
 
             // too new sample for the request
@@ -319,6 +336,8 @@ void source_loopback::serve_cb(void*)
 
             if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
                 samples->samples.push_back(sample);
+
+            this->consumed_samples_end = new_sample_time + new_sample_dur;
         }
 
         // TODO: stale requests should be checked other way

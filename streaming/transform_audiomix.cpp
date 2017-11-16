@@ -251,22 +251,26 @@ void stream_audiomix::process_cb(void*)
         {
             std::cout << "COPY" << std::endl;
 
-            CComPtr<IMFSample> sample;
-            CComPtr<IMFMediaBuffer> buffer;
-            time_unit ts, dur, tp_start;
-            auto kt = ptr_it ? it : jt;
-            CHECK_HR(hr = (*kt)->GetSampleTime(&ts));
-            CHECK_HR(hr = (*kt)->GetSampleDuration(&dur));
-            tp_start = std::max(ptr_tp_start, ts);
+            auto end = ptr_it ? pending_samples->samples.end() : pending_samples2->samples.end();
+            for(auto kt = ptr_it ? it : jt; kt != end; kt++)
+            {
+                CComPtr<IMFSample> sample;
+                CComPtr<IMFMediaBuffer> buffer;
+                time_unit ts, dur, tp_start;
 
-            CHECK_HR(hr = MFCreateSample(&sample));
-            buffer = this->transform->copy(
-                pending_samples->bit_depth, pending_samples->channels,
-                *kt, tp_start, ts + dur);
-            CHECK_HR(hr = sample->AddBuffer(buffer));
-            CHECK_HR(hr = sample->SetSampleTime(tp_start));
-            CHECK_HR(hr = sample->SetSampleDuration(ts + dur - tp_start));
-            samples->samples.push_back(sample);
+                CHECK_HR(hr = (*kt)->GetSampleTime(&ts));
+                CHECK_HR(hr = (*kt)->GetSampleDuration(&dur));
+                tp_start = std::max(ptr_tp_start, ts);
+
+                CHECK_HR(hr = MFCreateSample(&sample));
+                buffer = this->transform->copy(
+                    pending_samples->bit_depth, pending_samples->channels,
+                    *kt, tp_start, ts + dur);
+                CHECK_HR(hr = sample->AddBuffer(buffer));
+                CHECK_HR(hr = sample->SetSampleTime(tp_start));
+                CHECK_HR(hr = sample->SetSampleDuration(ts + dur - tp_start));
+                samples->samples.push_back(sample);
+            }
         }
 
         sample_view.reset(new media_sample_view(samples));
