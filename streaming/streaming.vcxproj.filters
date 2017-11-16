@@ -72,6 +72,9 @@
     <ClCompile Include="transform_audiomix.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="transform_audioprocessor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -153,6 +156,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="transform_audiomix.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="transform_audioprocessor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

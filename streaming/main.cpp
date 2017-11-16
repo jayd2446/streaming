@@ -19,6 +19,7 @@
 #include "source_loopback.h"
 #include "transform_aac_encoder.h"
 #include "transform_audiomix.h"
+#include "transform_audioprocessor.h"
 #include <mutex>
 
 #pragma comment(lib, "Mfplat.lib")
@@ -80,6 +81,7 @@ void create_streams(
     const source_loopback_t& loopback_source,
     const source_loopback_t& loopback_source2,
     const transform_audiomix_t& audiomix_transform,
+    const transform_audioprocessor_t& audioprocessor_transform,
     const transform_videoprocessor_t& videoprocessor_transform,
     const transform_color_converter_t& color_converter_transform,
     const transform_h264_encoder_t& h264_encoder_transform,
@@ -131,12 +133,14 @@ void create_streams(
             media_stream_t source_stream = loopback_source->create_stream();
             media_stream_t source_stream2 = loopback_source2->create_stream();
             stream_audiomix_t transform_stream = audiomix_transform->create_stream();
+            media_stream_t channel_converter_stream = audioprocessor_transform->create_stream();
 
             audio_stream->add_worker_stream(worker_stream);
             transform_stream->set_primary_stream(source_stream.get());
 
             audio_topology->connect_streams(source_stream, transform_stream);
-            audio_topology->connect_streams(source_stream2, transform_stream);
+            audio_topology->connect_streams(source_stream2, channel_converter_stream);
+            audio_topology->connect_streams(channel_converter_stream, transform_stream);
             audio_topology->connect_streams(transform_stream, aac_encoder_stream);
             audio_topology->connect_streams(aac_encoder_stream, worker_stream);
             audio_topology->connect_streams(worker_stream, audio_stream);
@@ -251,11 +255,15 @@ int main()
         source_loopback_t loopback_source(new source_loopback(mpeg_sink->audio_session));
         loopback_source->initialize(false);
         source_loopback_t loopback_source2(new source_loopback(mpeg_sink->audio_session));
-        loopback_source2->generate_sine = true;
-        loopback_source2->initialize(false);
+        /*loopback_source2->generate_sine = true;*/
+        loopback_source2->initialize(true);
 
         // create and initialize the audiomix transform
         transform_audiomix_t audiomix_transform(new transform_audiomix(mpeg_sink->audio_session));
+
+        // create and initialize the audioprocessor transform
+        transform_audioprocessor_t audioprocessor_transform(
+            new transform_audioprocessor(mpeg_sink->audio_session));
 
         // create and initialize the aac encoder transform
         transform_aac_encoder_t aac_encoder_transform(new transform_aac_encoder(mpeg_sink->audio_session));
@@ -280,6 +288,7 @@ int main()
             loopback_source,
             loopback_source2,
             audiomix_transform,
+            audioprocessor_transform,
             videoprocessor_transform,
             color_converter_transform,
             h264_encoder_transform,
@@ -314,9 +323,10 @@ int main()
                             audio_sink,
                             displaycapture_source2,
                             displaycapture_source,
-                            loopback_source2,
                             loopback_source,
+                            loopback_source2,
                             audiomix_transform,
+                            audioprocessor_transform,
                             videoprocessor_transform,
                             color_converter_transform,
                             h264_encoder_transform,
@@ -335,9 +345,10 @@ int main()
                             audio_sink,
                             displaycapture_source,
                             displaycapture_source2,
-                            loopback_source2,
                             loopback_source,
+                            loopback_source2,
                             audiomix_transform,
+                            audioprocessor_transform,
                             videoprocessor_transform,
                             color_converter_transform,
                             h264_encoder_transform,

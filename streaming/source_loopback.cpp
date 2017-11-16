@@ -239,22 +239,17 @@ void source_loopback::serve_cb(void*)
         if(!this->session->get_current_clock(clock))
             return;
 
-        //// update the device position
-        //{
-        //    scoped_lock lock(this->process_mutex);
-        //    // TODO: devposition should be checked elsewhere
-        //    UINT64 devposition;
-        //    CHECK_HR(hr = this->audio_clock->GetPosition(&devposition, &this->device_time_position));
-        //}
-        //const time_unit tp_device = 
-        //    clock->get_time_source()->system_time_to_time_source((time_unit)this->device_time_position);
+        // samples are collected up to the request time;
+        // sample that goes over the request time will not be collected
+
+        // TODO: on data discontinuity the next base qpc might yeild an earlier timestamp
+        // than the calculated timestamp on the last sample
 
         bool dispatch = false;
         media_buffer_samples_t samples(new media_buffer_samples);
-        const time_unit request_time = request.rp.request_time;
+        const double sample_duration = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
+        const frame_unit request_end = (frame_unit)(request.rp.request_time / sample_duration);
 
-        // samples are served up to the request point;
-        // straddling sample is not consumed
         std::unique_lock<std::recursive_mutex> lock(this->samples_mutex);
         size_t consumed_samples = 0;
         for(auto it = this->samples.begin(); it != this->samples.end(); it++)
@@ -264,45 +259,36 @@ void source_loopback::serve_cb(void*)
             DWORD buflen;
             sample_base_t stream_base;
 
-            LONGLONG sample_time, sample_duration;
-            CHECK_HR(hr = (*it)->GetSampleTime(&sample_time));
-            CHECK_HR(hr = (*it)->GetSampleDuration(&sample_duration));
+            LONGLONG sample_pos, sample_dur;
+            CHECK_HR(hr = (*it)->GetSampleTime(&sample_pos));
+            CHECK_HR(hr = (*it)->GetSampleDuration(&sample_dur));
             CHECK_HR(hr = 
                 (*it)->GetBlob(MF_MT_USER_DATA, (UINT8*)&stream_base, sizeof(sample_base_t), NULL));
             if(stream_base.time >= 0)
                 this->stream_base = stream_base;
             assert_(this->stream_base.time >= 0);
 
-            const double sample_dur = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
-            // samples are fetched often which means that sample_duration * sample_dur
-            // is unlikely to introduce rounding errors
-            const time_unit tp_base = (time_unit)
-                ((LONGLONG)(clock->get_time_source()->system_time_to_time_source(this->stream_base.time) /
-                sample_dur) * sample_dur);
-            const time_unit tp_start = tp_base +
-                (time_unit)((sample_time - this->stream_base.sample) * sample_dur);
-            const time_unit tp_end = tp_start + (time_unit)(sample_duration * sample_dur);
+            const frame_unit frame_base = (frame_unit)
+                (clock->get_time_source()->system_time_to_time_source(this->stream_base.time) / 
+                sample_duration);
+            const frame_unit frame_pos = frame_base + (sample_pos - this->stream_base.sample);
+            const frame_unit frame_end = frame_pos + sample_dur;
 
-            // the tp base has shifted; dispatch the collected samples
-            /*if(tp_base >= request_time)
-                dispatch = true;*/
             // too new sample for the request
-            if(tp_start >= request_time)
+            if(frame_pos >= request_end)
             {
                 dispatch = true;
                 break;
             }
             // request can be dispatched
-            if(tp_end >= request_time)
+            if(frame_end >= request_end)
                 dispatch = true;
 
             CHECK_HR(hr = (*it)->GetBufferByIndex(0, &oldbuffer));
             CHECK_HR(hr = oldbuffer->GetCurrentLength(&buflen));
 
-            const time_unit tp_diff_end = std::max(tp_end - request_time, 0LL);
-            // offset_end is in bytes
-            const DWORD offset_end = (UINT32)(tp_diff_end / sample_dur) * this->get_block_align();
-
+            const frame_unit frame_diff_end = std::max(frame_end - request_end, 0LL);
+            const DWORD offset_end  = (DWORD)frame_diff_end * this->get_block_align();
 
             assert_(((int)buflen - (int)offset_end) > 0);
             CHECK_HR(hr = MFCreateMediaBufferWrapper(
@@ -317,37 +303,29 @@ void source_loopback::serve_cb(void*)
                 CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
                 CHECK_HR(hr = (*it)->RemoveAllBuffers());
                 CHECK_HR(hr = (*it)->AddBuffer(new_buffer));
-                const LONGLONG sample_offset_end = offset_end / this->get_block_align();
-                const LONGLONG new_sample_time = sample_time + sample_duration - sample_offset_end;
-                const LONGLONG new_sample_dur = sample_offset_end;
+                const LONGLONG new_sample_dur = offset_end / this->get_block_align();
+                const LONGLONG new_sample_time = sample_pos + sample_dur - new_sample_dur;
                 CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
                 CHECK_HR(hr = (*it)->SetSampleDuration(new_sample_dur));
-
-                /*dispatch = true;*/
             }
             else
                 consumed_samples++;
             CHECK_HR(hr = MFCreateSample(&sample));
             CHECK_HR(hr = sample->AddBuffer(buffer));
-            const time_unit new_sample_time = tp_start;
-            const time_unit new_sample_dur = (time_unit)(sample_duration * sample_dur) - tp_diff_end;
+            const frame_unit new_sample_time = frame_pos;
+            const frame_unit new_sample_dur = sample_dur - frame_diff_end;
             CHECK_HR(hr = sample->SetSampleTime(new_sample_time));
             CHECK_HR(hr = sample->SetSampleDuration(new_sample_dur));
 
             if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
                 samples->samples.push_back(sample);
-
-            /*if(dispatch)
-                break;*/
         }
 
         // TODO: stale requests should be checked other way
         // request is considered stale if the device time has already passed the request time
         // and there isn't any samples to serve
-        if(/*consumed_samples == 0 && */request_time <= (clock->get_current_time() - SECOND_IN_TIME_UNIT))
+        if(request.rp.request_time <= (clock->get_current_time() - SECOND_IN_TIME_UNIT))
             dispatch = true;
-        /*else if(consumed_samples > 0)
-            dispatch = true;*/
 
         if(dispatch)
         {
@@ -372,6 +350,141 @@ void source_loopback::serve_cb(void*)
         }
         else
             break;
+
+        //// update the device position
+        //{
+        //    scoped_lock lock(this->process_mutex);
+        //    // TODO: devposition should be checked elsewhere
+        //    UINT64 devposition;
+        //    CHECK_HR(hr = this->audio_clock->GetPosition(&devposition, &this->device_time_position));
+        //}
+        //const time_unit tp_device = 
+        //    clock->get_time_source()->system_time_to_time_source((time_unit)this->device_time_position);
+
+        //bool dispatch = false;
+        //media_buffer_samples_t samples(new media_buffer_samples);
+        //const time_unit request_time = request.rp.request_time;
+
+        //// samples are served up to the request point;
+        //// straddling sample is not consumed
+        //std::unique_lock<std::recursive_mutex> lock(this->samples_mutex);
+        //size_t consumed_samples = 0;
+        //for(auto it = this->samples.begin(); it != this->samples.end(); it++)
+        //{
+        //    CComPtr<IMFSample> sample;
+        //    CComPtr<IMFMediaBuffer> buffer, oldbuffer;
+        //    DWORD buflen;
+        //    sample_base_t stream_base;
+
+        //    LONGLONG sample_time, sample_duration;
+        //    CHECK_HR(hr = (*it)->GetSampleTime(&sample_time));
+        //    CHECK_HR(hr = (*it)->GetSampleDuration(&sample_duration));
+        //    CHECK_HR(hr = 
+        //        (*it)->GetBlob(MF_MT_USER_DATA, (UINT8*)&stream_base, sizeof(sample_base_t), NULL));
+        //    if(stream_base.time >= 0)
+        //        this->stream_base = stream_base;
+        //    assert_(this->stream_base.time >= 0);
+
+        //    const double sample_dur = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
+        //    // samples are fetched often which means that sample_duration * sample_dur
+        //    // is unlikely to introduce rounding errors
+        //    const time_unit tp_base = (time_unit)
+        //        ((LONGLONG)(clock->get_time_source()->system_time_to_time_source(this->stream_base.time) /
+        //        sample_dur) * sample_dur);
+        //    const time_unit tp_start = tp_base +
+        //        (time_unit)((sample_time - this->stream_base.sample) * sample_dur);
+        //    const time_unit tp_end = tp_start + (time_unit)(sample_duration * sample_dur);
+
+        //    // the tp base has shifted; dispatch the collected samples
+        //    /*if(tp_base >= request_time)
+        //        dispatch = true;*/
+        //    // too new sample for the request
+        //    if(tp_start >= request_time)
+        //    {
+        //        dispatch = true;
+        //        break;
+        //    }
+        //    // request can be dispatched
+        //    if(tp_end >= request_time)
+        //        dispatch = true;
+
+        //    CHECK_HR(hr = (*it)->GetBufferByIndex(0, &oldbuffer));
+        //    CHECK_HR(hr = oldbuffer->GetCurrentLength(&buflen));
+
+        //    const time_unit tp_diff_end = (time_unit)((LONGLONG)
+        //        (std::max(tp_end - request_time, 0LL) / sample_dur) * sample_dur);
+        //    // offset_end is in bytes
+        //    const DWORD offset_end = (UINT32)(tp_diff_end / sample_dur) * this->get_block_align();
+
+
+        //    assert_(((int)buflen - (int)offset_end) > 0);
+        //    CHECK_HR(hr = MFCreateMediaBufferWrapper(
+        //        oldbuffer, 0, buflen - offset_end, &buffer));
+        //    CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+        //    if(offset_end > 0)
+        //    {
+        //        // remove the consumed part of the old buffer
+        //        CComPtr<IMFMediaBuffer> new_buffer;
+        //        CHECK_HR(hr = MFCreateMediaBufferWrapper(
+        //            oldbuffer, buflen - offset_end, offset_end, &new_buffer));
+        //        CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+        //        CHECK_HR(hr = (*it)->RemoveAllBuffers());
+        //        CHECK_HR(hr = (*it)->AddBuffer(new_buffer));
+        //        const LONGLONG sample_offset_end = offset_end / this->get_block_align();
+        //        const LONGLONG new_sample_time = sample_time + sample_duration - sample_offset_end;
+        //        const LONGLONG new_sample_dur = sample_offset_end;
+        //        CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
+        //        CHECK_HR(hr = (*it)->SetSampleDuration(new_sample_dur));
+
+        //        /*dispatch = true;*/
+        //    }
+        //    else
+        //        consumed_samples++;
+        //    CHECK_HR(hr = MFCreateSample(&sample));
+        //    CHECK_HR(hr = sample->AddBuffer(buffer));
+        //    const time_unit new_sample_time = tp_start;
+        //    const time_unit new_sample_dur = (time_unit)(sample_duration * sample_dur) - tp_diff_end;
+        //    CHECK_HR(hr = sample->SetSampleTime(new_sample_time));
+        //    CHECK_HR(hr = sample->SetSampleDuration(new_sample_dur));
+
+        //    if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
+        //        samples->samples.push_back(sample);
+
+        //    /*if(dispatch)
+        //        break;*/
+        //}
+
+        //// TODO: stale requests should be checked other way
+        //// request is considered stale if the device time has already passed the request time
+        //// and there isn't any samples to serve
+        //if(/*consumed_samples == 0 && */request_time <= (clock->get_current_time() - SECOND_IN_TIME_UNIT))
+        //    dispatch = true;
+        ///*else if(consumed_samples > 0)
+        //    dispatch = true;*/
+
+        //if(dispatch)
+        //{
+        //    // erase all consumed samples
+        //    for(size_t i = 0; i < consumed_samples; i++)
+        //        this->samples.pop_front();
+
+        //    // pop the request from the queue
+        //    this->requests.pop(request);
+
+        //    lock.unlock();
+        //    // dispatch the request
+        //    media_sample_view_t sample_view;
+        //    if(!samples->samples.empty())
+        //    {
+        //        sample_view.reset(new media_sample_view(samples));
+        //        samples->bit_depth = sizeof(bit_depth_t);
+        //        samples->channels = this->channels;
+        //        samples->sample_rate = this->samples_per_second;
+        //    }
+        //    request.stream->process_sample(sample_view, request.rp, NULL);
+        //}
+        //else
+        //    break;
     }
 
 done:

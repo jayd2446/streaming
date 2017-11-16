@@ -13,6 +13,9 @@
 
 // 100 nanosecond = 1 time_unit
 typedef int64_t time_unit;
+// frame unit is used to accurately represent a frame position
+// relative to the time source
+typedef int64_t frame_unit;
 
 class media_buffer
 {

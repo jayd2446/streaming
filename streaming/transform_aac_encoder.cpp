@@ -27,16 +27,22 @@ void transform_aac_encoder::processing_cb(void*)
         {
             media_buffer_samples_t samples_buffer = 
                 request.sample_view->get_buffer<media_buffer_samples>();
-
             media_buffer_samples_t output_samples_buffer(new media_buffer_samples);
+            const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples_buffer->sample_rate;
 
 #undef min
             for(auto it = samples_buffer->samples.begin(); it != samples_buffer->samples.end(); it++)
             {
-                static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min(), dur;
-                LONGLONG ts;
-                (*it)->GetSampleTime(&ts);
-                (*it)->GetSampleDuration(&dur);
+                static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min(), dur_;
+
+                // convert the frame units to time units
+                frame_unit ts, dur;
+                CHECK_HR(hr = (*it)->GetSampleTime(&ts));
+                CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
+                ts = (time_unit)(ts * sample_duration);
+                dur = (time_unit)(dur * sample_duration);
+                CHECK_HR(hr = (*it)->SetSampleTime(ts));
+                CHECK_HR(hr = (*it)->SetSampleDuration(dur));
                 
                 if(ts <= ts_)
                     DebugBreak();
@@ -51,9 +57,7 @@ void transform_aac_encoder::processing_cb(void*)
                     goto back;
                 }
                 else
-                {
-                    CHECK_HR(hr);
-                }
+                    CHECK_HR(hr)
             }
 
             if(output_samples_buffer->samples.empty())
@@ -72,7 +76,7 @@ void transform_aac_encoder::processing_cb(void*)
     }
 
 done:
-    if(hr != MF_E_NOTACCEPTING && FAILED(hr))
+    if(FAILED(hr) && hr != MF_E_NOTACCEPTING)
         throw std::exception();
 }
 

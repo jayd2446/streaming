@@ -19,13 +19,13 @@ class transform_audiomix : public media_source
 private:
     // both might return null
     CComPtr<IMFMediaBuffer> copy(
-        UINT32 bit_depth, UINT32 channels, UINT32 sample_rate,
-        const CComPtr<IMFSample>& sample, time_unit start, time_unit end) const;
+        UINT32 bit_depth, UINT32 channels,
+        const CComPtr<IMFSample>& sample, frame_unit start, frame_unit end) const;
     CComPtr<IMFMediaBuffer> mix(
-        UINT32 bit_depth, UINT32 channels, UINT32 sample_rate,
+        UINT32 bit_depth, UINT32 channels,
         const CComPtr<IMFSample>& sample,
         const CComPtr<IMFSample>& sample2,
-        time_unit start, time_unit end) const;
+        frame_unit start, frame_unit end) const;
 public:
     explicit transform_audiomix(const media_session_t& session);
     stream_audiomix_t create_stream();

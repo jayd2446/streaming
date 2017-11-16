@@ -1,6 +1,7 @@
 #include "transform_audiomix.h"
 #include "assert.h"
 #include <Mferror.h>
+#include <iostream>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 #undef min
@@ -16,21 +17,20 @@ stream_audiomix_t transform_audiomix::create_stream()
 }
 
 CComPtr<IMFMediaBuffer> transform_audiomix::copy(
-    UINT32 bit_depth, UINT32 channels, UINT32 sample_rate,
-    const CComPtr<IMFSample>& sample, time_unit start, time_unit end) const
+    UINT32 bit_depth, UINT32 channels,
+    const CComPtr<IMFSample>& sample, frame_unit start, frame_unit end) const
 {
     HRESULT hr = S_OK;
     CComPtr<IMFMediaBuffer> buffer, out_buffer;
     DWORD buflen;
-    const double sample_dur = SECOND_IN_TIME_UNIT / (double)sample_rate;
     const UINT32 block_align = bit_depth * channels;
-    time_unit ts;
+    frame_unit ts;
 
     CHECK_HR(hr = sample->GetSampleTime(&ts));
     CHECK_HR(hr = sample->GetBufferByIndex(0, &buffer));
     CHECK_HR(hr = buffer->GetCurrentLength(&buflen));
-    const DWORD offset_start = (UINT32)((start - ts) / sample_dur) * block_align;
-    const DWORD offset_end = (UINT32)((end - ts) / sample_dur) * block_align;
+    const DWORD offset_start = (DWORD)((start - ts) * block_align);
+    const DWORD offset_end = (DWORD)((end - ts) * block_align);
 
     assert_(start >= ts);
     assert_(((int)buflen - (int)offset_end) >= 0);
@@ -47,17 +47,16 @@ done:
 }
 
 CComPtr<IMFMediaBuffer> transform_audiomix::mix(
-    UINT32 bit_depth, UINT32 channels, UINT32 sample_rate,
+    UINT32 bit_depth, UINT32 channels,
     const CComPtr<IMFSample>& sample,
     const CComPtr<IMFSample>& sample2,
-    time_unit start, time_unit end) const
+    frame_unit start, frame_unit end) const
 {
     HRESULT hr = S_OK;
     CComPtr<IMFMediaBuffer> buffer, buffer2, out_buffer;
     DWORD buflen, buflen2;
-    const double sample_dur = SECOND_IN_TIME_UNIT / (double)sample_rate;
     const UINT32 block_align = bit_depth * channels;
-    time_unit ts, ts2;
+    frame_unit ts, ts2;
     typedef int16_t bit_depth_t;
     typedef uint16_t ubit_depth_t;
 
@@ -67,12 +66,10 @@ CComPtr<IMFMediaBuffer> transform_audiomix::mix(
     CHECK_HR(hr = sample2->GetBufferByIndex(0, &buffer2));
     CHECK_HR(hr = buffer->GetCurrentLength(&buflen));
     CHECK_HR(hr = buffer2->GetCurrentLength(&buflen2));
-    const DWORD offset_start = (UINT32)((start - ts) / sample_dur) * block_align;
-    const DWORD offset_end = (UINT32)((end - ts) / sample_dur) * block_align;
-    const DWORD offset_start2 = (UINT32)((start - ts2) / sample_dur) * block_align;
-    const DWORD offset_end2 = (UINT32)((end - ts2) / sample_dur) * block_align;
-
-    // TODO: present time and dur as samples
+    const DWORD offset_start = (DWORD)((start - ts) * block_align);
+    const DWORD offset_end = (DWORD)((end - ts) * block_align);
+    const DWORD offset_start2 = (DWORD)((start - ts2) * block_align);
+    const DWORD offset_end2 = (DWORD)((end - ts2) * block_align);
 
     assert_(start >= ts);
     assert_(start >= ts2);
@@ -81,7 +78,6 @@ CComPtr<IMFMediaBuffer> transform_audiomix::mix(
     assert_((int)offset_start < (int)offset_end);
     assert_((int)offset_start2 < (int)offset_end2);
     assert_(sizeof(bit_depth_t) == bit_depth);
-    // fails on data discontinuity
     assert_((int)offset_end - (int)offset_start == (int)offset_end2 - (int)offset_start2);
     assert_(sizeof(bit_depth_t) < sizeof(int64_t));
 
@@ -154,17 +150,19 @@ void stream_audiomix::process_cb(void*)
             this->pending_request2.sample_view->get_buffer<media_buffer_samples>();
         auto it = pending_samples->samples.begin(), jt = pending_samples2->samples.begin();
         bool ptr_it = true;
-        time_unit ptr_tp_start = 0;
+        frame_unit ptr_tp_start = std::numeric_limits<frame_unit>::min();
 
         assert_(pending_samples->bit_depth == sizeof(bit_depth_t) && 
             pending_samples2->bit_depth == sizeof(bit_depth_t));
         assert_(pending_samples->channels == pending_samples2->channels);
         assert_(pending_samples->sample_rate == pending_samples2->sample_rate);
 
+        samples->bit_depth = pending_samples->bit_depth;
+        samples->channels = pending_samples->channels;
+        samples->sample_rate = pending_samples->sample_rate;
+
         // increment the iterator of the one that has earlier ending timepoint
         // set the pointer to the ending timepoint on the other iterator
-
-        // normalize tps and durs before using
 
         // lock the ptr using ptr_it and ptr_tp info
         // copy the region of ptr_tp and max of the end of ptr and the incremented iterator
@@ -176,9 +174,9 @@ void stream_audiomix::process_cb(void*)
             ptr_it ? jt++ : it++)
         {
             CComPtr<IMFSample> ptr_sample, sample;
-            time_unit ts, ts2, dur, dur2;
-            time_unit tp_start,  tp_end, tp_diff;
-            time_unit ptr_tp_end;
+            frame_unit ts, ts2, dur, dur2;
+            frame_unit tp_start,  tp_end, tp_diff;
+            frame_unit ptr_tp_end;
 
             CHECK_HR(hr = (*it)->GetSampleTime(&ts));
             CHECK_HR(hr = (*jt)->GetSampleTime(&ts2));
@@ -208,7 +206,7 @@ void stream_audiomix::process_cb(void*)
                 CComPtr<IMFMediaBuffer> buffer;
                 CHECK_HR(hr = MFCreateSample(&new_sample));
                 buffer = this->transform->copy(
-                    pending_samples->bit_depth, pending_samples->channels, pending_samples->sample_rate,
+                    pending_samples->bit_depth, pending_samples->channels,
                     ptr_sample, ptr_tp_start, tp_diff);
                 CHECK_HR(hr = new_sample->AddBuffer(buffer));
                 CHECK_HR(hr = new_sample->SetSampleTime(ptr_tp_start));
@@ -230,7 +228,7 @@ void stream_audiomix::process_cb(void*)
                 CComPtr<IMFMediaBuffer> buffer;
                 CHECK_HR(hr = MFCreateSample(&new_sample));
                 buffer = this->transform->mix(
-                    pending_samples->bit_depth, pending_samples->channels, pending_samples->sample_rate,
+                    pending_samples->bit_depth, pending_samples->channels,
                     ptr_sample, sample, ptr_tp_start, tp_diff);
                 CHECK_HR(hr = new_sample->AddBuffer(buffer));
                 CHECK_HR(hr = new_sample->SetSampleTime(ptr_tp_start));
@@ -251,6 +249,8 @@ void stream_audiomix::process_cb(void*)
         // happens only if the ending times are different for the pending samples
         if(ptr_it ? it != pending_samples->samples.end() : jt != pending_samples2->samples.end())
         {
+            std::cout << "COPY" << std::endl;
+
             CComPtr<IMFSample> sample;
             CComPtr<IMFMediaBuffer> buffer;
             time_unit ts, dur, tp_start;
@@ -261,7 +261,7 @@ void stream_audiomix::process_cb(void*)
 
             CHECK_HR(hr = MFCreateSample(&sample));
             buffer = this->transform->copy(
-                pending_samples->bit_depth, pending_samples->channels, pending_samples->sample_rate,
+                pending_samples->bit_depth, pending_samples->channels,
                 *kt, tp_start, ts + dur);
             CHECK_HR(hr = sample->AddBuffer(buffer));
             CHECK_HR(hr = sample->SetSampleTime(tp_start));
