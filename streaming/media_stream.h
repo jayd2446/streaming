@@ -34,18 +34,6 @@ public:
     // sample view can be NULL
     virtual result_t process_sample(
         const media_sample_view_t&, request_packet&, const media_stream* previous_stream) = 0;
-
-    // TODO: return a list of available formats for the stream
-    // (media session will use these to set valid formats for the streams between components)
-    // TODO: use media type handler object instead for these
-    /*virtual void get_input_formats() = 0;
-    virtual void get_output_formats() = 0;*/
-
-    // TODO: output may not be changed before the stream has processed cached samples
-    // test is for querying whether the requested format is supported;
-    // set_input_format may trigger the change of the output format
-    //virtual bool set_input_format(/*mediatype format,*/ bool test) = 0;
-    //virtual bool set_output_format(/*mediatype format,*/ bool test) = 0;
 };
 
 typedef std::shared_ptr<media_stream> media_stream_t;

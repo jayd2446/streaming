@@ -13,10 +13,13 @@ void CHECK_HR(HRESULT hr)
         throw std::exception();
 }
 //#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#undef max
+#undef min
 
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session) :
     media_source(session),
-    encoder_requests(0)
+    encoder_requests(0),
+    last_time_stamp(std::numeric_limits<time_unit>::min())
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
     this->process_output_callback.Attach(new async_callback_t(&transform_h264_encoder::process_output_cb));
@@ -168,11 +171,11 @@ void transform_h264_encoder::processing_cb(void*)
             this->encoder_requests--;
         }
 
-        static time_unit last_time_stamp = timestamp - 1;
-        if(timestamp <= last_time_stamp)
+#ifdef _DEBUG
+        if(timestamp <= this->last_time_stamp)
             DebugBreak();
-        else
-            last_time_stamp = timestamp;
+        this->last_time_stamp = timestamp;
+#endif
 
         // submit the sample to the encoder
         CComPtr<IMFMediaBuffer> buffer;

@@ -1,6 +1,15 @@
 #include "request_packet.h"
 #include "assert.h"
 
+bool request_packet::get_clock(presentation_clock_t& clock) const
+{
+    if(!this->topology)
+        return false;
+
+    clock = this->topology->get_clock();
+    return !!clock;
+}
+
 request_queue::request_queue(int first_packet_number) :
     first_packet_number(first_packet_number), last_packet_number(first_packet_number)
 {

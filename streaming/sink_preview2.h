@@ -24,6 +24,7 @@ private:
     std::recursive_mutex& context_mutex;
 
     HWND hwnd;
+    UINT width, height;
     CComPtr<ID2D1Factory1> d2d1factory;
     CComPtr<ID2D1HwndRenderTarget> rendertarget;
     CComPtr<ID2D1Device> d2d1dev;
@@ -32,7 +33,6 @@ private:
     CComPtr<IDXGISwapChain1> swapchain;
     CComPtr<IDXGIDevice1> dxgidev;
     CComPtr<IDXGIOutput> dxgioutput;
-    CComPtr<ID2D1Bitmap1> d2dtarget_bitmap;
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
 
@@ -41,11 +41,10 @@ public:
     sink_preview2(const media_session_t& session, std::recursive_mutex& context_mutex);
 
     // initializes the window
-    void initialize(
-        UINT32 window_width, UINT32 window_height,
-        HWND, 
-        CComPtr<ID3D11Device>&);
+    void initialize(HWND, CComPtr<ID3D11Device>&);
     media_stream_t create_stream();
+
+    void update_size();
 };
 
 typedef std::shared_ptr<sink_preview2> sink_preview2_t;

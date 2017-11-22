@@ -28,7 +28,6 @@ void sink_audio::write_packets_cb(void*)
     if(!lock.owns_lock())
         return;
 
-    HRESULT hr = S_OK;
     request_t request;
     while(this->write_queue.pop(request))
     {
@@ -38,17 +37,13 @@ void sink_audio::write_packets_cb(void*)
 
         media_buffer_samples_t samples = request.sample_view->get_buffer<media_buffer_samples>();
         for(auto it = samples->samples.begin(); it != samples->samples.end(); it++)
-            CHECK_HR(hr = this->writer->WriteSample(1, *it));
+            this->file_output->write_sample(false, *it);
     }
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
 }
 
-void sink_audio::initialize(const CComPtr<IMFSinkWriter>& writer)
+void sink_audio::initialize(const output_file_t& file_output)
 {
-    this->writer = writer;
+    this->file_output = file_output;
 }
 
 stream_audio_t sink_audio::create_stream(presentation_clock_t& clock, const source_loopback_t& source)

@@ -20,6 +20,7 @@
 #include "transform_aac_encoder.h"
 #include "transform_audiomix.h"
 #include "transform_audioprocessor.h"
+#include "gui_frame.h"
 #include <mutex>
 
 #pragma comment(lib, "Mfplat.lib")
@@ -33,8 +34,8 @@
 
 LARGE_INTEGER pc_frequency;
 
-#define WINDOW_WIDTH 1200
-#define WINDOW_HEIGHT 800
+#define WINDOW_WIDTH 750
+#define WINDOW_HEIGHT 700
 #define OUTPUT_MONITOR 0
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
@@ -174,284 +175,313 @@ also some components should also be shared between topologies
 
 */
 
+
+CAppModule _Module;
+
 int main()
 {
-    HRESULT hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY);
-    hr = MFStartup(MFSTARTUP_NOSOCKET);
+    QueryPerformanceFrequency(&pc_frequency);
+
+    HRESULT hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY | COINIT_MULTITHREADED);
+    hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
 
     //// register all media foundation standard work queues as playback
     /*DWORD taskgroup_id = 0;
     if(FAILED(MFRegisterPlatformWithMMCSS(L"Capture", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
         throw std::exception();*/
 
-    HWND hwnd = create_window();
-    /*ShowWindow(hwnd, SW_FORCEMINIMIZE);*/
-
-    QueryPerformanceFrequency(&pc_frequency);
-
-    // create window, direct3d 11 device, context and swap chain
-    /*HWND hwnd = create_window();*/
-
-    CComPtr<IDXGISwapChain> swapchain;
-    CComPtr<ID3D11Device> d3d11dev;
-    CComPtr<ID3D11DeviceContext> d3d11devctx;
-    std::recursive_mutex context_mutex;
-
-    hr = D3D11CreateDevice(
-        NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
-        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
-        NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, &d3d11devctx);
-
-    /*Sleep(10000);*/
-
-    /*while(true)*/
+    if(_Module.Init(NULL, NULL) != S_OK)
     {
-        UINT outputmonitor_index = OUTPUT_MONITOR;
-
-        // create time source
-        presentation_time_source_t time_source(new presentation_time_source);
-
-        // create the session and the topology
-        media_session_t session(new media_session);
-        media_topology_t topology(new media_topology(time_source));
-        media_topology_t audio_topology(new media_topology(time_source));
-
-        // create and initialize the h264 encoder transform
-        transform_h264_encoder_t h264_encoder_transform(new transform_h264_encoder(session));
-        hr = h264_encoder_transform->initialize(d3d11dev);
-
-        // create and initialize the color converter transform
-        transform_color_converter_t color_converter_transform(
-            new transform_color_converter(session, context_mutex));
-        hr = color_converter_transform->initialize(d3d11dev, d3d11devctx);
-
-        // create and initialize the video processor transform
-        transform_videoprocessor_t videoprocessor_transform(
-            new transform_videoprocessor(session, context_mutex));
-        hr = videoprocessor_transform->initialize(d3d11dev, d3d11devctx);
-
-        // create and initialize the display capture source
-        source_displaycapture5_t displaycapture_source(
-            new source_displaycapture5(session, context_mutex));
-        source_displaycapture5_t displaycapture_source2(
-            new source_displaycapture5(session, context_mutex));
-        hr = displaycapture_source->initialize(0, d3d11dev, d3d11devctx);
-        hr |= displaycapture_source2->initialize(1, d3d11dev, d3d11devctx);
-        if(FAILED(hr))
-        {
-            std::cerr << "could not initialize display capture source" << std::endl;
-            system("pause");
-            return 0;
-        }
-
-        // create and initialize the preview window sink
-        sink_preview2_t preview_sink2(new sink_preview2(session, context_mutex));
-        preview_sink2->initialize(WINDOW_WIDTH, WINDOW_HEIGHT, hwnd, d3d11dev);
-
-        // create the mpeg2 sink
-        sink_mpeg2_t mpeg_sink(new sink_mpeg2(session));
-
-        // create and initialize the audio loopback source
-        source_loopback_t loopback_source(new source_loopback(mpeg_sink->audio_session));
-        loopback_source->initialize(false);
-        source_loopback_t loopback_source2(new source_loopback(mpeg_sink->audio_session));
-        /*loopback_source2->generate_sine = true;*/
-        loopback_source2->initialize(true);
-
-        // create and initialize the audiomix transform
-        transform_audiomix_t audiomix_transform(new transform_audiomix(mpeg_sink->audio_session));
-
-        // create and initialize the audioprocessor transform
-        transform_audioprocessor_t audioprocessor_transform(
-            new transform_audioprocessor(mpeg_sink->audio_session));
-
-        // create and initialize the aac encoder transform
-        transform_aac_encoder_t aac_encoder_transform(new transform_aac_encoder(mpeg_sink->audio_session));
-        aac_encoder_transform->initialize(loopback_source->waveformat_type);
-
-        // initialize the mpeg2 sink
-        mpeg_sink->initialize(h264_encoder_transform->output_type, aac_encoder_transform->output_type);
-
-        // create and initialize the audio sink
-        sink_audio_t audio_sink(new sink_audio(mpeg_sink->audio_session));
-        audio_sink->initialize(mpeg_sink->get_writer());
-
-        // initialize the topology
-        create_streams(
-            topology,
-            audio_topology,
-            preview_sink2,
-            mpeg_sink,
-            audio_sink,
-            displaycapture_source,
-            displaycapture_source2,
-            loopback_source,
-            loopback_source2,
-            audiomix_transform,
-            audioprocessor_transform,
-            videoprocessor_transform,
-            color_converter_transform,
-            h264_encoder_transform,
-            aac_encoder_transform);
-
-        // start the time source
-        time_source->set_current_time(0);
-        time_source->start();
-
-        // start the media session with the topology
-        session->start_playback(topology, 0);
-
-        MSG msg = {};
-        while(GetMessage(&msg, NULL, 0, 0))
-        {
-            if(msg.message == WM_KEYDOWN)
-            {
-                /*for(int i = 0; i < 1500; i++)*/
-                {
-                    outputmonitor_index = (outputmonitor_index + 1) % 2;
-
-                    if(outputmonitor_index)
-                    {
-                        topology.reset(new media_topology(time_source));
-                        audio_topology.reset(new media_topology(time_source));
-
-                        create_streams(
-                            topology,
-                            audio_topology,
-                            preview_sink2,
-                            mpeg_sink,
-                            audio_sink,
-                            displaycapture_source2,
-                            displaycapture_source,
-                            loopback_source,
-                            loopback_source2,
-                            audiomix_transform,
-                            audioprocessor_transform,
-                            videoprocessor_transform,
-                            color_converter_transform,
-                            h264_encoder_transform,
-                            aac_encoder_transform);
-                    }
-                    else
-                    {
-                        topology.reset(new media_topology(time_source));
-                        audio_topology.reset(new media_topology(time_source));
-
-                        create_streams(
-                            topology,
-                            audio_topology,
-                            preview_sink2,
-                            mpeg_sink,
-                            audio_sink,
-                            displaycapture_source,
-                            displaycapture_source2,
-                            loopback_source,
-                            loopback_source2,
-                            audiomix_transform,
-                            audioprocessor_transform,
-                            videoprocessor_transform,
-                            color_converter_transform,
-                            h264_encoder_transform,
-                            aac_encoder_transform);
-                    }
-
-                    /*presentation_clock_t clock;
-                    session->get_current_clock(clock);*/
-
-                    // to make sure that the timestamps correlate to packet numbers,
-                    // request times must not be used for timestamps;
-                    // packet numbers are used for components to stay in track how many
-                    // requests need to be served
-
-                    /*
-                    in video, the packet number and request time correlation can be assumed,
-                    but in audio not;
-                    that is because the audio topology is switched immediately
-                    */
-
-                    // when using topology switch immediate, h264 encoder optimization cannot
-                    // be used;
-                    // the request time might be inversed if a new event fires in between
-                    // the call to switch topology immediate and get_current_time;
-                    // there exists a chance that the new topology is started with a request time
-                    // older than what the old topology is currently processing
-                    /*session->switch_topology_immediate(topology, clock->get_current_time());*/
-                    session->switch_topology(topology);
-
-
-                    /*
-
-                    the components(mainly sources) should be started @ the initialization;
-                    source_loopback and others will choose the first sample
-                    based on the request time and discard previous samples;
-                    at the clock_start, sources should discard all but one sample;
-
-                    the timestamps need to be aligned if they don't use request time;
-
-
-
-
-                    the timestamps should be adjusted by floor function,
-                    this is because early video is not so noticeable as late video
-                    compared to audio;
-                    the video-audio desync is noticeable after 40ms,
-                    while max desync in 30fps video is 33.33 ms
-                    <=> floor(timestamp);
-
-                    --------------------------------------------------------------------
-
-                    actually, only audio timestamps need to be aligned so that there's
-                    no glitching in the playback
-
-                    --------------------------------------------------------------------
-
-                    video timestamps aligned to sink sample rate vs
-                    raw timestamps boils down to the question of whether possible
-                    timestamp drift of max sample rate is tolerated or not;
-                    timestamps aligned to sink sample rate allow for
-                    seamless topology switching;
-                    (@ 60fps, video should be aligned)
-
-                    audio timestamps must be aligned to aac encoder sample rate always
-                    so that there aren't audio glitches; the drift isn't noticeable
-                    at any audio sample rate, though
-                    
-                    --------------------------------------------------------------------
-
-                    sinks should perform the align for video
-
-                    */
-
-                }
-            }
-            else
-            {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
-            /*Sleep(60000);
-            break;*/
-        }
-
-        session->stop_playback();
-
-        // shutdown the media session
-        session->shutdown();
+        return 0;
     }
 
+    CMessageLoop msgloop;
+    _Module.AddMessageLoop(&msgloop);
+    {
+        gui_frame wnd;
+        RECT r = {CW_USEDEFAULT, CW_USEDEFAULT, 
+            CW_USEDEFAULT + WINDOW_WIDTH, CW_USEDEFAULT + WINDOW_HEIGHT};
+        if(wnd.CreateEx(NULL, &r) == NULL)
+        {
+            return 0;
+        }
+        wnd.ShowWindow(SW_SHOW);
+        wnd.UpdateWindow();
+        int ret = msgloop.Run();
+        _Module.RemoveMessageLoop();
+        ret;
+    }
 
-    /*long c = topology.use_count();
-    long cc = topology->clock.use_count();
-    c = 0;
-    topology = NULL;*/
+    //HWND hwnd = create_window();
+    ///*ShowWindow(hwnd, SW_FORCEMINIMIZE);*/
 
-    // main should wait for all threads to terminate before terminating itself;
-    // this sleep fakes that functionality;
-    // TODO: there now exists a chance that the context mutex has been destroyed while
-    // a work queue item is dispatching;
-    std::cout << "ending..." << std::endl;
-    Sleep(1000);
+    //QueryPerformanceFrequency(&pc_frequency);
+
+    //// create window, direct3d 11 device, context and swap chain
+    ///*HWND hwnd = create_window();*/
+
+    //CComPtr<IDXGISwapChain> swapchain;
+    //CComPtr<ID3D11Device> d3d11dev;
+    //CComPtr<ID3D11DeviceContext> d3d11devctx;
+    //std::recursive_mutex context_mutex;
+
+    //hr = D3D11CreateDevice(
+    //    NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
+    //    D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
+    //    NULL, 0, D3D11_SDK_VERSION, &d3d11dev, NULL, &d3d11devctx);
+
+    ///*Sleep(10000);*/
+
+    ///*while(true)*/
+    //{
+    //    UINT outputmonitor_index = OUTPUT_MONITOR;
+
+    //    // create time source
+    //    presentation_time_source_t time_source(new presentation_time_source);
+
+    //    // create the session and the topology
+    //    media_session_t session(new media_session);
+    //    media_topology_t topology(new media_topology(time_source));
+    //    media_topology_t audio_topology(new media_topology(time_source));
+
+    //    // create and initialize the h264 encoder transform
+    //    transform_h264_encoder_t h264_encoder_transform(new transform_h264_encoder(session));
+    //    hr = h264_encoder_transform->initialize(d3d11dev);
+
+    //    // create and initialize the color converter transform
+    //    transform_color_converter_t color_converter_transform(
+    //        new transform_color_converter(session, context_mutex));
+    //    hr = color_converter_transform->initialize(d3d11dev, d3d11devctx);
+
+    //    // create and initialize the video processor transform
+    //    transform_videoprocessor_t videoprocessor_transform(
+    //        new transform_videoprocessor(session, context_mutex));
+    //    hr = videoprocessor_transform->initialize(d3d11dev, d3d11devctx);
+
+    //    // create and initialize the display capture source
+    //    source_displaycapture5_t displaycapture_source(
+    //        new source_displaycapture5(session, context_mutex));
+    //    source_displaycapture5_t displaycapture_source2(
+    //        new source_displaycapture5(session, context_mutex));
+    //    hr = displaycapture_source->initialize(0, d3d11dev, d3d11devctx);
+    //    hr |= displaycapture_source2->initialize(1, d3d11dev, d3d11devctx);
+    //    if(FAILED(hr))
+    //    {
+    //        std::cerr << "could not initialize display capture source" << std::endl;
+    //        system("pause");
+    //        return 0;
+    //    }
+
+    //    // create and initialize the preview window sink
+    //    sink_preview2_t preview_sink2(new sink_preview2(session, context_mutex));
+    //    preview_sink2->initialize(WINDOW_WIDTH, WINDOW_HEIGHT, hwnd, d3d11dev);
+
+    //    // create the mpeg2 sink
+    //    sink_mpeg2_t mpeg_sink(new sink_mpeg2(session));
+
+    //    // create and initialize the audio loopback source
+    //    source_loopback_t loopback_source(new source_loopback(mpeg_sink->audio_session));
+    //    loopback_source->initialize(false);
+    //    source_loopback_t loopback_source2(new source_loopback(mpeg_sink->audio_session));
+    //    /*loopback_source2->generate_sine = true;*/
+    //    loopback_source2->initialize(true);
+
+    //    // create and initialize the audiomix transform
+    //    transform_audiomix_t audiomix_transform(new transform_audiomix(mpeg_sink->audio_session));
+
+    //    // create and initialize the audioprocessor transform
+    //    transform_audioprocessor_t audioprocessor_transform(
+    //        new transform_audioprocessor(mpeg_sink->audio_session));
+
+    //    // create and initialize the aac encoder transform
+    //    transform_aac_encoder_t aac_encoder_transform(new transform_aac_encoder(mpeg_sink->audio_session));
+    //    aac_encoder_transform->initialize(loopback_source->waveformat_type);
+
+    //    // initialize the mpeg2 sink
+    //    mpeg_sink->initialize(h264_encoder_transform->output_type, aac_encoder_transform->output_type);
+
+    //    // create and initialize the audio sink
+    //    sink_audio_t audio_sink(new sink_audio(mpeg_sink->audio_session));
+    //    audio_sink->initialize(mpeg_sink->get_writer());
+
+    //    // initialize the topology
+    //    create_streams(
+    //        topology,
+    //        audio_topology,
+    //        preview_sink2,
+    //        mpeg_sink,
+    //        audio_sink,
+    //        displaycapture_source,
+    //        displaycapture_source2,
+    //        loopback_source,
+    //        loopback_source2,
+    //        audiomix_transform,
+    //        audioprocessor_transform,
+    //        videoprocessor_transform,
+    //        color_converter_transform,
+    //        h264_encoder_transform,
+    //        aac_encoder_transform);
+
+    //    // start the time source
+    //    time_source->set_current_time(0);
+    //    time_source->start();
+
+    //    // start the media session with the topology
+    //    session->start_playback(topology, 0);
+
+    //    MSG msg = {};
+    //    while(GetMessage(&msg, NULL, 0, 0))
+    //    {
+    //        if(msg.message == WM_KEYDOWN)
+    //        {
+    //            /*for(int i = 0; i < 1500; i++)*/
+    //            {
+    //                outputmonitor_index = (outputmonitor_index + 1) % 2;
+
+    //                if(outputmonitor_index)
+    //                {
+    //                    topology.reset(new media_topology(time_source));
+    //                    audio_topology.reset(new media_topology(time_source));
+
+    //                    create_streams(
+    //                        topology,
+    //                        audio_topology,
+    //                        preview_sink2,
+    //                        mpeg_sink,
+    //                        audio_sink,
+    //                        displaycapture_source2,
+    //                        displaycapture_source,
+    //                        loopback_source,
+    //                        loopback_source2,
+    //                        audiomix_transform,
+    //                        audioprocessor_transform,
+    //                        videoprocessor_transform,
+    //                        color_converter_transform,
+    //                        h264_encoder_transform,
+    //                        aac_encoder_transform);
+    //                }
+    //                else
+    //                {
+    //                    topology.reset(new media_topology(time_source));
+    //                    audio_topology.reset(new media_topology(time_source));
+
+    //                    create_streams(
+    //                        topology,
+    //                        audio_topology,
+    //                        preview_sink2,
+    //                        mpeg_sink,
+    //                        audio_sink,
+    //                        displaycapture_source,
+    //                        displaycapture_source2,
+    //                        loopback_source,
+    //                        loopback_source2,
+    //                        audiomix_transform,
+    //                        audioprocessor_transform,
+    //                        videoprocessor_transform,
+    //                        color_converter_transform,
+    //                        h264_encoder_transform,
+    //                        aac_encoder_transform);
+    //                }
+
+    //                /*presentation_clock_t clock;
+    //                session->get_current_clock(clock);*/
+
+    //                // to make sure that the timestamps correlate to packet numbers,
+    //                // request times must not be used for timestamps;
+    //                // packet numbers are used for components to stay in track how many
+    //                // requests need to be served
+
+    //                /*
+    //                in video, the packet number and request time correlation can be assumed,
+    //                but in audio not;
+    //                that is because the audio topology is switched immediately
+    //                */
+
+    //                // when using topology switch immediate, h264 encoder optimization cannot
+    //                // be used;
+    //                // the request time might be inversed if a new event fires in between
+    //                // the call to switch topology immediate and get_current_time;
+    //                // there exists a chance that the new topology is started with a request time
+    //                // older than what the old topology is currently processing
+    //                /*session->switch_topology_immediate(topology, clock->get_current_time());*/
+    //                session->switch_topology(topology);
+
+
+    //                /*
+
+    //                the components(mainly sources) should be started @ the initialization;
+    //                source_loopback and others will choose the first sample
+    //                based on the request time and discard previous samples;
+    //                at the clock_start, sources should discard all but one sample;
+
+    //                the timestamps need to be aligned if they don't use request time;
+
+
+
+
+    //                the timestamps should be adjusted by floor function,
+    //                this is because early video is not so noticeable as late video
+    //                compared to audio;
+    //                the video-audio desync is noticeable after 40ms,
+    //                while max desync in 30fps video is 33.33 ms
+    //                <=> floor(timestamp);
+
+    //                --------------------------------------------------------------------
+
+    //                actually, only audio timestamps need to be aligned so that there's
+    //                no glitching in the playback
+
+    //                --------------------------------------------------------------------
+
+    //                video timestamps aligned to sink sample rate vs
+    //                raw timestamps boils down to the question of whether possible
+    //                timestamp drift of max sample rate is tolerated or not;
+    //                timestamps aligned to sink sample rate allow for
+    //                seamless topology switching;
+    //                (@ 60fps, video should be aligned)
+
+    //                audio timestamps must be aligned to aac encoder sample rate always
+    //                so that there aren't audio glitches; the drift isn't noticeable
+    //                at any audio sample rate, though
+    //                
+    //                --------------------------------------------------------------------
+
+    //                sinks should perform the align for video
+
+    //                */
+
+    //            }
+    //        }
+    //        else
+    //        {
+    //            TranslateMessage(&msg);
+    //            DispatchMessage(&msg);
+    //        }
+    //        /*Sleep(60000);
+    //        break;*/
+    //    }
+
+    //    session->stop_playback();
+
+    //    // shutdown the media session
+    //    session->shutdown();
+    //}
+
+
+    ///*long c = topology.use_count();
+    //long cc = topology->clock.use_count();
+    //c = 0;
+    //topology = NULL;*/
+
+    //// main should wait for all threads to terminate before terminating itself;
+    //// this sleep fakes that functionality;
+    //// TODO: there now exists a chance that the context mutex has been destroyed while
+    //// a work queue item is dispatching;
+    //std::cout << "ending..." << std::endl;
+    //Sleep(1000);
+    _Module.Term();
     hr = MFShutdown();
+    CoUninitialize();
 
     return 0;
 }

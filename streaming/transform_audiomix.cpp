@@ -256,7 +256,7 @@ void stream_audiomix::process_cb(void*)
             {
                 CComPtr<IMFSample> sample;
                 CComPtr<IMFMediaBuffer> buffer;
-                time_unit ts, dur, tp_start;
+                frame_unit ts, dur, tp_start;
 
                 CHECK_HR(hr = (*kt)->GetSampleTime(&ts));
                 CHECK_HR(hr = (*kt)->GetSampleDuration(&dur));

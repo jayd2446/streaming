@@ -1,0 +1,31 @@
+#pragma once
+
+#include <mfidl.h>
+#include <mfapi.h>
+#include <mfreadwrite.h>
+#include <atlbase.h>
+#include <memory>
+#include <mutex>
+
+class output_file
+{
+private:
+    HANDLE stopped_signal;
+    CComPtr<IMFMediaType> video_type;
+    CComPtr<IMFMediaType> audio_type;
+    CComPtr<IMFMediaSink> mpeg_media_sink;
+    CComPtr<IMFSinkWriter> writer;
+    CComPtr<IMFByteStream> byte_stream;
+public:
+    output_file();
+    ~output_file();
+
+    void initialize(
+        HANDLE stopped_signal,
+        const CComPtr<IMFMediaType>& video_type,
+        const CComPtr<IMFMediaType>& audio_type);
+
+    void write_sample(bool video, const CComPtr<IMFSample>& sample);
+};
+
+typedef std::shared_ptr<output_file> output_file_t;

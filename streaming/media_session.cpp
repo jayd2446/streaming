@@ -1,6 +1,7 @@
 #include "media_session.h"
 #include "media_sink.h"
 #include <Mferror.h>
+#include <iostream>
 #include "assert.h"
 
 media_session::media_session()
@@ -84,10 +85,6 @@ void media_session::stop_playback()
     clock->clock_stop();
 }
 
-
-
-#include <iostream>
-
 bool media_session::request_sample(
     const media_stream* stream, 
     request_packet& rp,
@@ -150,8 +147,8 @@ bool media_session::give_sample(
     bool /*is_source*/)
 {
     // TODO: media topology should be defined as const
-
     // is_source is used for translating time stamps to presentation time
+
     media_topology_t topology(rp.topology);
     assert_(topology);
 

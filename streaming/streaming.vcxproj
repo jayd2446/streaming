@@ -66,18 +66,18 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>C:\Users\weggo\Documents\Visual Studio 2013\Projects\audio-router\third-party\WTL90_4140_Final\Include;$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>C:\Users\weggo\Documents\Visual Studio 2013\Projects\audio-router\third-party\WTL90_4140_Final\Include;$(IncludePath)</IncludePath>
     <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>C:\Users\weggo\Documents\Visual Studio 2013\Projects\audio-router\third-party\WTL90_4140_Final\Include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(IncludePath)</IncludePath>
+    <IncludePath>C:\Users\weggo\Documents\Visual Studio 2013\Projects\audio-router\third-party\WTL90_4140_Final\Include;$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -134,13 +134,25 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="control_pipeline.cpp" />
+    <ClCompile Include="control_scene.cpp" />
+    <ClCompile Include="gui_frame.cpp" />
+    <ClCompile Include="gui_maindlg.cpp" />
+    <ClCompile Include="gui_newdlg.cpp" />
+    <ClCompile Include="gui_preview.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="media_sample.cpp" />
     <ClCompile Include="media_session.cpp" />
     <ClCompile Include="media_topology.cpp" />
+    <ClCompile Include="output_file.cpp" />
     <ClCompile Include="request_packet.cpp" />
     <ClCompile Include="sink_audio.cpp" />
-    <ClCompile Include="sink_mpeg.cpp" />
+    <ClCompile Include="sink_mpeg.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="sink_mpeg2.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture5.cpp" />
@@ -174,7 +186,14 @@
     <ClInclude Include="assert.h" />
     <ClInclude Include="AsyncCallback.h" />
     <ClInclude Include="async_callback.h" />
+    <ClInclude Include="control_pipeline.h" />
+    <ClInclude Include="control_scene.h" />
+    <ClInclude Include="gui_frame.h" />
+    <ClInclude Include="gui_maindlg.h" />
+    <ClInclude Include="gui_newdlg.h" />
+    <ClInclude Include="gui_preview.h" />
     <ClInclude Include="IUnknownImpl.h" />
+    <ClInclude Include="media_component.h" />
     <ClInclude Include="media_sample.h" />
     <ClInclude Include="media_session.h" />
     <ClInclude Include="media_sink.h" />
@@ -182,9 +201,16 @@
     <ClInclude Include="media_stream.h" />
     <ClInclude Include="media_topology.h" />
     <ClInclude Include="enable_shared_from_this.h" />
+    <ClInclude Include="output_file.h" />
     <ClInclude Include="request_packet.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="sink_audio.h" />
-    <ClInclude Include="sink_mpeg.h" />
+    <ClInclude Include="sink_mpeg.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="sink_mpeg2.h" />
     <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="source_displaycapture5.h" />
@@ -214,8 +240,17 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClInclude>
+    <ClInclude Include="wtl.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="streaming.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <ProjectExtensions>
+    <VisualStudio>
+      <UserProperties RESOURCE_FILE="streaming.rc" />
+    </VisualStudio>
+  </ProjectExtensions>
 </Project>

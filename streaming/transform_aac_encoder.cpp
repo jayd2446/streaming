@@ -3,8 +3,12 @@
 #include <iostream>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#undef min
+#undef max
 
-transform_aac_encoder::transform_aac_encoder(const media_session_t& session) : media_source(session)
+transform_aac_encoder::transform_aac_encoder(const media_session_t& session) : 
+    media_source(session),
+    last_time_stamp(std::numeric_limits<frame_unit>::min())
 {
 }
 
@@ -30,11 +34,8 @@ void transform_aac_encoder::processing_cb(void*)
             media_buffer_samples_t output_samples_buffer(new media_buffer_samples);
             const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples_buffer->sample_rate;
 
-#undef min
             for(auto it = samples_buffer->samples.begin(); it != samples_buffer->samples.end(); it++)
             {
-                static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min(), dur_;
-
                 // convert the frame units to time units
                 frame_unit ts, dur;
                 CHECK_HR(hr = (*it)->GetSampleTime(&ts));
@@ -44,9 +45,11 @@ void transform_aac_encoder::processing_cb(void*)
                 CHECK_HR(hr = (*it)->SetSampleTime(ts));
                 CHECK_HR(hr = (*it)->SetSampleDuration(dur));
                 
-                if(ts <= ts_)
+#ifdef _DEBUG
+                if(ts <= this->last_time_stamp)
                     DebugBreak();
-                ts_ = ts;
+                this->last_time_stamp = ts;
+#endif
                 /*std::cout << "ts: " << ts << ", dur+ts: " << ts + dur << std::endl;*/
 
             back:
@@ -141,7 +144,7 @@ done:
     return true;
 }
 
-HRESULT transform_aac_encoder::initialize(const CComPtr<IMFMediaType>& input_type)
+HRESULT transform_aac_encoder::initialize()
 {
     HRESULT hr = S_OK;
 
@@ -163,18 +166,18 @@ HRESULT transform_aac_encoder::initialize(const CComPtr<IMFMediaType>& input_typ
 
     CHECK_HR(hr = activate[0]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
 
-    UINT32 samples_per_second = 48000;
-    UINT32 channels = 2;
+    const UINT32 samples_per_second = 48000;
+    const UINT32 channels = 2;
 
     // set input type
     /*this->input_type = input_type;*/
     CHECK_HR(hr = MFCreateMediaType(&this->input_type));
-    CHECK_HR(hr = input_type->CopyAllItems(this->input_type));
+    /*CHECK_HR(hr = input_type->CopyAllItems(this->input_type));*/
     CHECK_HR(hr = this->input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
     CHECK_HR(hr = this->input_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM));
     CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16));
-    /*CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, samples_per_second));*/
-    /*CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channels));*/
+    CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, samples_per_second));
+    CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channels));
 
     // set output type
     CHECK_HR(hr = MFCreateMediaType(&this->output_type));

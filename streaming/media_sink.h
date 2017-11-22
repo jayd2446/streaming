@@ -1,16 +1,11 @@
 #pragma once
-#include "media_session.h"
-#include "media_sample.h"
-#include "presentation_clock.h"
-#include "enable_shared_from_this.h"
+#include "media_component.h"
 
-class media_sink : public virtual enable_shared_from_this
+class media_sink : public media_component
 {
+private:
 public:
-    media_session_t session;
-
-    media_sink(const media_session_t& session) : session(session) {}
+    // stream objects must not be allocated in the constructor
+    explicit media_sink(const media_session_t& session) : media_component(session) {}
     virtual ~media_sink() {}
 };
-
-typedef std::shared_ptr<media_sink> media_sink_t;

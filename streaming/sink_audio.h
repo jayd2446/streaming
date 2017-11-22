@@ -5,9 +5,10 @@
 #include "request_packet.h"
 #include "async_callback.h"
 #include "source_loopback.h"
+#include "output_file.h"
+#include "assert.h"
 #include <vector>
 #include <mutex>
-#include "assert.h"
 
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -29,16 +30,16 @@ public:
     typedef request_queue::request_t request_t;
 private:
     request_queue write_queue;
-    std::recursive_mutex writing_mutex;
-    CComPtr<IMFSinkWriter> writer;
+    output_file_t file_output;
     CComPtr<async_callback_t> write_packets_callback;
+    std::recursive_mutex writing_mutex;
 
     void write_packets();
     void write_packets_cb(void*);
 public:
     explicit sink_audio(const media_session_t& session);
 
-    void initialize(const CComPtr<IMFSinkWriter>& writer);
+    void initialize(const output_file_t& file_output);
 
     stream_audio_t create_stream(presentation_clock_t&, const source_loopback_t&);
     // worker streams duplicate the topology so that individual branches can be
@@ -51,8 +52,8 @@ class stream_audio : public media_stream, public presentation_clock_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    sink_audio_t sink;
     source_loopback_t source;
+    sink_audio_t sink;
 
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_audio_worker_t> worker_streams;

@@ -21,8 +21,8 @@ public:
     typedef std::pair<media_stream*, request_packet> request_t;
 private:
     CComPtr<IDXGIOutputDuplication> output_duplication;
-    CComPtr<ID3D11Device> d3d11dev;
-    CComPtr<ID3D11DeviceContext> d3d11devctx;
+    CComPtr<ID3D11Device> d3d11dev, d3d11dev2;
+    CComPtr<ID3D11DeviceContext> d3d11devctx, d3d11devctx2;
 
     std::recursive_mutex capture_frame_mutex;
     media_buffer_texture_t newest_buffer;
@@ -34,12 +34,19 @@ private:
 public:
     source_displaycapture5(const media_session_t& session, std::recursive_mutex& context_mutex);
 
-    bool capture_frame(const media_buffer_texture_t&, time_unit& timestamp);
+    bool capture_frame(const media_buffer_texture_t&, time_unit& timestamp, const presentation_clock_t&);
 
     media_stream_t create_stream();
-    // after initializing starts the capturing
+    // uses the d3d11 device for capturing that is used in the pipeline
     HRESULT initialize(
         UINT output_index, 
+        const CComPtr<ID3D11Device>&,
+        const CComPtr<ID3D11DeviceContext>&);
+    // creates a d3d11 device that is bound to the adapter index
+    HRESULT initialize(
+        UINT adapter_index,
+        UINT output_index, 
+        const CComPtr<IDXGIFactory1>&,
         const CComPtr<ID3D11Device>&,
         const CComPtr<ID3D11DeviceContext>&);
 };

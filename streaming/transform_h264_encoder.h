@@ -50,6 +50,9 @@ private:
     std::recursive_mutex processed_samples_mutex;
     std::unordered_map<time_unit /*request time*/, request_t> processed_samples;
 
+    // debug
+    time_unit last_time_stamp;
+
     HRESULT set_input_stream_type();
     HRESULT set_output_stream_type();
     HRESULT set_encoder_parameters();

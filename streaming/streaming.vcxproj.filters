@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="gui">
+      <UniqueIdentifier>{e6359f46-30e2-427f-97df-7037f9c9a17b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="control">
+      <UniqueIdentifier>{8e72a79c-df43-42d4-a772-83ff60b171fb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -73,6 +79,27 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="transform_audioprocessor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_frame.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_maindlg.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_newdlg.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="control_pipeline.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_scene.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_preview.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="output_file.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -161,5 +188,40 @@
     <ClInclude Include="transform_audioprocessor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="gui_frame.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="wtl.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_maindlg.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_newdlg.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="control_pipeline.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_scene.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_preview.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="media_component.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="output_file.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="streaming.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>

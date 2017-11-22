@@ -152,7 +152,8 @@ void stream_color_converter::processing_cb(void*)
                 0, stream_count, &stream));
         }
         else
-            sample_view.reset(new media_sample_view(this->output_buffer_null));
+            // TODO: read lock buffers is just a workaround for a deadlock bug
+            sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));
 
         sample_view->sample.timestamp = this->pending_packet.sample_view->sample.timestamp;
         

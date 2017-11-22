@@ -9,7 +9,8 @@
 
 sink_mpeg2::sink_mpeg2(const media_session_t& session) : 
     media_sink(session),
-    audio_session(new media_session)
+    audio_session(new media_session),
+    stopped_signal(NULL)
 {
     this->write_packets_callback.Attach(new async_callback_t(&sink_mpeg2::write_packets_cb));
 }
@@ -18,13 +19,6 @@ sink_mpeg2::~sink_mpeg2()
 {
     this->audio_session->stop_playback();
     this->audio_session->shutdown();
-
-    HRESULT hr = this->writer->Finalize();
-    if(FAILED(hr))
-        std::cout << "finalizing failed" << std::endl;
-
-    this->writer.Release();
-    this->mpeg_media_sink->Shutdown();
 }
 
 void sink_mpeg2::write_packets()
@@ -43,7 +37,6 @@ void sink_mpeg2::write_packets_cb(void*)
     if(!lock.owns_lock())
         return;
 
-    HRESULT hr = S_OK;
     request_t request;
     while(this->write_queue.pop(request))
     {
@@ -52,47 +45,15 @@ void sink_mpeg2::write_packets_cb(void*)
         if(!sample)
             continue;
         
-        CHECK_HR(hr = this->writer->WriteSample(0, sample->sample));
+        this->file_output->write_sample(true, sample->sample);
     }
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
 }
 
-void sink_mpeg2::initialize(
+void sink_mpeg2::initialize(HANDLE stopped_signal,
     const CComPtr<IMFMediaType>& video_type, const CComPtr<IMFMediaType>& audio_type)
 {
-    HRESULT hr = S_OK;
-    CComPtr<IMFAttributes> sink_writer_attributes;
-
-    this->video_type = video_type;
-    this->audio_type = audio_type;
-
-    // create file
-    CHECK_HR(hr = MFCreateFile(
-        MF_ACCESSMODE_READWRITE, MF_OPENMODE_DELETE_IF_EXIST, MF_FILEFLAGS_NONE, 
-        L"test.mp4", &this->byte_stream));
-
-    // create mpeg 4 media sink
-    CHECK_HR(hr = MFCreateMPEG4MediaSink(
-        this->byte_stream, this->video_type, this->audio_type, &this->mpeg_media_sink));
-
-    // configure the sink writer
-    CHECK_HR(hr = MFCreateAttributes(&sink_writer_attributes, 1));
-    CHECK_HR(hr = sink_writer_attributes->SetGUID(
-        MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4));
-
-    // create sink writer
-    CHECK_HR(hr = MFCreateSinkWriterFromMediaSink(
-        this->mpeg_media_sink, sink_writer_attributes, &this->writer));
-
-    // start accepting data
-    CHECK_HR(hr = this->writer->BeginWriting());
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
+    this->file_output.reset(new output_file);
+    this->file_output->initialize(stopped_signal, video_type, audio_type);
 }
 
 void sink_mpeg2::set_new_audio_topology(const stream_audio_t& audio_sink_stream,
@@ -260,6 +221,10 @@ media_stream::result_t stream_mpeg2::process_sample(
     request.sample_view = sample_view;
     request.stream = this;
     this->sink->write_queue.push(request);
+
+    // if the sample view is locking a resource,
+    // it must be ensured that the resource is unlocked in this call;
+    // currently though, the sample views won't lock at this point anymore
 
     if(sample_view->get_buffer<media_buffer_memorybuffer>())
         this->sink->write_packets();

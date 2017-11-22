@@ -9,7 +9,6 @@ sink_preview2::sink_preview2(const media_session_t& session, std::recursive_mute
 }
 
 void sink_preview2::initialize(
-    UINT32 /*window_width*/, UINT32 /*window_height*/,
     HWND hwnd, 
     CComPtr<ID3D11Device>& d3d11dev)
 {
@@ -22,8 +21,10 @@ void sink_preview2::initialize(
     CComPtr<IDXGIFactory2> dxgifactory;
     CComPtr<ID3D11Texture2D> backbuffer;
     CComPtr<IDXGISurface> dxgibackbuffer;
+    CComPtr<ID2D1Bitmap1> d2dtarget_bitmap;
     D2D1_BITMAP_PROPERTIES1 bitmap_props;
     DXGI_SWAP_CHAIN_DESC1 swapchain_desc = {0};
+    RECT r;
 
     // create d2d factory
     CHECK_HR(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &this->d2d1factory));
@@ -79,10 +80,15 @@ void sink_preview2::initialize(
 
     // get the d2d surface from the dxgi back buffer to use as the d2d render target
     CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
-        dxgibackbuffer, &bitmap_props, &this->d2dtarget_bitmap));
+        dxgibackbuffer, &bitmap_props, &d2dtarget_bitmap));
 
     // now we can set the direct2d render target
-    this->d2d1devctx->SetTarget(this->d2dtarget_bitmap);
+    this->d2d1devctx->SetTarget(d2dtarget_bitmap);
+
+    // set the size
+    GetClientRect(this->hwnd, &r);
+    this->width = std::abs(r.right - r.left);
+    this->height = std::abs(r.bottom - r.top);
 
 done:
     if(FAILED(hr))
@@ -98,6 +104,10 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
     {
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
+        D2D1_RECT_F rect;
+        rect.top = rect.left = 0;
+        rect.right = (FLOAT)this->width;
+        rect.bottom = (FLOAT)this->height;
 
         scoped_lock lock(this->context_mutex);
         CHECK_HR(hr = texture->QueryInterface(&surface));
@@ -109,7 +119,7 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
             &bitmap));
 
         this->d2d1devctx->BeginDraw();
-        this->d2d1devctx->DrawBitmap(bitmap);
+        this->d2d1devctx->DrawBitmap(bitmap, &rect);
         this->d2d1devctx->EndDraw();
 
         // dxgi functions need to be synchronized with the context mutex
@@ -124,6 +134,39 @@ done:
 media_stream_t sink_preview2::create_stream()
 {
     return stream_preview2_t(new stream_preview2(this->shared_from_this<sink_preview2>()));
+}
+
+void sink_preview2::update_size()
+{
+    scoped_lock lock(this->context_mutex);
+
+    RECT r;
+    GetClientRect(this->hwnd, &r);
+    this->width = std::abs(r.right - r.left);
+    this->height = std::abs(r.bottom - r.top);
+
+    HRESULT hr = S_OK;
+    CComPtr<IDXGISurface> dxgibackbuffer;
+    CComPtr<ID2D1Bitmap1> d2dtarget_bitmap;
+    D2D1_BITMAP_PROPERTIES1 bitmap_props = D2D1::BitmapProperties1(
+        D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
+
+    // reset the device context target
+    this->d2d1devctx->SetTarget(NULL);
+    CHECK_HR(hr = this->swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0));
+    // direct2d needs the dxgi version of the backbuffer surface pointer
+    CHECK_HR(hr = this->swapchain->GetBuffer(0, IID_PPV_ARGS(&dxgibackbuffer)));
+    // get the d2d surface from the dxgi back buffer to use as the d2d render target
+    CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
+        dxgibackbuffer, &bitmap_props, &d2dtarget_bitmap));
+
+    // now we can set the direct2d render target
+    this->d2d1devctx->SetTarget(d2dtarget_bitmap);
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
 }
 
 

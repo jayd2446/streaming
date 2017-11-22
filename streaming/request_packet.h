@@ -22,6 +22,8 @@ struct request_packet
     time_unit timestamp;
     // cant be a negative number
     int packet_number;
+
+    bool get_clock(presentation_clock_t&) const;
 };
 
 class media_stream;

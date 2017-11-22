@@ -8,6 +8,8 @@
 
 #pragma comment(lib, "Mfplat.lib")
 
+// aac encoder only accepts 48khz and 2 channel audio
+
 class transform_aac_encoder : public media_source
 {
     friend class stream_aac_encoder;
@@ -25,6 +27,9 @@ private:
 
     DWORD input_id, output_id;
 
+    // debug
+    frame_unit last_time_stamp;
+
     void processing_cb(void*);
     bool process_output_cb(request_t*, media_buffer_samples_t&);
 public:
@@ -32,7 +37,7 @@ public:
 
     explicit transform_aac_encoder(const media_session_t& session);
 
-    HRESULT initialize(const CComPtr<IMFMediaType>& input_type);
+    HRESULT initialize();
     media_stream_t create_stream();
 };
 

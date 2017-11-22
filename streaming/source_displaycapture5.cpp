@@ -5,8 +5,12 @@
 #include <Mferror.h>
 
 #pragma comment(lib, "D3D11.lib")
-
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#ifdef _DEBUG
+#define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
+#else
+#define CREATE_DEVICE_DEBUG 0
+#endif
 
 extern LARGE_INTEGER pc_frequency;
 
@@ -66,9 +70,44 @@ done:
     return hr;
 }
 
-
-bool source_displaycapture5::capture_frame(const media_buffer_texture_t& buffer, time_unit& timestamp)
+HRESULT source_displaycapture5::initialize(
+    UINT adapter_index,
+    UINT output_index, 
+    const CComPtr<IDXGIFactory1>& factory,
+    const CComPtr<ID3D11Device>& d3d11dev,
+    const CComPtr<ID3D11DeviceContext>& devctx)
 {
+    HRESULT hr = S_OK;
+    CComPtr<IDXGIAdapter1> dxgiadapter;
+
+    CHECK_HR(hr = factory->EnumAdapters1(adapter_index, &dxgiadapter));
+    CHECK_HR(hr = D3D11CreateDevice(
+        dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
+        NULL, 0, D3D11_SDK_VERSION, &this->d3d11dev2, NULL, &this->d3d11devctx2));
+
+    this->initialize(output_index, this->d3d11dev2, this->d3d11devctx2);
+    this->d3d11dev = d3d11dev;
+    this->d3d11devctx = devctx;
+
+done:
+    if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
+    {
+        std::cerr << "maximum number of desktop duplication api applications running" << std::endl;
+        return hr;
+    }
+    else if(FAILED(hr))
+        throw std::exception();
+
+    return hr;
+}
+
+
+bool source_displaycapture5::capture_frame(
+    const media_buffer_texture_t& buffer, time_unit& timestamp, const presentation_clock_t& clock)
+{
+    // TODO: context mutex not needed when the dxgioutput is initialized with another device
+
     // dxgi functions need to be synchronized with the context mutex
     scoped_lock lock(this->context_mutex);
 
@@ -76,10 +115,6 @@ bool source_displaycapture5::capture_frame(const media_buffer_texture_t& buffer,
     CComPtr<ID3D11Texture2D> screen_frame;
     DXGI_OUTDUPL_FRAME_INFO frame_info = {0};
     HRESULT hr = S_OK;
-    presentation_clock_t clock;
-
-    if(!this->session->get_current_clock(clock))
-        throw std::exception();
 
     CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
@@ -89,7 +124,10 @@ bool source_displaycapture5::capture_frame(const media_buffer_texture_t& buffer,
         D3D11_TEXTURE2D_DESC screen_frame_desc;
 
         screen_frame->GetDesc(&screen_frame_desc);
-        screen_frame_desc.MiscFlags = 0;
+        if(!this->d3d11dev2)
+            screen_frame_desc.MiscFlags = 0;
+        else
+            screen_frame_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
         screen_frame_desc.Usage = D3D11_USAGE_DEFAULT;
         CHECK_HR(hr = this->d3d11dev->CreateTexture2D(&screen_frame_desc, NULL, &buffer->texture));
     }
@@ -97,7 +135,21 @@ bool source_displaycapture5::capture_frame(const media_buffer_texture_t& buffer,
     // copy
     if(frame_info.LastPresentTime.QuadPart != 0)
     {
-        this->d3d11devctx->CopyResource(buffer->texture, screen_frame);
+        if(!this->d3d11dev2)
+            this->d3d11devctx->CopyResource(buffer->texture, screen_frame);
+        else
+        {
+            CComPtr<ID3D11Texture2D> texture_shared;
+            CComPtr<IDXGIResource> idxgiresource;
+            CComPtr<ID3D11Resource> resource;
+            HANDLE handle;
+
+            CHECK_HR(hr = buffer->texture->QueryInterface(&idxgiresource));
+            CHECK_HR(hr = idxgiresource->GetSharedHandle(&handle));
+            CHECK_HR(hr = this->d3d11dev2->OpenSharedResource(
+                handle, __uuidof(ID3D11Texture2D), (void**)&texture_shared));
+            this->d3d11devctx2->CopyResource(texture_shared, screen_frame);
+        }
 
         // TODO: the timestamp might not be consecutive
         /*timestamp = clock->performance_counter_to_time_unit(frame_info.LastPresentTime);*/
@@ -146,6 +198,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
     bool frame_captured;
     time_unit timestamp;
     source_displaycapture5::request_t request;
+    presentation_clock_t clock;
 
     // pull a request and capture a frame for it
     {
@@ -157,16 +210,9 @@ void stream_displaycapture5::capture_frame_cb(void*)
             this->source->requests.pop();
         }
 
-        try
-        {
-            frame_captured = this->source->capture_frame(this->buffer, timestamp);
-        }
-        catch(std::exception)
-        {
-            // this might happen if the session is shutdown and there's still a
-            // request pending
-            return;
-        }
+        // clock is assumed to be valid
+        request.second.get_clock(clock);
+        frame_captured = this->source->capture_frame(this->buffer, timestamp, clock);
     }
 
     // TODO: there exists a chance
@@ -201,6 +247,7 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
 {
     // TODO: decide if displaycapture should capture frames like in source loopback
     // with capture thread priority
+    // TODO: requests should be sorted
 
     {
         scoped_lock lock(this->source->requests_mutex);

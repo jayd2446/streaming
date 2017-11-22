@@ -9,6 +9,7 @@
 #include <deque>
 #include <mutex>
 #include <atomic>
+#include <string>
 
 #pragma comment(lib, "Mfplat.lib")
 
@@ -77,7 +78,8 @@ public:
     explicit source_loopback(const media_session_t& session);
     ~source_loopback();
 
-    HRESULT initialize(bool capture = false);
+    // TODO: all initialize functions should just throw
+    HRESULT initialize(const std::wstring& device_id, bool capture);
     media_stream_t create_stream();
 
     void convert_32bit_float_to_bitdepth_pcm(

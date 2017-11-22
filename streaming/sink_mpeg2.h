@@ -7,9 +7,10 @@
 #include "sink_audio.h"
 #include "media_session.h"
 #include "transform_h264_encoder.h"
+#include "output_file.h"
+#include "assert.h"
 #include <vector>
 #include <mutex>
-#include "assert.h"
 
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -30,16 +31,14 @@ public:
     typedef async_callback<sink_mpeg2> async_callback_t;
     typedef request_queue::request_t request_t;
 private:
+    HANDLE stopped_signal;
     request_queue write_queue;
     CComPtr<async_callback_t> write_packets_callback;
 
     stream_audio_t audio_sink_stream, new_audio_sink_stream;
     media_topology_t new_audio_topology;
 
-    CComPtr<IMFMediaSink> mpeg_media_sink;
-    CComPtr<IMFSinkWriter> writer;
-    CComPtr<IMFByteStream> byte_stream;
-    CComPtr<IMFMediaType> video_type, audio_type;
+    output_file_t file_output;
     std::recursive_mutex writing_mutex;
 
     void write_packets();
@@ -50,9 +49,12 @@ public:
     explicit sink_mpeg2(const media_session_t& session);
     ~sink_mpeg2();
 
-    const CComPtr<IMFSinkWriter>& get_writer() const {return this->writer;}
+    const output_file_t& get_output() const {return this->file_output;}
 
-    void initialize(const CComPtr<IMFMediaType>& video_type, const CComPtr<IMFMediaType>& audio_type);
+    void initialize(
+        HANDLE stopped_signal,
+        const CComPtr<IMFMediaType>& video_type, 
+        const CComPtr<IMFMediaType>& audio_type);
     void set_new_audio_topology(
         const stream_audio_t& audio_sink_stream,
         const media_topology_t& audio_topology);

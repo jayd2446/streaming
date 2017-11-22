@@ -28,7 +28,7 @@ public:
 private:
     topology_t topology, topology_reverse;
     presentation_clock_t clock;
-    int packet_number;
+    volatile int packet_number;
 public:
     // TODO: implement topology cloning;
     // requires streams to clone themselves to a new stream

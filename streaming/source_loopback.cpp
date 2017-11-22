@@ -146,17 +146,6 @@ void source_loopback::process_cb(void*)
 
         CHECK_HR(hr = MFCreateSample(&sample));
 
-        /*
-        the stream can stop in a way that doesn't trigger the data discontinuity
-        flag and the dev position won't advance;
-        only way to find the timestamp is via the inaccurate timestamp param
-        */
-
-        /*
-        maintain internally a time position for the last consumed sample
-        and use that as the time base if the provided time base is smaller
-        */
-
         bool silent = false;
         // set the stream time and sample base
         sample_base_t base = {(LONGLONG)first_sample_timestamp, (LONGLONG)devposition};
@@ -177,7 +166,7 @@ void source_loopback::process_cb(void*)
         if(flags & AUDCLNT_BUFFERFLAGS_SILENT)
         {
             silent = true;
-            std::cout << "SILENT" << std::endl;
+            /*std::cout << "SILENT" << std::endl;*/
         }
         else
             /*std::cout << "OK" << std::endl*/;
@@ -249,8 +238,7 @@ void source_loopback::serve_cb(void*)
     {
         // clock is assumed to be valid if there's a request pending
         presentation_clock_t clock;
-        if(!this->session->get_current_clock(clock))
-            return;
+        request.rp.get_clock(clock);
 
         // samples are collected up to the request time;
         // sample that goes over the request time will not be collected
@@ -520,7 +508,7 @@ void source_loopback::serve_requests()
         return;
 }
 
-HRESULT source_loopback::initialize(bool capture)
+HRESULT source_loopback::initialize(const std::wstring& device_id, bool capture)
 {
     HRESULT hr = S_OK;
 
@@ -532,7 +520,7 @@ HRESULT source_loopback::initialize(bool capture)
     CHECK_HR(hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
         (void**)&enumerator));
-    CHECK_HR(hr = enumerator->GetDefaultAudioEndpoint(capture ? eCapture : eRender, eConsole, &device));
+    CHECK_HR(hr = enumerator->GetDevice(device_id.c_str(), &device));
 
     CHECK_HR(hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&this->audio_client));
     CHECK_HR(hr = this->audio_client->GetMixFormat(&engine_format));
