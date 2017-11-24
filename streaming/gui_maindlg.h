@@ -39,6 +39,7 @@ public:
         COMMAND_HANDLER(IDC_NEWVIDEO, BN_CLICKED, OnBnClickedNewvideo)
         COMMAND_HANDLER(IDC_NEWAUDIO, BN_CLICKED, OnBnClickedNewaudio)
         COMMAND_HANDLER(IDC_BUTTON_RECORD, BN_CLICKED, OnBnClickedButtonRecord)
+        COMMAND_HANDLER(IDC_LIST_SCENES, LBN_SELCHANGE, OnLbnSelchangeListScenes)
     END_MSG_MAP()
 
     LRESULT OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
@@ -46,4 +47,5 @@ public:
     LRESULT OnBnClickedNewvideo(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnBnClickedNewaudio(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnBnClickedButtonRecord(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+    LRESULT OnLbnSelchangeListScenes(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };

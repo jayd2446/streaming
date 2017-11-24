@@ -122,20 +122,44 @@ void control_scene::reset_topology(bool create_new)
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
+        int displaycapture_index = 0;
+
         // video
         {
             stream_mpeg2_worker_t worker_stream = this->pipeline.mpeg_sink->create_worker_stream();
             media_stream_t encoder_stream = this->pipeline.h264_encoder_transform->create_stream();
             media_stream_t color_converter_stream = this->pipeline.color_converter_transform->create_stream();
-            media_stream_t displaycapture_stream = this->displaycapture_sources[0].second->create_stream();
             media_stream_t preview_stream = this->pipeline.preview_sink->create_stream();
 
             // TODO: encoder stream is redundant
             mpeg_stream->add_worker_stream(worker_stream);
             mpeg_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
 
-            this->video_topology->connect_streams(displaycapture_stream, color_converter_stream);
-            this->video_topology->connect_streams(displaycapture_stream, preview_stream);
+            // send the source input streams to videoprocessor transform
+            stream_videoprocessor_t videoprocessor_stream = 
+                this->pipeline.videoprocessor_transform->create_stream();
+            for(size_t i = 0; i < this->video_items.size(); i++)
+            {
+                switch(this->video_items[i].type)
+                {
+                case DISPLAYCAPTURE_ITEM:
+                    {
+                        media_stream_t displaycapture_stream = 
+                            this->displaycapture_sources[displaycapture_index].second->create_stream(
+                            this->videoprocessor_stream_controllers[i]);
+                        videoprocessor_stream->add_input_stream(displaycapture_stream.get());
+                        this->video_topology->connect_streams(displaycapture_stream, videoprocessor_stream);
+                    }
+                    displaycapture_index++;
+                    break;
+                default:
+                    throw std::exception();
+                }
+            }
+
+            // connect the video processor stream to the rest of the streams
+            this->video_topology->connect_streams(videoprocessor_stream, color_converter_stream);
+            this->video_topology->connect_streams(videoprocessor_stream, preview_stream);
             this->video_topology->connect_streams(color_converter_stream, encoder_stream);
             this->video_topology->connect_streams(encoder_stream, worker_stream);
             this->video_topology->connect_streams(worker_stream, mpeg_stream);
@@ -158,7 +182,9 @@ void control_scene::reset_topology(bool create_new)
 
 void control_scene::activate_scene()
 {
-    assert_(this->displaycapture_sources.empty() && this->audio_sources.empty());
+    assert_(this->displaycapture_sources.empty() && 
+        this->audio_sources.empty() &&
+        this->videoprocessor_stream_controllers.empty());
 
     // activate displaycapture items
     for(auto it = this->displaycapture_items.begin(); it != this->displaycapture_items.end(); it++)
@@ -176,16 +202,27 @@ void control_scene::activate_scene()
         this->audio_sources.push_back(std::make_pair(*it, loopback_source));
     }
 
+    // activate video processor stream controllers
+    for(auto it = this->video_items.begin(); it != this->video_items.end(); it++)
+    {
+        stream_videoprocessor_controller_t controller(new stream_videoprocessor_controller);
+        stream_videoprocessor_controller::params_t params;
+        params.source_rect = it->source_rect;
+        params.dest_rect = it->dest_rect;
+        controller->set_params(params);
+
+        this->videoprocessor_stream_controllers.push_back(controller);
+    }
+
     // reset the topologies
     this->reset_topology(true);
 }
 
 void control_scene::deactivate_scene()
 {
-    // deactivate displaycapture items
     this->displaycapture_sources.clear();
-    // deactivate audio items
     this->audio_sources.clear();
+    this->videoprocessor_stream_controllers.clear();
 
     // reset the topologies
     this->reset_topology(false);
@@ -193,6 +230,10 @@ void control_scene::deactivate_scene()
 
 void control_scene::add_displaycapture_item(const displaycapture_item& item)
 {
+    if(item.video.type != DISPLAYCAPTURE_ITEM)
+        throw std::exception();
+
+    this->video_items.push_back(item.video);
     this->displaycapture_items.push_back(item);
 }
 

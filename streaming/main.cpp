@@ -71,89 +71,89 @@ it seems that the amd h264 encoder creates minimal artifacts if the color conver
 #undef max
 //}
 
-void create_streams(
-    const media_topology_t& topology,
-    const media_topology_t& audio_topology,
-    const sink_preview2_t& preview_sink2,
-    const sink_mpeg2_t& mpeg_sink,
-    const sink_audio_t& audio_sink,
-    const source_displaycapture5_t& displaycapture_source2,
-    const source_displaycapture5_t& displaycapture_source,
-    const source_loopback_t& loopback_source,
-    const source_loopback_t& loopback_source2,
-    const transform_audiomix_t& audiomix_transform,
-    const transform_audioprocessor_t& audioprocessor_transform,
-    const transform_videoprocessor_t& videoprocessor_transform,
-    const transform_color_converter_t& color_converter_transform,
-    const transform_h264_encoder_t& h264_encoder_transform,
-    const transform_aac_encoder_t& aac_encoder_transform)
-{
-    HRESULT hr = S_OK;
-
-    stream_mpeg2_t mpeg_stream = mpeg_sink->create_stream(topology->get_clock());
-    stream_audio_t audio_stream = audio_sink->create_stream(audio_topology->get_clock(), loopback_source);
-
-    mpeg_sink->set_new_audio_topology(audio_stream, audio_topology);
-
-    // 87,5 fps with speed;
-    // 76,3 fps with balanced;
-    // 46,1 fps with quality
-    // (full hd)
-
-    mpeg_stream->set_pull_rate(60, 1);
-
-    for(int i = 0; i < WORKER_STREAMS; i++)
-    {
-        // video
-        {
-            stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream();
-            stream_mpeg2_worker_t worker_stream = mpeg_sink->create_worker_stream();
-            media_stream_t encoder_stream = h264_encoder_transform->create_stream();
-            media_stream_t color_converter_stream = color_converter_transform->create_stream();
-            media_stream_t source_stream = displaycapture_source->create_stream();
-            media_stream_t source_stream2 = displaycapture_source2->create_stream();
-            media_stream_t preview_stream = preview_sink2->create_stream();
-
-            mpeg_stream->add_worker_stream(worker_stream);
-            mpeg_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
-            transform_stream->set_primary_stream(source_stream.get());
-
-            topology->connect_streams(source_stream, transform_stream);
-            topology->connect_streams(source_stream2, transform_stream);
-            topology->connect_streams(transform_stream, color_converter_stream);
-            topology->connect_streams(transform_stream, preview_stream);
-            topology->connect_streams(color_converter_stream, encoder_stream);
-            topology->connect_streams(encoder_stream, worker_stream);
-            topology->connect_streams(worker_stream, mpeg_stream);
-        }
-
-        // audio
-        {
-            stream_audio_worker_t worker_stream = audio_sink->create_worker_stream();
-            media_stream_t aac_encoder_stream = aac_encoder_transform->create_stream();
-            media_stream_t source_stream = loopback_source->create_stream();
-            media_stream_t source_stream2 = loopback_source2->create_stream();
-            stream_audiomix_t transform_stream = audiomix_transform->create_stream();
-            media_stream_t channel_converter_stream = audioprocessor_transform->create_stream();
-
-            audio_stream->add_worker_stream(worker_stream);
-            transform_stream->set_primary_stream(source_stream.get());
-
-            audio_topology->connect_streams(source_stream, transform_stream);
-            audio_topology->connect_streams(source_stream2, channel_converter_stream);
-            audio_topology->connect_streams(channel_converter_stream, transform_stream);
-            audio_topology->connect_streams(transform_stream, aac_encoder_stream);
-            audio_topology->connect_streams(aac_encoder_stream, worker_stream);
-            audio_topology->connect_streams(worker_stream, audio_stream);
-        }
-    }
-
-    // (each thread gets approximately 20ms time slice)
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
-}
+//void create_streams(
+//    const media_topology_t& topology,
+//    const media_topology_t& audio_topology,
+//    const sink_preview2_t& preview_sink2,
+//    const sink_mpeg2_t& mpeg_sink,
+//    const sink_audio_t& audio_sink,
+//    const source_displaycapture5_t& displaycapture_source2,
+//    const source_displaycapture5_t& displaycapture_source,
+//    const source_loopback_t& loopback_source,
+//    const source_loopback_t& loopback_source2,
+//    const transform_audiomix_t& audiomix_transform,
+//    const transform_audioprocessor_t& audioprocessor_transform,
+//    const transform_videoprocessor_t& videoprocessor_transform,
+//    const transform_color_converter_t& color_converter_transform,
+//    const transform_h264_encoder_t& h264_encoder_transform,
+//    const transform_aac_encoder_t& aac_encoder_transform)
+//{
+//    HRESULT hr = S_OK;
+//
+//    stream_mpeg2_t mpeg_stream = mpeg_sink->create_stream(topology->get_clock());
+//    stream_audio_t audio_stream = audio_sink->create_stream(audio_topology->get_clock(), loopback_source);
+//
+//    mpeg_sink->set_new_audio_topology(audio_stream, audio_topology);
+//
+//    // 87,5 fps with speed;
+//    // 76,3 fps with balanced;
+//    // 46,1 fps with quality
+//    // (full hd)
+//
+//    mpeg_stream->set_pull_rate(60, 1);
+//
+//    for(int i = 0; i < WORKER_STREAMS; i++)
+//    {
+//        // video
+//        {
+//            stream_videoprocessor_t transform_stream = videoprocessor_transform->create_stream();
+//            stream_mpeg2_worker_t worker_stream = mpeg_sink->create_worker_stream();
+//            media_stream_t encoder_stream = h264_encoder_transform->create_stream();
+//            media_stream_t color_converter_stream = color_converter_transform->create_stream();
+//            media_stream_t source_stream = displaycapture_source->create_stream();
+//            media_stream_t source_stream2 = displaycapture_source2->create_stream();
+//            media_stream_t preview_stream = preview_sink2->create_stream();
+//
+//            mpeg_stream->add_worker_stream(worker_stream);
+//            mpeg_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
+//            transform_stream->set_primary_stream(source_stream.get());
+//
+//            topology->connect_streams(source_stream, transform_stream);
+//            topology->connect_streams(source_stream2, transform_stream);
+//            topology->connect_streams(transform_stream, color_converter_stream);
+//            topology->connect_streams(transform_stream, preview_stream);
+//            topology->connect_streams(color_converter_stream, encoder_stream);
+//            topology->connect_streams(encoder_stream, worker_stream);
+//            topology->connect_streams(worker_stream, mpeg_stream);
+//        }
+//
+//        // audio
+//        {
+//            stream_audio_worker_t worker_stream = audio_sink->create_worker_stream();
+//            media_stream_t aac_encoder_stream = aac_encoder_transform->create_stream();
+//            media_stream_t source_stream = loopback_source->create_stream();
+//            media_stream_t source_stream2 = loopback_source2->create_stream();
+//            stream_audiomix_t transform_stream = audiomix_transform->create_stream();
+//            media_stream_t channel_converter_stream = audioprocessor_transform->create_stream();
+//
+//            audio_stream->add_worker_stream(worker_stream);
+//            transform_stream->set_primary_stream(source_stream.get());
+//
+//            audio_topology->connect_streams(source_stream, transform_stream);
+//            audio_topology->connect_streams(source_stream2, channel_converter_stream);
+//            audio_topology->connect_streams(channel_converter_stream, transform_stream);
+//            audio_topology->connect_streams(transform_stream, aac_encoder_stream);
+//            audio_topology->connect_streams(aac_encoder_stream, worker_stream);
+//            audio_topology->connect_streams(worker_stream, audio_stream);
+//        }
+//    }
+//
+//    // (each thread gets approximately 20ms time slice)
+//
+//done:
+//    if(FAILED(hr))
+//        throw std::exception();
+//}
 
 /*
 

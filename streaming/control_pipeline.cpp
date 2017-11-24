@@ -20,10 +20,12 @@ control_pipeline::control_pipeline() :
         throw std::exception();
 
     HRESULT hr = S_OK;
+    CComPtr<IDXGIAdapter1> dxgiadapter;
 
     CHECK_HR(hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&this->dxgifactory));
+    CHECK_HR(hr = this->dxgifactory->EnumAdapters1(0, &dxgiadapter));
     CHECK_HR(hr = D3D11CreateDevice(
-        NULL, D3D_DRIVER_TYPE_HARDWARE, NULL,
+        dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
         NULL, 0, D3D11_SDK_VERSION, &this->d3d11dev, 
         NULL, &this->devctx));
@@ -37,6 +39,7 @@ void control_pipeline::reset_components(bool create_new)
 {
     if(!create_new)
     {
+        this->videoprocessor_transform = NULL;
         this->h264_encoder_transform = NULL;
         this->color_converter_transform = NULL;
         this->preview_sink = NULL;
@@ -45,6 +48,10 @@ void control_pipeline::reset_components(bool create_new)
         this->audio_sink = NULL;
         return;
     }
+
+    // create and initialize the videoprocessor transform
+    this->videoprocessor_transform.reset(new transform_videoprocessor(this->session, this->context_mutex));
+    this->videoprocessor_transform->initialize(16, this->d3d11dev, this->devctx);
 
     // create and initialize the h264 encoder transform
     this->h264_encoder_transform.reset(new transform_h264_encoder(this->session));

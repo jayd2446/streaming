@@ -22,18 +22,18 @@ source_displaycapture5::source_displaycapture5(
 {
 }
 
-media_stream_t source_displaycapture5::create_stream()
+media_stream_t source_displaycapture5::create_stream(const stream_videoprocessor_controller_t& c)
 {
     return media_stream_t(
-        new stream_displaycapture5(this->shared_from_this<source_displaycapture5>()));
+        new stream_displaycapture5(this->shared_from_this<source_displaycapture5>(), c));
 }
 
 HRESULT source_displaycapture5::initialize(
     UINT output_index, const CComPtr<ID3D11Device>& d3d11dev, const CComPtr<ID3D11DeviceContext>& devctx)
 {
     HRESULT hr;
-    CComPtr<IDXGIDevice> dxgidev;
-    CComPtr<IDXGIAdapter> dxgiadapter;
+    CComPtr<IDXGIDevice1> dxgidev;
+    CComPtr<IDXGIAdapter1> dxgiadapter;
     CComPtr<IDXGIOutput> output;
     CComPtr<IDXGIOutput1> output1;
 
@@ -44,7 +44,7 @@ HRESULT source_displaycapture5::initialize(
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&dxgidev));
 
     // get dxgi adapter
-    CHECK_HR(hr = dxgidev->GetParent(__uuidof(IDXGIAdapter), (void**)&dxgiadapter));
+    CHECK_HR(hr = dxgidev->GetParent(__uuidof(IDXGIAdapter1), (void**)&dxgiadapter));
 
     // get the primary output
     CHECK_HR(hr = dxgiadapter->EnumOutputs(output_index, &output));
@@ -141,9 +141,9 @@ bool source_displaycapture5::capture_frame(
         {
             CComPtr<ID3D11Texture2D> texture_shared;
             CComPtr<IDXGIResource> idxgiresource;
-            CComPtr<ID3D11Resource> resource;
             HANDLE handle;
 
+            // TODO: the texture probably should be opened in d3d10 device
             CHECK_HR(hr = buffer->texture->QueryInterface(&idxgiresource));
             CHECK_HR(hr = idxgiresource->GetSharedHandle(&handle));
             CHECK_HR(hr = this->d3d11dev2->OpenSharedResource(
@@ -181,9 +181,11 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source) : 
+stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source, 
+    const stream_videoprocessor_controller_t& videoprocessor_controller) : 
     source(source),
-    buffer(new media_buffer_texture)
+    buffer(new media_buffer_texture),
+    videoprocessor_controller(videoprocessor_controller)
 {
     this->capture_frame_callback.Attach(new async_callback_t(&stream_displaycapture5::capture_frame_cb));
 }
@@ -194,7 +196,11 @@ void stream_displaycapture5::capture_frame_cb(void*)
     // the cached texture, and this thread has already locked the sample;
     // unlocking the capture frame mutex must be ensured before trying to lock the
     // cache texture
-    media_sample_view_t sample_view(new media_sample_view(this->buffer));
+    stream_videoprocessor_controller::params_t params;
+    this->videoprocessor_controller->get_params(params);
+    media_sample_view_videoprocessor_t sample_view(
+        new media_sample_view_videoprocessor(params, this->buffer));
+
     bool frame_captured;
     time_unit timestamp;
     source_displaycapture5::request_t request;
@@ -229,7 +235,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
         // TODO: do not repeatedly use dynamic allocation
         // use the newest buffer from the source;
         // the buffer switch must be here so that that sample_view.reset() unlocks the old buffer
-        sample_view.reset(new media_sample_view(
+        sample_view.reset(new media_sample_view_videoprocessor(params,
             std::atomic_load(&this->source->newest_buffer), media_sample_view::READ_LOCK_BUFFERS));
     }
     else

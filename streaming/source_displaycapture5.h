@@ -2,6 +2,7 @@
 #include "media_source.h"
 #include "media_stream.h"
 #include "media_sample.h"
+#include "transform_videoprocessor.h"
 #include "async_callback.h"
 #include <d3d11.h>
 #include <dxgi.h>
@@ -36,7 +37,7 @@ public:
 
     bool capture_frame(const media_buffer_texture_t&, time_unit& timestamp, const presentation_clock_t&);
 
-    media_stream_t create_stream();
+    media_stream_t create_stream(const stream_videoprocessor_controller_t&);
     // uses the d3d11 device for capturing that is used in the pipeline
     HRESULT initialize(
         UINT output_index, 
@@ -60,12 +61,14 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_displaycapture5_t source;
+    stream_videoprocessor_controller_t videoprocessor_controller;
     const media_buffer_texture_t buffer;
     CComPtr<async_callback_t> capture_frame_callback;
 
     void capture_frame_cb(void*);
 public:
-    explicit stream_displaycapture5(const source_displaycapture5_t& source);
+    explicit stream_displaycapture5(
+        const source_displaycapture5_t& source, const stream_videoprocessor_controller_t&);
 
     // called by media session
     result_t request_sample(request_packet&, const media_stream*);

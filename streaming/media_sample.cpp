@@ -77,3 +77,16 @@ media_sample_view::~media_sample_view()
 {
     this->sample.buffer->unlock();
 }
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+media_sample_view_texture::media_sample_view_texture(
+    const media_buffer_texture_t& texture, view_lock_t view_lock) :
+    texture_buffer(texture),
+    media_sample_view(texture, view_lock)
+{
+}

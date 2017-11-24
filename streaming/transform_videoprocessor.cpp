@@ -1,4 +1,5 @@
 #include "transform_videoprocessor.h"
+#include "assert.h"
 #include <mfapi.h>
 #include <Mferror.h>
 #include <algorithm>
@@ -17,7 +18,7 @@ transform_videoprocessor::transform_videoprocessor(
 {
 }
 
-HRESULT transform_videoprocessor::initialize(
+void transform_videoprocessor::initialize(UINT input_streams,
     const CComPtr<ID3D11Device>& d3d11dev, ID3D11DeviceContext* devctx)
 {
     HRESULT hr = S_OK;
@@ -50,18 +51,17 @@ HRESULT transform_videoprocessor::initialize(
     CHECK_HR(hr = this->enumerator->CheckVideoProcessorFormat(DXGI_FORMAT_NV12, &flags));
     if(!(flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT))
         throw std::exception();
+    CHECK_HR(hr = this->enumerator->GetVideoProcessorCaps(&this->videoprocessor_caps));
+
+    if(input_streams > this->max_input_streams())
+        CHECK_HR(hr = E_FAIL);
 
     // create the video processor
     CHECK_HR(hr = this->videodevice->CreateVideoProcessor(this->enumerator, 0, &this->videoprocessor));
 
-    // set the state for the video processor
-
-
 done:
     if(FAILED(hr))
         throw std::exception();
-
-    return hr;
 }
 
 stream_videoprocessor_t transform_videoprocessor::create_stream()
@@ -81,7 +81,7 @@ stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& t
     output_buffer(new media_buffer_texture),
     output_buffer_null(new media_buffer_texture),
     view_initialized(false),
-    primary_stream(NULL)
+    samples_received(0)
 {
     this->processing_callback.Attach(new async_callback_t(&stream_videoprocessor::processing_cb));
 }
@@ -94,115 +94,225 @@ void stream_videoprocessor::processing_cb(void*)
     // where new parameters will apply
 
     HRESULT hr = S_OK;
+    bool blit = false;
     {
         // lock the output sample
         media_sample_view_t sample_view;
+        time_unit timestamp = std::numeric_limits<time_unit>::max();
 
-        CComPtr<ID3D11Texture2D> texture = 
-            this->pending_request2.sample_view->get_buffer<media_buffer_texture>()->texture;
-        CComPtr<ID3D11Texture2D> texture2 =
-            this->pending_request.sample_view->get_buffer<media_buffer_texture>()->texture;
-
-        if(texture && texture2)
+        UINT i = 0, j = 0;
+        // construct a list of streams that will be blit onto output surface;
+        // this must be used because for some reason atiumdva has a null pointer read violation
+        // if setting enabled state of a stream to false
+        // TODO: this container can be listed in class declaration so that it won't be
+        // allocated every time
+        std::vector<D3D11_VIDEO_PROCESSOR_STREAM> streams;
+        streams.reserve(this->input_streams.size());
+        for(auto it = this->input_streams.begin(); it != this->input_streams.end(); it++, i++)
         {
-            sample_view.reset(new media_sample_view(this->output_buffer));
+            CComPtr<ID3D11VideoProcessorInputView> input_view;
+            CComPtr<ID3D11Texture2D> texture = it->first.sample_view->texture_buffer->texture;
+            const media_sample_view_videoprocessor::params_t& params = it->first.sample_view->params;
+            D3D11_VIDEO_PROCESSOR_STREAM& native_params = this->input_streams_params[i];
 
-            // create the input view for the sample to be converted
-            CComPtr<ID3D11VideoProcessorInputView> input_view[2];
-
-            D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
-            desc.FourCC = 0; // uses the same format the input resource has
-            desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-            desc.Texture2D.MipSlice = 0;
-            desc.Texture2D.ArraySlice = 0;
-            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
-                texture, this->transform->enumerator, &desc, &input_view[0]));
-            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
-                texture2, this->transform->enumerator, &desc, &input_view[1]));
-
-            // TODO: do not create input views every time
-
-            // convert
-            D3D11_VIDEO_PROCESSOR_STREAM stream[2];
-            RECT source_rect;
-            source_rect.top = source_rect.left = 0;
-            source_rect.right = 1920;
-            source_rect.bottom = 1080;
-
-            for(int i = 0; i < 2; i++)
+            // create the input view for the texture
+            if(texture)
             {
-                stream[i].Enable = TRUE;
-                stream[i].OutputIndex = 0;
-                stream[i].InputFrameOrField = 0;
-                stream[i].PastFrames = 0;
-                stream[i].FutureFrames = 0;
-                stream[i].ppPastSurfaces = NULL;
-                stream[i].pInputSurface = input_view[i];
-                stream[i].ppFutureSurfaces = NULL;
-                stream[i].ppPastSurfacesRight = NULL;
-                stream[i].pInputSurfaceRight = NULL;
-                stream[i].ppFutureSurfacesRight = NULL;
+                D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
+                desc.FourCC = 0; // uses the same format the input resource has
+                desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+                desc.Texture2D.MipSlice = 0;
+                desc.Texture2D.ArraySlice = 0;
+                CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
+                    texture, this->transform->enumerator, &desc, &input_view));
             }
 
-            scoped_lock lock(this->transform->context_mutex);
+            // set parameters for the stream
+            native_params.Enable = (texture != NULL);
+            native_params.OutputIndex = 0;
+            native_params.InputFrameOrField = 0;
+            native_params.PastFrames = 0;
+            native_params.FutureFrames = 0;
+            native_params.ppPastSurfaces = NULL;
+            native_params.pInputSurface = input_view;
+            native_params.ppFutureSurfaces = NULL;
+            native_params.ppPastSurfacesRight = NULL;
+            native_params.pInputSurfaceRight = NULL;
+            native_params.ppFutureSurfacesRight = NULL;
 
+            // increment the input_view ref count because it's referenced by the stream params
+            if(input_view.p)
+                input_view.p->AddRef();
+            else
+                continue;
+
+            streams.push_back(native_params);
+            blit = true;
+            // use the earliest timestamp;
+            // actually, max must be used so that the timestamp stays incremental
+            // (using max only applies to displaycapture where the buffers are shared between streams)
+            timestamp = std::min(timestamp, it->first.sample_view->sample.timestamp);
+
+            scoped_lock lock(this->transform->context_mutex);
+            // set the source rectangle for the stream
+            // (the part of the stream texture which will be included in the blit)
+            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+                this->transform->videoprocessor, j, TRUE, &params.source_rect);
+
+            // set the destination rectangle for the stream
+            // (where the stream will appear in the output blit)
+            this->transform->videocontext->VideoProcessorSetStreamDestRect(
+                this->transform->videoprocessor, j, TRUE, &params.dest_rect);
+
+            j++;
+        }
+
+        if(blit)
+        {
+            scoped_lock lock(this->transform->context_mutex);
             // set the target rectangle for the output
             // (sets the rectangle where the output blit on the output texture will appear)
             this->transform->videocontext->VideoProcessorSetOutputTargetRect(
-                this->transform->videoprocessor, TRUE, &source_rect);
+                this->transform->videoprocessor, TRUE, &this->output_target_rect);
 
-            // set the source rectangle of the streams
-            // (the part of the stream texture which will be included in the blit)
-            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
-                this->transform->videoprocessor, 0, TRUE, &source_rect);
-            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
-                this->transform->videoprocessor, 1, TRUE, &source_rect);
-
-            // set the destination rectangle of the streams
-            // (where the stream will appear in the output blit)
-            this->transform->videocontext->VideoProcessorSetStreamDestRect(
-                this->transform->videoprocessor, 0, TRUE, &source_rect);
-            RECT rect;
-            rect.top = rect.left = 0;
-            rect.right = 1920 / 3;
-            rect.bottom = 1080 / 3;
-            this->transform->videocontext->VideoProcessorSetStreamDestRect(
-                this->transform->videoprocessor, 1, TRUE, &rect);
-
+            // lock the output buffer before blitting
+            sample_view.reset(new media_sample_view(this->output_buffer));
             // dxva 2 and direct3d11 video seems to be similar
             // https://msdn.microsoft.com/en-us/library/windows/desktop/cc307964(v=vs.85).aspx#Video_Process_Blit
             // the video processor alpha blends the input streams to the target output
-            const UINT stream_count = 2;
             CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
                 this->transform->videoprocessor, this->output_view,
-                0, stream_count, stream));
+                0, streams.size(), &streams[0]));
         }
         else
             // TODO: read lock buffers is just a workaround for a deadlock bug
             sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));
 
-        // use the earliest timestamp;
-        // actually, max must be used so that the timestamp stays incremental
-        sample_view->sample.timestamp =
-            std::min(
-            this->pending_request2.sample_view->sample.timestamp, 
-            this->pending_request.sample_view->sample.timestamp);
+        //if(texture && texture2)
+        //{
+        //    sample_view.reset(new media_sample_view(this->output_buffer));
 
-        request_packet rp = this->pending_request.rp;
+        //    // create the input view for the sample to be converted
+        //    CComPtr<ID3D11VideoProcessorInputView> input_view[2];
 
-        // reset the sample view from the pending packet so it is unlocked
-        this->pending_request.sample_view = NULL;
-        this->pending_request2.sample_view = NULL;
+        //    D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
+        //    desc.FourCC = 0; // uses the same format the input resource has
+        //    desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+        //    desc.Texture2D.MipSlice = 0;
+        //    desc.Texture2D.ArraySlice = 0;
+        //    CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
+        //        texture, this->transform->enumerator, &desc, &input_view[0]));
+        //    CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
+        //        texture2, this->transform->enumerator, &desc, &input_view[1]));
+
+        //    // TODO: do not create input views every time
+
+        //    // convert
+        //    D3D11_VIDEO_PROCESSOR_STREAM stream[2];
+        //    RECT source_rect;
+        //    source_rect.top = source_rect.left = 0;
+        //    source_rect.right = 1920;
+        //    source_rect.bottom = 1080;
+
+        //    for(int i = 0; i < 2; i++)
+        //    {
+        //        stream[i].Enable = TRUE;
+        //        stream[i].OutputIndex = 0;
+        //        stream[i].InputFrameOrField = 0;
+        //        stream[i].PastFrames = 0;
+        //        stream[i].FutureFrames = 0;
+        //        stream[i].ppPastSurfaces = NULL;
+        //        stream[i].pInputSurface = input_view[i];
+        //        stream[i].ppFutureSurfaces = NULL;
+        //        stream[i].ppPastSurfacesRight = NULL;
+        //        stream[i].pInputSurfaceRight = NULL;
+        //        stream[i].ppFutureSurfacesRight = NULL;
+        //    }
+
+        //    scoped_lock lock(this->transform->context_mutex);
+
+        //    // set the target rectangle for the output
+        //    // (sets the rectangle where the output blit on the output texture will appear)
+        //    this->transform->videocontext->VideoProcessorSetOutputTargetRect(
+        //        this->transform->videoprocessor, TRUE, &source_rect);
+
+        //    // set the source rectangle of the streams
+        //    // (the part of the stream texture which will be included in the blit)
+        //    this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+        //        this->transform->videoprocessor, 0, TRUE, &source_rect);
+        //    this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+        //        this->transform->videoprocessor, 1, TRUE, &source_rect);
+
+        //    // set the destination rectangle of the streams
+        //    // (where the stream will appear in the output blit)
+        //    this->transform->videocontext->VideoProcessorSetStreamDestRect(
+        //        this->transform->videoprocessor, 0, TRUE, &source_rect);
+        //    RECT rect;
+        //    rect.top = rect.left = 0;
+        //    rect.right = 1920 / 3;
+        //    rect.bottom = 1080 / 3;
+        //    this->transform->videocontext->VideoProcessorSetStreamDestRect(
+        //        this->transform->videoprocessor, 1, TRUE, &rect);
+
+        //    // dxva 2 and direct3d11 video seems to be similar
+        //    // https://msdn.microsoft.com/en-us/library/windows/desktop/cc307964(v=vs.85).aspx#Video_Process_Blit
+        //    // the video processor alpha blends the input streams to the target output
+        //    const UINT stream_count = 2;
+        //    CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
+        //        this->transform->videoprocessor, this->output_view,
+        //        0, stream_count, stream));
+        //}
+        //else
+        //    // TODO: read lock buffers is just a workaround for a deadlock bug
+        //    sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));
+
+        //// use the earliest timestamp;
+        //// actually, max must be used so that the timestamp stays incremental
+        //sample_view->sample.timestamp =
+        //    std::min(
+        //    this->pending_request2.sample_view->sample.timestamp, 
+        //    this->pending_request.sample_view->sample.timestamp);
+
+        // set the timestamp
+        sample_view->sample.timestamp = timestamp;
+        // rps are equivalent in every input stream
+        request_packet rp = this->input_streams[0].first.rp;
+
+        // reset the sample view from the input stream packets so it is unlocked;
         // reset the rps so that there aren't any circular dependencies at shutdown
-        this->pending_request.rp = request_packet();
-        this->pending_request2.rp = request_packet();
+        for(auto it = this->input_streams.begin(); it != this->input_streams.end(); it++)
+        {
+            it->first.sample_view = NULL;
+            it->first.rp = request_packet();
+        }
 
         this->transform->session->give_sample(this, sample_view, rp, false);
     }
 
 done:
+    if(blit)
+        for(auto it = this->input_streams_params.begin(); it != this->input_streams_params.end(); it++)
+            if(it->pInputSurface)
+            {
+                it->pInputSurface->Release();
+                it->pInputSurface = NULL;
+            };
+
     if(FAILED(hr))
         throw std::exception();
+}
+
+void stream_videoprocessor::add_input_stream(const media_stream* stream)
+{
+    if(this->input_streams.size() >= this->transform->max_input_streams())
+        throw std::exception();
+
+    D3D11_VIDEO_PROCESSOR_STREAM native_params;
+    // pinputsurface is initialized because it is referenced in processing_cb
+    native_params.pInputSurface = NULL;
+
+    this->input_streams.push_back(std::make_pair(packet(), stream));
+    this->input_streams_params.push_back(native_params);
 }
 
 media_stream::result_t stream_videoprocessor::request_sample(
@@ -214,13 +324,15 @@ media_stream::result_t stream_videoprocessor::request_sample(
 }
 
 media_stream::result_t stream_videoprocessor::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream* prev_stream)
+    const media_sample_view_t& sample_view_, request_packet& rp, const media_stream* prev_stream)
 {
-    CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;
+    media_sample_view_videoprocessor_t sample_view = cast<media_sample_view_videoprocessor>(sample_view_);
+    assert_(sample_view);
+    CComPtr<ID3D11Texture2D> texture = sample_view->texture_buffer->texture;
 
     // this function needs to be locked because media session dispatches the process sample calls
     // to work queues in a same node
-    std::unique_lock<std::recursive_mutex> lock(this->mutex);
+    scoped_lock lock(this->mutex);
 
     // create the output view if it hasn't been created
     if(!this->view_initialized && texture)
@@ -245,23 +357,29 @@ media_stream::result_t stream_videoprocessor::process_sample(
         CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
             this->output_buffer->texture, this->transform->enumerator,
             &view_desc, &this->output_view));
+
+        // set the videoprocessor output target rect
+        this->output_target_rect.left = 0;
+        this->output_target_rect.top = 0;
+        this->output_target_rect.right = desc.Width;
+        this->output_target_rect.bottom = desc.Height;
     }
 
-    if(prev_stream == this->primary_stream)
     {
-        this->pending_request.rp = rp;
-        this->pending_request.sample_view = sample_view;
-    }
-    else
-    {
-        this->pending_request2.rp = rp;
-        this->pending_request2.sample_view = sample_view;
-    }
+        auto it = std::find_if(this->input_streams.begin(), this->input_streams.end(), 
+            [prev_stream](const input_streams_t& e) {return e.second == prev_stream;});
+        assert_(it != this->input_streams.end());
 
-    if(this->pending_request.sample_view && this->pending_request2.sample_view)
-    {
-        lock.unlock();
-        this->processing_cb(NULL);
+        it->first.rp = rp;
+        it->first.sample_view = sample_view;
+        this->samples_received++;
+
+        assert_(this->samples_received <= (int)this->input_streams.size());
+        if(this->samples_received == (int)this->input_streams.size())
+        {
+            this->processing_cb(NULL);
+            this->samples_received = 0;
+        }
     }
 
     return OK;
@@ -269,4 +387,36 @@ done:
     this->view_initialized = false;
     throw std::exception();
     return FATAL_ERROR;
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+media_sample_view_videoprocessor::media_sample_view_videoprocessor(
+    const params_t& params, 
+    const media_buffer_texture_t& texture_buffer, view_lock_t view_lock) :
+    params(params),
+    media_sample_view_texture(texture_buffer, view_lock)
+{
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+void stream_videoprocessor_controller::get_params(params_t& params) const
+{
+    scoped_lock lock(this->mutex);
+    params = this->params;
+}
+
+void stream_videoprocessor_controller::set_params(const params_t& params)
+{
+    scoped_lock lock(this->mutex);
+    this->params = params;
 }

@@ -31,6 +31,15 @@ void gui_maindlg::add_new_item(new_item_t item)
         const INT_PTR ret = dlg.DoModal(*this, item);
         if(ret == 0)
         {
+            static int i = 1;
+            dlg.displaycaptures[dlg.cursel].video.source_rect = {0};
+            dlg.displaycaptures[dlg.cursel].video.dest_rect = {0};
+            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1920;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1080;
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.right = 1920 / i;
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.bottom = 1080 / i;
+            i *= 2;
+
             scene.add_displaycapture_item(dlg.displaycaptures[dlg.cursel]);
             this->wnd_video_list.AddString(L"Video");
 
@@ -102,6 +111,19 @@ LRESULT gui_maindlg::OnBnClickedButtonRecord(WORD /*wNotifyCode*/, WORD /*wID*/,
     {
         this->wnd_parent.ctrl_pipeline.set_inactive();
         this->wnd_record.SetWindowTextW(L"Start Recording");
+    }
+
+    return 0;
+}
+
+
+LRESULT gui_maindlg::OnLbnSelchangeListScenes(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
+{
+    if(this->wnd_parent.ctrl_pipeline.is_running())
+    {
+        const int index = this->wnd_scene_list.GetCurSel();
+        this->wnd_parent.ctrl_pipeline.set_active(
+            this->wnd_parent.ctrl_pipeline.get_scene(index));
     }
 
     return 0;

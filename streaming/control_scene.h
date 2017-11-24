@@ -2,6 +2,7 @@
 #include "media_topology.h"
 #include "source_loopback.h"
 #include "source_displaycapture5.h"
+#include "transform_videoprocessor.h"
 #include <mmdeviceapi.h>
 #include <string>
 #include <vector>
@@ -16,11 +17,27 @@ class control_scene
 {
     friend class control_pipeline;
 public:
+    // control scene needs to keep the item structs separate from the component
+    // structs so that the items can be serialized
+
+    enum video_item_t
+    {
+        DISPLAYCAPTURE_ITEM
+    };
+
+    struct video_item
+    {
+        RECT source_rect, dest_rect;
+        video_item_t type;
+    };
     struct displaycapture_item
     {
+        video_item video;
         UINT adapter_ordinal, output_ordinal;
         DXGI_ADAPTER_DESC1 adapter;
         DXGI_OUTPUT_DESC output;
+
+        displaycapture_item() {this->video.type = DISPLAYCAPTURE_ITEM;}
     };
     struct audio_item
     {
@@ -33,11 +50,15 @@ private:
     control_pipeline& pipeline;
     media_topology_t video_topology, audio_topology;
 
+    // video items is a collection of different types of video items
+    std::vector<video_item> video_items;
     std::vector<displaycapture_item> displaycapture_items;
     std::vector<audio_item> audio_items;
 
     std::vector<std::pair<displaycapture_item, source_displaycapture5_t>> displaycapture_sources;
     std::vector<std::pair<audio_item, source_loopback_t>> audio_sources;
+    // each video_item will activate a videoprocessor stream controller
+    std::vector<stream_videoprocessor_controller_t> videoprocessor_stream_controllers;
 
     bool list_available_audio_items(std::vector<audio_item>& audios, EDataFlow);
 

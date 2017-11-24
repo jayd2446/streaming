@@ -17,7 +17,6 @@ class transform_audiomix : public media_source
 {
     friend class stream_audiomix;
 private:
-    // both might return null
     CComPtr<IMFMediaBuffer> copy(
         UINT32 bit_depth, UINT32 channels,
         const CComPtr<IMFSample>& sample, frame_unit start, frame_unit end) const;

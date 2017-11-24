@@ -105,10 +105,28 @@ public:
     media_sample sample;
 
     explicit media_sample_view(const media_buffer_t& buffer, view_lock_t = LOCK_BUFFERS);
-    ~media_sample_view();
+    virtual ~media_sample_view();
 
     template<typename T>
     std::shared_ptr<T> get_buffer() const {return std::dynamic_pointer_cast<T>(this->sample.buffer);}
 };
 
 typedef std::shared_ptr<media_sample_view> media_sample_view_t;
+
+// TODO: dynamic buffer casting should be changed to this
+class media_sample_view_texture : public media_sample_view
+{
+private:
+public:
+    const media_buffer_texture_t texture_buffer;
+    explicit media_sample_view_texture(
+        const media_buffer_texture_t& texture_buffer, view_lock_t = LOCK_BUFFERS);
+};
+
+typedef std::shared_ptr<media_sample_view_texture> media_sample_view_texture_t;
+
+template<typename T>
+inline std::shared_ptr<T> cast(const media_sample_view_t& sample_view)
+{
+    return std::dynamic_pointer_cast<T>(sample_view);
+}

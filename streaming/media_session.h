@@ -64,6 +64,8 @@ public:
         request_packet rp;
     };
 private:
+    std::atomic_bool is_shutdown;
+
     media_topology_t current_topology;
 
     std::recursive_mutex topology_switch_mutex;
