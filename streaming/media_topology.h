@@ -28,7 +28,7 @@ public:
 private:
     topology_t topology, topology_reverse;
     presentation_clock_t clock;
-    volatile int packet_number;
+    volatile int packet_number, first_packet_number;
 public:
     // TODO: implement topology cloning;
     // requires streams to clone themselves to a new stream
@@ -36,6 +36,7 @@ public:
 
     bool connect_streams(const media_stream_t& stream, const media_stream_t& stream2);
     presentation_clock_t get_clock() const {return this->clock;}
+    int get_first_packet_number() const {return this->first_packet_number;}
 };
 
 typedef std::shared_ptr<media_topology> media_topology_t;

@@ -1,7 +1,7 @@
 #include "media_topology.h"
 
 media_topology::media_topology(const presentation_time_source_t& time_source) : 
-    clock(new presentation_clock(time_source)), packet_number(0)
+    clock(new presentation_clock(time_source)), packet_number(0), first_packet_number(0)
 {
 }
 

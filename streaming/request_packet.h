@@ -46,9 +46,9 @@ private:
 
     int get_index(int packet_number) const;
 public:
-    explicit request_queue(int first_packet_number = 0);
+    request_queue();
 
-    // rp.packet_number needs to be valid
+    // rp needs to be valid
     void push(const request_t&);
     bool pop(request_t&);
     bool get(request_t&);

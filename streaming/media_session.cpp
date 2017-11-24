@@ -56,7 +56,8 @@ bool media_session::switch_topology_immediate(const media_topology_t& new_topolo
         clock->clock_stop(time_point);
 
         media_topology_t old_topology = std::atomic_load(&this->current_topology);
-        topology->packet_number = old_topology->packet_number;
+        topology->first_packet_number = old_topology->packet_number;
+        topology->packet_number = topology->first_packet_number;
     }
 
     // switch to the new topology

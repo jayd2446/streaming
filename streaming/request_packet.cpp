@@ -10,8 +10,8 @@ bool request_packet::get_clock(presentation_clock_t& clock) const
     return !!clock;
 }
 
-request_queue::request_queue(int first_packet_number) :
-    first_packet_number(first_packet_number), last_packet_number(first_packet_number)
+request_queue::request_queue() :
+    first_packet_number(INVALID_PACKET_NUMBER), last_packet_number(INVALID_PACKET_NUMBER)
 {
 }
 
@@ -23,12 +23,18 @@ int request_queue::get_index(int packet_number) const
 void request_queue::push(const request_t& request)
 {
     scoped_lock lock(this->requests_mutex);
+    // starting packet number must be initialized lazily
+    if(this->first_packet_number == INVALID_PACKET_NUMBER)
+    {
+        this->first_packet_number = 
+            this->last_packet_number = request.rp.topology->get_first_packet_number();
+    }
+
     if(request.rp.packet_number < this->first_packet_number)
     {
+        // queue won't work properly if the first packet number is greater than
+        // the one in the submitted request
         assert_(false);
-        /*const int diff = this->first_packet_number - request.rp.packet_number;
-        this->requests.insert(this->requests.begin(), diff, request);
-        this->first_packet_number = request.rp.packet_number;*/
     }
     else if(request.rp.packet_number > this->last_packet_number)
     {
