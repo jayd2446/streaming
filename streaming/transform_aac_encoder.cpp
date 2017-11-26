@@ -29,34 +29,66 @@ void transform_aac_encoder::processing_cb(void*)
         }
         else
         {
+            /*std::cout << "processing.." << std::endl;*/
             media_buffer_samples_t samples_buffer = 
                 request.sample_view->get_buffer<media_buffer_samples>();
             media_buffer_samples_t output_samples_buffer(new media_buffer_samples);
             const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples_buffer->sample_rate;
 
+            assert_(samples_buffer->bit_depth == sizeof(bit_depth_t) &&
+                samples_buffer->channels == channels &&
+                samples_buffer->sample_rate == sample_rate);
+
+            CComPtr<IMFSample> out_sample;
+            CComPtr<IMFMediaBuffer> out_buffer;
+            auto reset_sample = [&out_sample, &out_buffer, this]()
+            {
+                HRESULT hr = S_OK;
+                CHECK_HR(hr = MFCreateSample(&out_sample));
+                CHECK_HR(hr = MFCreateMemoryBuffer(
+                    this->output_stream_info.cbSize, &out_buffer));
+                CHECK_HR(hr = out_sample->AddBuffer(out_buffer));
+
+            done:
+                if(FAILED(hr))
+                    throw std::exception();
+            };
+
+            reset_sample();
             for(auto it = samples_buffer->samples.begin(); it != samples_buffer->samples.end(); it++)
             {
                 // convert the frame units to time units
                 frame_unit ts, dur;
                 CHECK_HR(hr = (*it)->GetSampleTime(&ts));
                 CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
+
+#ifdef _DEBUG
+                if(ts < this->last_time_stamp)
+                    DebugBreak();
+                this->last_time_stamp = ts + dur;
+#endif
+
                 ts = (time_unit)(ts * sample_duration);
                 dur = (time_unit)(dur * sample_duration);
                 CHECK_HR(hr = (*it)->SetSampleTime(ts));
                 CHECK_HR(hr = (*it)->SetSampleDuration(dur));
-                
-#ifdef _DEBUG
-                if(ts <= this->last_time_stamp)
-                    DebugBreak();
-                this->last_time_stamp = ts;
-#endif
+               
+
                 /*std::cout << "ts: " << ts << ", dur+ts: " << ts + dur << std::endl;*/
 
             back:
                 hr = this->encoder->ProcessInput(this->input_id, *it, 0);
                 if(hr == MF_E_NOTACCEPTING)
                 {
-                    this->process_output_cb(&request, output_samples_buffer);
+                    if(!this->process_output(out_sample))
+                        goto back;
+                    
+                    output_samples_buffer->samples.push_back(out_sample);
+
+                    // reset the out sample
+                    out_sample = NULL;
+                    out_buffer = NULL;
+                    reset_sample();
                     goto back;
                 }
                 else
@@ -83,7 +115,7 @@ done:
         throw std::exception();
 }
 
-bool transform_aac_encoder::process_output_cb(request_t*, media_buffer_samples_t& out)
+bool transform_aac_encoder::process_output(IMFSample* sample)
 {
     HRESULT hr = S_OK;
 
@@ -92,59 +124,26 @@ bool transform_aac_encoder::process_output_cb(request_t*, media_buffer_samples_t
 
     MFT_OUTPUT_DATA_BUFFER output;
     DWORD status = 0;
-    CComPtr<IMFSample> sample;
-    CComPtr<IMFMediaBuffer> buffer;
 
     if(mft_provides_samples)
         throw std::exception();
     if(this->output_stream_info.cbAlignment)
         throw std::exception();
 
-    CHECK_HR(hr = MFCreateSample(&sample));
-    CHECK_HR(hr = MFCreateMemoryBuffer(this->output_stream_info.cbSize, &buffer));
-
-    CHECK_HR(hr = sample->AddBuffer(buffer));
-
     output.dwStreamID = this->output_id;
     output.dwStatus = 0;
     output.pEvents = NULL;
     output.pSample = sample;
 
-    // The size of the pOutputSamples array must be equal to
-    // or greater than the number of selected output streams
     CHECK_HR(hr = this->encoder->ProcessOutput(0, 1, &output, &status));
 
 done:
-    if(hr == MF_E_TRANSFORM_NEED_MORE_INPUT)
-    {
-        return false;
-        /*media_sample_view_t sample_view;
-        this->session->give_sample(request->stream, sample_view, request->rp, false);*/
-    }
-    else if(FAILED(hr))
+    if(hr != MF_E_TRANSFORM_NEED_MORE_INPUT && FAILED(hr))
         throw std::exception();
-    else
-    {
-        static LONGLONG dur = 0;
-        /*CHECK_HR(hr = sample->SetSampleTime(dur));*/
-        /*CHECK_HR(hr = sample->SetSampleDuration(213334));*/
-        out->samples.push_back(sample);
-
-        dur += 213334+1;
-        /*dur = 0;*/
-
-        /*media_buffer_aac_t buffer(new media_buffer_aac);
-        buffer->sample = sample;
-        media_sample_t sample(new media_sample);
-        sample->buffer = buffer;
-        media_sample_view_t sample_view(new media_sample_view(sample));
-        this->session->give_sample(request->stream, sample_view, request->rp, false);*/
-    }
-
-    return true;
+    return SUCCEEDED(hr);
 }
 
-HRESULT transform_aac_encoder::initialize()
+void transform_aac_encoder::initialize(bitrate_t bitrate)
 {
     HRESULT hr = S_OK;
 
@@ -166,27 +165,24 @@ HRESULT transform_aac_encoder::initialize()
 
     CHECK_HR(hr = activate[0]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
 
-    const UINT32 samples_per_second = 48000;
-    const UINT32 channels = 2;
-
     // set input type
     /*this->input_type = input_type;*/
     CHECK_HR(hr = MFCreateMediaType(&this->input_type));
     /*CHECK_HR(hr = input_type->CopyAllItems(this->input_type));*/
     CHECK_HR(hr = this->input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
     CHECK_HR(hr = this->input_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM));
-    CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16));
-    CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, samples_per_second));
+    CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, sizeof(bit_depth_t) * 8));
+    CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate));
     CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channels));
 
     // set output type
     CHECK_HR(hr = MFCreateMediaType(&this->output_type));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_AAC));
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16));
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, samples_per_second));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, sizeof(bit_depth_t) * 8));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channels));
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, (192 * 1000) / 8));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, bitrate));
 
     // get streams
     DWORD input_stream_count, output_stream_count;
@@ -220,8 +216,6 @@ done:
 
     if(FAILED(hr))
         throw std::exception();
-
-    return hr;
 }
 
 media_stream_t transform_aac_encoder::create_stream()

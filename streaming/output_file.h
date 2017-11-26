@@ -9,7 +9,12 @@
 
 class output_file
 {
+public:
+    typedef std::lock_guard<std::mutex> scoped_lock;
 private:
+    volatile bool stopped;
+    std::mutex stop_mutex;
+
     HANDLE stopped_signal;
     CComPtr<IMFMediaType> video_type;
     CComPtr<IMFMediaType> audio_type;
@@ -26,6 +31,7 @@ public:
         const CComPtr<IMFMediaType>& audio_type);
 
     void write_sample(bool video, const CComPtr<IMFSample>& sample);
+    void force_stop();
 };
 
 typedef std::shared_ptr<output_file> output_file_t;

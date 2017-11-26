@@ -169,11 +169,32 @@ void control_scene::reset_topology(bool create_new)
         {
             stream_audio_worker_t worker_stream = this->pipeline.audio_sink->create_worker_stream();
             media_stream_t aac_encoder_stream = this->pipeline.aac_encoder_transform->create_stream();
-            media_stream_t loopback_stream = this->audio_sources[0].second->create_stream();
 
             audio_stream->add_worker_stream(worker_stream);
 
-            this->audio_topology->connect_streams(loopback_stream, aac_encoder_stream);
+            // chain first audio source to processor
+            media_stream_t first_audio_stream = this->audio_sources[0].second->create_stream();
+            media_stream_t last_stream = this->audio_processors[0]->create_stream();
+            this->audio_topology->connect_streams(first_audio_stream, last_stream);
+
+            // chain audio mixers
+            for(size_t i = 1; i < this->audio_items.size(); i++)
+            {
+                stream_audiomix_t audiomix_stream = this->audio_mixers[i - 1]->create_stream();
+                // no need for switch-case because currently all audio items are of loopback source type
+                media_stream_t audio_stream = this->audio_sources[i].second->create_stream();
+                media_stream_t audioprocessor_stream = this->audio_processors[i]->create_stream();
+
+                audiomix_stream->set_primary_stream(last_stream.get());
+
+                this->audio_topology->connect_streams(last_stream, audiomix_stream);
+                this->audio_topology->connect_streams(audio_stream, audioprocessor_stream);
+                this->audio_topology->connect_streams(audioprocessor_stream, audiomix_stream);
+
+                last_stream = audiomix_stream;
+            }
+
+            this->audio_topology->connect_streams(last_stream, aac_encoder_stream);
             this->audio_topology->connect_streams(aac_encoder_stream, worker_stream);
             this->audio_topology->connect_streams(worker_stream, audio_stream);
         }
@@ -184,7 +205,9 @@ void control_scene::activate_scene()
 {
     assert_(this->displaycapture_sources.empty() && 
         this->audio_sources.empty() &&
-        this->videoprocessor_stream_controllers.empty());
+        this->videoprocessor_stream_controllers.empty() &&
+        this->audio_mixers.empty() &&
+        this->audio_processors.empty());
 
     // activate displaycapture items
     for(auto it = this->displaycapture_items.begin(); it != this->displaycapture_items.end(); it++)
@@ -192,14 +215,6 @@ void control_scene::activate_scene()
         source_displaycapture5_t displaycapture_source = this->pipeline.create_displaycapture_source(
             it->adapter_ordinal, it->output_ordinal);
         this->displaycapture_sources.push_back(std::make_pair(*it, displaycapture_source));
-    }
-
-    // activate audio items
-    for(auto it = this->audio_items.begin(); it != this->audio_items.end(); it++)
-    {
-        source_loopback_t loopback_source = this->pipeline.create_audio_source(
-            it->device_id, it->capture);
-        this->audio_sources.push_back(std::make_pair(*it, loopback_source));
     }
 
     // activate video processor stream controllers
@@ -214,6 +229,22 @@ void control_scene::activate_scene()
         this->videoprocessor_stream_controllers.push_back(controller);
     }
 
+    // activate audio items
+    for(auto it = this->audio_items.begin(); it != this->audio_items.end(); it++)
+    {
+        source_loopback_t loopback_source = this->pipeline.create_audio_source(
+            it->device_id, it->capture);
+        this->audio_sources.push_back(std::make_pair(*it, loopback_source));
+    }
+
+    // activate audio processors
+    for(auto it = this->audio_items.begin(); it != this->audio_items.end(); it++)
+        this->audio_processors.push_back(this->pipeline.create_audio_processor());
+
+    // activate audio mixers
+    for(int i = 0; i < (int)this->audio_items.size() - 1; i++)
+        this->audio_mixers.push_back(this->pipeline.create_audio_mixer());
+
     // reset the topologies
     this->reset_topology(true);
 }
@@ -223,6 +254,8 @@ void control_scene::deactivate_scene()
     this->displaycapture_sources.clear();
     this->audio_sources.clear();
     this->videoprocessor_stream_controllers.clear();
+    this->audio_mixers.clear();
+    this->audio_processors.clear();
 
     // reset the topologies
     this->reset_topology(false);

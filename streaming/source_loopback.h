@@ -3,6 +3,7 @@
 #include "media_stream.h"
 #include "async_callback.h"
 #include "presentation_clock.h"
+#include "transform_aac_encoder.h"
 #include <Audioclient.h>
 #include <mfapi.h>
 #include <memory>
@@ -17,6 +18,8 @@
 
 #define BUFFER_DURATION SECOND_IN_TIME_UNIT
 #define MILLISECOND_IN_TIMEUNIT (SECOND_IN_TIME_UNIT / 1000)
+// wasapi is always 32 bit float in shared mode
+#define WASAPI_BITS_PER_SAMPLE 32
 
 class source_loopback;
 typedef std::shared_ptr<source_loopback> source_loopback_t;
@@ -34,8 +37,8 @@ public:
     // the base of consecutive samples the relative sample refers to
     struct sample_base_t {LONGLONG time, sample;};
 
-    // wasapi is always 32 bit float in shared mode
-    typedef int16_t bit_depth_t;
+    // output bit depth
+    typedef transform_aac_encoder::bit_depth_t bit_depth_t;
 private:
     CComPtr<IAudioClient> audio_client;
     CComPtr<IAudioCaptureClient> audio_capture_client;
@@ -54,6 +57,7 @@ private:
     sample_base_t stream_base;
     frame_unit consumed_samples_end;
     UINT64 device_time_position;
+    UINT64 next_frame_position;
     REFERENCE_TIME buffer_actual_duration;
 
     bool started;

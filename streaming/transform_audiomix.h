@@ -27,6 +27,8 @@ private:
         frame_unit start, frame_unit end) const;
 public:
     explicit transform_audiomix(const media_session_t& session);
+
+    void initialize() {}
     stream_audiomix_t create_stream();
 };
 

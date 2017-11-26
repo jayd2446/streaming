@@ -6,24 +6,14 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-output_file::output_file() : stopped_signal(NULL)
+output_file::output_file() : stopped_signal(NULL), stopped(false)
 {
 }
 
 output_file::~output_file()
 {
-    // finalize
-    HRESULT hr = S_OK;
-    CHECK_HR(hr = this->writer->Finalize());
-
-done:
-    this->writer.Release();
-    this->mpeg_media_sink->Shutdown();
-    SetEvent(this->stopped_signal);
-
-    // TODO: failure should be signaled through the stopped signal
-    if(FAILED(hr))
-        throw std::exception();
+    // clean stop
+    this->force_stop();
 }
 
 void output_file::initialize(HANDLE stopped_signal,
@@ -65,10 +55,35 @@ done:
 
 void output_file::write_sample(bool video, const CComPtr<IMFSample>& sample)
 {
+    if(this->stopped)
+        return;
+
     HRESULT hr = S_OK;
     CHECK_HR(hr = this->writer->WriteSample(video ? 0 : 1, sample));
 
 done:
+    if(!this->stopped && FAILED(hr))
+        throw std::exception();
+}
+
+void output_file::force_stop()
+{
+    if(this->stopped)
+        return;
+    this->stopped = true;
+
+    scoped_lock lock(this->stop_mutex);
+
+    // finalize
+    HRESULT hr = S_OK;
+    CHECK_HR(hr = this->writer->Finalize());
+
+done:
+    this->writer.Release();
+    this->mpeg_media_sink->Shutdown();
+    SetEvent(this->stopped_signal);
+
+    // TODO: failure should be signaled through the stopped signal
     if(FAILED(hr))
         throw std::exception();
 }

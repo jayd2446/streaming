@@ -6,6 +6,8 @@
 #include "transform_h264_encoder.h"
 #include "transform_color_converter.h"
 #include "transform_videoprocessor.h"
+#include "transform_audioprocessor.h"
+#include "transform_audiomix.h"
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
 #include "sink_preview2.h"
@@ -58,6 +60,8 @@ private:
     // or returns the component from the current scene
     source_loopback_t create_audio_source(const std::wstring& id, bool capture);
     source_displaycapture5_t create_displaycapture_source(UINT adapter_ordinal, UINT output_ordinal);
+    transform_audiomix_t create_audio_mixer();
+    transform_audioprocessor_t create_audio_processor();
 public:
     control_pipeline();
 

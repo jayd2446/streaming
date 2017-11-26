@@ -143,6 +143,25 @@ source_displaycapture5_t control_pipeline::create_displaycapture_source(
     return displaycapture_source;
 }
 
+transform_audiomix_t control_pipeline::create_audio_mixer()
+{
+    transform_audiomix_t transform_audio_mixer(
+        new transform_audiomix(this->mpeg_sink->audio_session));
+    transform_audio_mixer->initialize();
+    return transform_audio_mixer;
+}
+
+transform_audioprocessor_t control_pipeline::create_audio_processor()
+{
+    // do not share audio processor components between scenes because they are bound
+    // to specific sample rates and channels;
+    // audio processors can be shared if the input matches in the old and the new one
+    transform_audioprocessor_t transform_audio_processor(
+        new transform_audioprocessor(this->mpeg_sink->audio_session));
+    transform_audio_processor->initialize();
+    return transform_audio_processor;
+}
+
 void control_pipeline::set_active(control_scene& scene)
 {
     const bool starting = !this->scene_active;

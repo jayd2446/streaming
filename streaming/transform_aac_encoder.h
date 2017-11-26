@@ -16,6 +16,18 @@ class transform_aac_encoder : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef request_queue::request_t request_t;
+
+    static const UINT32 sample_rate = 44100;
+    static const UINT32 channels = 2;
+    enum bitrate_t
+    {
+        rate_96 = (96 * 1000) / 8,
+        rate_128 = (128 * 1000) / 8,
+        rate_160 = (160 * 1000) / 8,
+        rate_196 = (192 * 1000) / 8
+    };
+    typedef int16_t bit_depth_t;
+    static const UINT32 block_align = sizeof(bit_depth_t) * channels;
 private:
     CComPtr<IMFTransform> encoder;
     CComPtr<IMFMediaType> input_type;
@@ -31,13 +43,13 @@ private:
     frame_unit last_time_stamp;
 
     void processing_cb(void*);
-    bool process_output_cb(request_t*, media_buffer_samples_t&);
+    bool process_output(IMFSample*);
 public:
     CComPtr<IMFMediaType> output_type;
 
     explicit transform_aac_encoder(const media_session_t& session);
 
-    HRESULT initialize();
+    void initialize(bitrate_t bitrate = rate_128);
     media_stream_t create_stream();
 };
 

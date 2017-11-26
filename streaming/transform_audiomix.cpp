@@ -249,6 +249,17 @@ void stream_audiomix::process_cb(void*)
         // happens only if the ending times are different for the pending samples
         if(ptr_it ? it != pending_samples->samples.end() : jt != pending_samples2->samples.end())
         {
+            LONGLONG t, t2, dur, dur2;
+            CHECK_HR(hr = pending_samples->samples.back()->GetSampleTime(&t));
+            CHECK_HR(hr = pending_samples->samples.back()->GetSampleDuration(&dur));
+            CHECK_HR(hr = pending_samples2->samples.back()->GetSampleTime(&t2));
+            CHECK_HR(hr = pending_samples2->samples.back()->GetSampleDuration(&dur2));
+            /*if(std::abs((t + dur) - (t2 + dur2)) <= 2)
+            {
+                std::cout << "COPY SKIPPED" << std::endl;
+                goto skip;
+            }*/
+
             std::cout << "COPY" << std::endl;
 
             auto end = ptr_it ? pending_samples->samples.end() : pending_samples2->samples.end();
@@ -272,8 +283,12 @@ void stream_audiomix::process_cb(void*)
                 samples->samples.push_back(sample);
             }
         }
+    skip:
 
         sample_view.reset(new media_sample_view(samples));
+        sample_view->sample.timestamp = std::min(
+            this->pending_request.sample_view->sample.timestamp,
+            this->pending_request2.sample_view->sample.timestamp);
     }
     else
     {
