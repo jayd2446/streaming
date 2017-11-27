@@ -1,8 +1,8 @@
 #include "source_loopback.h"
+#include "assert.h"
 #include <initguid.h>
 #include <mmdeviceapi.h>
 #include <Mferror.h>
-#include "assert.h"
 #include <iostream>
 #include <limits>
 #include <cmath>
@@ -67,7 +67,6 @@ source_loopback::source_loopback(const media_session_t& session) :
     CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &this->work_queue_id));
 
     this->process_callback.Attach(new async_callback_t(&source_loopback::process_cb, this->work_queue_id));
-    this->serve_callback.Attach(new async_callback_t(&source_loopback::serve_cb));
 
     this->stream_base.time = this->stream_base.sample = -1;
 
@@ -171,7 +170,8 @@ void source_loopback::process_cb(void*)
             this->stream_base.sample = devposition;
             this->stream_base.time = first_sample_timestamp;
         }
-        sample_base_t base = {(LONGLONG)first_sample_timestamp, (LONGLONG)devposition};
+        /*sample_base_t base = {(LONGLONG)first_sample_timestamp, (LONGLONG)devposition};*/
+        sample_base_t base = {-1, -1};
         if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
         {
             // TODO: to combat against a possible drift in the timestamps
@@ -247,158 +247,6 @@ done:
 
     lock.unlock();
     this->add_event_to_wait_queue();
-    this->serve_requests();
-}
-
-void source_loopback::serve_cb(void*)
-{
-    // only one thread should be executing this
-    std::unique_lock<std::recursive_mutex> lock2(this->serve_mutex, std::try_to_lock);
-    if(!lock2.owns_lock())
-        return;
-
-    HRESULT hr = S_OK;
-    request_t request;
-    while(this->requests.get(request))
-    {
-        // clock is assumed to be valid if there's a request pending
-        presentation_clock_t clock;
-        request.rp.get_clock(clock);
-
-        // samples are collected up to the request time;
-        // sample that goes over the request time will not be collected
-
-        bool dispatch = false;
-        media_buffer_samples_t samples(new media_buffer_samples);
-        const double sample_duration = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
-        const frame_unit request_end = (frame_unit)(request.rp.request_time / sample_duration);
-
-        std::unique_lock<std::recursive_mutex> lock(this->samples_mutex);
-        size_t consumed_samples = 0;
-        for(auto it = this->samples.begin(); it != this->samples.end(); it++)
-        {
-            CComPtr<IMFSample> sample;
-            CComPtr<IMFMediaBuffer> buffer, oldbuffer;
-            DWORD buflen;
-            sample_base_t stream_base;
-
-            LONGLONG sample_pos, sample_dur;
-            CHECK_HR(hr = (*it)->GetSampleTime(&sample_pos));
-            CHECK_HR(hr = (*it)->GetSampleDuration(&sample_dur));
-            CHECK_HR(hr = 
-                (*it)->GetBlob(MF_MT_USER_DATA, (UINT8*)&stream_base, sizeof(sample_base_t), NULL));
-            /*if(stream_base.time >= 0)
-                this->stream_base = stream_base;*/
-            assert_(this->stream_base.time >= 0);
-
-            const frame_unit frame_base = (frame_unit)
-                (clock->get_time_source()->system_time_to_time_source(this->stream_base.time) / 
-                sample_duration);
-            // frame pos is continuous unless the device position has been incremented
-            // enough to skip frames
-            const frame_unit frame_pos = frame_base + (sample_pos - this->stream_base.sample);
-                /*std::max(
-                frame_base + (sample_pos - this->stream_base.sample), 
-                this->consumed_samples_end);*/
-            const frame_unit frame_end = frame_pos + sample_dur;
-
-            //std::cout << frame_base + (sample_pos - this->stream_base.sample) <<
-            //    /*", " << this->consumed_samples_end <<*/ std::endl;
-
-            // too new sample for the request
-            if(frame_pos >= request_end)
-            {
-                dispatch = true;
-                break;
-            }
-            // request can be dispatched
-            if(frame_end >= request_end)
-                dispatch = true;
-
-            CHECK_HR(hr = (*it)->GetBufferByIndex(0, &oldbuffer));
-            CHECK_HR(hr = oldbuffer->GetCurrentLength(&buflen));
-
-            const frame_unit frame_diff_end = std::max(frame_end - request_end, 0LL);
-            const DWORD offset_end  = (DWORD)frame_diff_end * this->get_block_align();
-
-            assert_(((int)buflen - (int)offset_end) > 0);
-            CHECK_HR(hr = MFCreateMediaBufferWrapper(
-                oldbuffer, 0, buflen - offset_end, &buffer));
-            CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
-            if(offset_end > 0)
-            {
-                // remove the consumed part of the old buffer
-                CComPtr<IMFMediaBuffer> new_buffer;
-                CHECK_HR(hr = MFCreateMediaBufferWrapper(
-                    oldbuffer, buflen - offset_end, offset_end, &new_buffer));
-                CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
-                CHECK_HR(hr = (*it)->RemoveAllBuffers());
-                CHECK_HR(hr = (*it)->AddBuffer(new_buffer));
-                const LONGLONG new_sample_dur = offset_end / this->get_block_align();
-                const LONGLONG new_sample_time = sample_pos + sample_dur - new_sample_dur;
-                CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
-                CHECK_HR(hr = (*it)->SetSampleDuration(new_sample_dur));
-            }
-            else
-                consumed_samples++;
-            CHECK_HR(hr = MFCreateSample(&sample));
-            CHECK_HR(hr = sample->AddBuffer(buffer));
-            const frame_unit new_sample_time = frame_pos;
-            const frame_unit new_sample_dur = sample_dur - frame_diff_end;
-            CHECK_HR(hr = sample->SetSampleTime(new_sample_time));
-            CHECK_HR(hr = sample->SetSampleDuration(new_sample_dur));
-
-
-
-            if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
-                samples->samples.push_back(sample);
-
-            this->consumed_samples_end = new_sample_time + new_sample_dur;
-        }
-
-        // TODO: stale requests should be checked other way
-        // request is considered stale if the device time has already passed the request time
-        // and there isn't any samples to serve
-        if(request.rp.request_time <= (clock->get_current_time() - SECOND_IN_TIME_UNIT))
-            dispatch = true;
-
-        if(dispatch)
-        {
-            // erase all consumed samples
-            for(size_t i = 0; i < consumed_samples; i++)
-                this->samples.pop_front();
-
-            // pop the request from the queue
-            this->requests.pop(request);
-
-            lock.unlock();
-            // dispatch the request
-            media_sample_view_t sample_view;
-            if(!samples->samples.empty())
-            {
-                sample_view.reset(new media_sample_view(samples));
-                samples->bit_depth = sizeof(bit_depth_t);
-                samples->channels = this->channels;
-                samples->sample_rate = this->samples_per_second;
-            }
-            request.stream->process_sample(sample_view, request.rp, NULL);
-        }
-        else
-            break;
-    }
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
-}
-
-void source_loopback::serve_requests()
-{
-    const HRESULT hr = this->serve_callback->mf_put_work_item(this->shared_from_this<source_loopback>());
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
-    else if(hr == MF_E_SHUTDOWN)
-        return;
 }
 
 HRESULT source_loopback::initialize(const std::wstring& device_id, bool capture)
@@ -508,12 +356,18 @@ stream_loopback::stream_loopback(const source_loopback_t& source) :
 
 media_stream::result_t stream_loopback::request_sample(request_packet& rp, const media_stream*)
 {
-    source_loopback::request_t request;
-    request.stream = this;
-    request.rp = rp;
+    media_buffer_samples_t samples(new media_buffer_samples);
+    media_sample_view_t sample_view(new media_sample_view(samples));
+    {
+        scoped_lock lock(this->source->samples_mutex);
+        samples->samples.swap(this->source->samples);
+    }
 
-    this->source->requests.push(request);
-    return OK;
+    samples->bit_depth = sizeof(source_loopback::bit_depth_t) * 8;
+    samples->channels = this->source->channels;
+    samples->sample_rate = this->source->samples_per_second;
+
+    return this->process_sample(sample_view, rp, NULL);
 }
 
 media_stream::result_t stream_loopback::process_sample(

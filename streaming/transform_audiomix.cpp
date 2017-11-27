@@ -23,7 +23,7 @@ CComPtr<IMFMediaBuffer> transform_audiomix::copy(
     HRESULT hr = S_OK;
     CComPtr<IMFMediaBuffer> buffer, out_buffer;
     DWORD buflen;
-    const UINT32 block_align = bit_depth * channels;
+    const UINT32 block_align = (bit_depth * channels) / 8;
     frame_unit ts;
 
     CHECK_HR(hr = sample->GetSampleTime(&ts));
@@ -55,7 +55,7 @@ CComPtr<IMFMediaBuffer> transform_audiomix::mix(
     HRESULT hr = S_OK;
     CComPtr<IMFMediaBuffer> buffer, buffer2, out_buffer;
     DWORD buflen, buflen2;
-    const UINT32 block_align = bit_depth * channels;
+    const UINT32 block_align = (bit_depth * channels) / 8;
     frame_unit ts, ts2;
     typedef int16_t bit_depth_t;
     typedef uint16_t ubit_depth_t;
@@ -77,7 +77,7 @@ CComPtr<IMFMediaBuffer> transform_audiomix::mix(
     assert_(((int)buflen2 - (int)offset_end2) >= 0);
     assert_((int)offset_start < (int)offset_end);
     assert_((int)offset_start2 < (int)offset_end2);
-    assert_(sizeof(bit_depth_t) == bit_depth);
+    assert_(sizeof(bit_depth_t) == (bit_depth / 8));
     assert_((int)offset_end - (int)offset_start == (int)offset_end2 - (int)offset_start2);
     assert_(sizeof(bit_depth_t) < sizeof(int64_t));
 
@@ -152,8 +152,8 @@ void stream_audiomix::process_cb(void*)
         bool ptr_it = true;
         frame_unit ptr_tp_start = std::numeric_limits<frame_unit>::min();
 
-        assert_(pending_samples->bit_depth == sizeof(bit_depth_t) && 
-            pending_samples2->bit_depth == sizeof(bit_depth_t));
+        assert_(pending_samples->bit_depth == (sizeof(bit_depth_t) * 8) && 
+            pending_samples2->bit_depth == (sizeof(bit_depth_t) * 8));
         assert_(pending_samples->channels == pending_samples2->channels);
         assert_(pending_samples->sample_rate == pending_samples2->sample_rate);
 

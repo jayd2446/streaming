@@ -6,25 +6,41 @@
 #include <mfapi.h>
 #include <memory>
 #include <mutex>
+#include <deque>
 
 #pragma comment(lib, "Mfplat.lib")
 
 #define OUT_BUFFER_FRAMES 1024
 
+// resamples and cuts the audio
+
 class transform_audioprocessor : public media_source
 {
     friend class stream_audioprocessor;
 public:
-    typedef std::lock_guard<std::mutex> scoped_lock;
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef request_queue::request_t request_t;
 private:
     bool running;
     CComPtr<IMFTransform> processor;
     MFT_OUTPUT_STREAM_INFO output_stream_info;
     CComPtr<IMFMediaType> input_type, output_type;
     UINT32 channels, sample_rate, block_align;
-    std::mutex set_type_mutex;
+    std::recursive_mutex set_type_mutex;
 
-    void reset_input_type(UINT channels, UINT sample_rate);
+    request_queue requests, requests_resample;
+    std::recursive_mutex samples_mutex, process_mutex;
+    std::deque<CComPtr<IMFSample>> samples;
+
+    frame_unit sample_base;
+    frame_unit next_sample_pos;
+
+    void reset_input_type(UINT channels, UINT sample_rate, UINT bit_depth);
+    bool resampler_process_output(IMFSample*);
+    // resamples all the samples and pushes them to samples container
+    void resample(const media_buffer_samples_t&, const request_packet&);
+    // tries to serve the request queue
+    void try_serve();
 public:
     explicit transform_audioprocessor(const media_session_t& session);
 
@@ -37,13 +53,13 @@ typedef std::shared_ptr<transform_audioprocessor> transform_audioprocessor_t;
 class stream_audioprocessor : public media_stream
 {
 public:
-    struct packet {request_packet rp; media_sample_view_t sample_view;};
-    typedef std::lock_guard<std::mutex> scoped_lock;
+    typedef transform_audioprocessor::scoped_lock scoped_lock;
+    typedef async_callback<stream_audioprocessor> async_callback_t;
 private:
     transform_audioprocessor_t transform;
-    packet pending_packet;
+    CComPtr<async_callback_t> process_callback;
+
     void processing_cb(void*);
-    bool process_output(IMFSample*);
 public:
     explicit stream_audioprocessor(const transform_audioprocessor_t& transform);
 

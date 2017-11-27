@@ -49,8 +49,6 @@ private:
 
     std::recursive_mutex process_mutex;
     CComPtr<async_callback_t> process_callback;
-    std::recursive_mutex serve_mutex;
-    CComPtr<async_callback_t> serve_callback;
 
     std::recursive_mutex samples_mutex;
     std::deque<CComPtr<IMFSample>> samples;
@@ -70,8 +68,6 @@ private:
     HRESULT add_event_to_wait_queue();
     HRESULT create_waveformat_type(WAVEFORMATEX*);
     void process_cb(void*);
-    void serve_cb(void*);
-    void serve_requests();
     HRESULT start();
 
     double sine_var;
@@ -97,7 +93,7 @@ public:
 class stream_loopback : public media_stream
 {
 public:
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef source_loopback::scoped_lock scoped_lock;
 private:
     source_loopback_t source;
 public:

@@ -35,7 +35,7 @@ void transform_aac_encoder::processing_cb(void*)
             media_buffer_samples_t output_samples_buffer(new media_buffer_samples);
             const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples_buffer->sample_rate;
 
-            assert_(samples_buffer->bit_depth == sizeof(bit_depth_t) &&
+            assert_(samples_buffer->bit_depth == (sizeof(bit_depth_t) * 8) &&
                 samples_buffer->channels == channels &&
                 samples_buffer->sample_rate == sample_rate);
 

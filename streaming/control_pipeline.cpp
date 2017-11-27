@@ -189,6 +189,8 @@ void control_pipeline::set_active(control_scene& scene)
     }
 }
 
+#include <iostream>
+
 void control_pipeline::set_inactive()
 {
     assert_(this->scene_active);
@@ -197,6 +199,8 @@ void control_pipeline::set_inactive()
     this->scene_active = NULL;
     this->session->stop_playback();
     this->session->shutdown();
+    std::cout << "FORCE STOPPING..." << std::endl;
+    this->mpeg_sink->get_output()->force_stop();
     this->reset_components(false);
 
     WaitForSingleObject(this->stopped_signal, INFINITE);

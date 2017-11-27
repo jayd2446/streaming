@@ -58,14 +58,7 @@ bool request_queue::pop(request_t& request)
     if(this->get(request))
     {
         this->requests.pop_front();
-
         this->first_packet_number++;
-        /*if(this->first_packet_number > this->last_packet_number)
-        {
-            assert_(this->requests.empty());
-            this->last_packet_number = this->first_packet_number;
-        }*/
-
         return true;
     }
 
