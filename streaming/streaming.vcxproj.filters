@@ -221,9 +221,6 @@
     <ClInclude Include="output_file.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="device_wasapi.h">
-      <Filter>device</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="streaming.rc">
