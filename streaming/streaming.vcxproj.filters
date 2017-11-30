@@ -19,6 +19,9 @@
     <Filter Include="control">
       <UniqueIdentifier>{8e72a79c-df43-42d4-a772-83ff60b171fb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="device">
+      <UniqueIdentifier>{7cd74cec-54d7-4420-84b4-7cf7a417163c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -217,6 +220,9 @@
     </ClInclude>
     <ClInclude Include="output_file.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="device_wasapi.h">
+      <Filter>device</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

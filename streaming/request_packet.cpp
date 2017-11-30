@@ -26,8 +26,10 @@ void request_queue::push(const request_t& request)
     // starting packet number must be initialized lazily
     if(this->first_packet_number == INVALID_PACKET_NUMBER)
     {
+        assert_(this->requests.empty());
         this->first_packet_number = 
             this->last_packet_number = request.rp.topology->get_first_packet_number();
+        this->requests.push_back(request);
     }
 
     if(request.rp.packet_number < this->first_packet_number)
@@ -41,12 +43,6 @@ void request_queue::push(const request_t& request)
         const int diff = request.rp.packet_number - this->last_packet_number;
         this->requests.insert(this->requests.end(), diff, request);
         this->last_packet_number = request.rp.packet_number;
-    }
-    else if(request.rp.packet_number == this->first_packet_number &&
-        request.rp.packet_number == this->last_packet_number)
-    {
-        assert_(this->requests.empty());
-        this->requests.push_back(request);
     }
     else
         this->requests[this->get_index(request.rp.packet_number)] = request;

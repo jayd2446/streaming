@@ -14,6 +14,9 @@
 // components are shared between scenes
 
 class control_pipeline;
+// each audio source must have an audio processor attached to it for audio buffering
+// and resampling to work
+typedef std::pair<source_loopback_t, transform_audioprocessor_t> source_audio_t;
 
 class control_scene
 {
@@ -60,8 +63,7 @@ private:
     std::vector<std::pair<displaycapture_item, source_displaycapture5_t>> displaycapture_sources;
     // each video_item will activate a videoprocessor stream controller
     std::vector<stream_videoprocessor_controller_t> videoprocessor_stream_controllers;
-    std::vector<std::pair<audio_item, source_loopback_t>> audio_sources;
-    std::vector<transform_audioprocessor_t> audio_processors;
+    std::vector<std::pair<audio_item, source_audio_t>> audio_sources;
     std::vector<transform_audiomix_t> audio_mixers;
 
     bool list_available_audio_items(std::vector<audio_item>& audios, EDataFlow);

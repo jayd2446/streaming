@@ -4,7 +4,8 @@
 #include <iostream>
 #include "assert.h"
 
-media_session::media_session()
+media_session::media_session(const presentation_time_source_t& time_source) :
+    time_source(time_source)
 {
     this->give_sample_callback.Attach(new async_callback_t(&media_session::give_sample_cb));
     this->request_sample_callback.Attach(new async_callback_t(&media_session::request_sample_cb));

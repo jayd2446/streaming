@@ -57,6 +57,10 @@ public:
 
     void invoke(void* unk) {this->mf_cb((IMFAsyncResult*)unk);}
 
+    HRESULT mf_put_work_item()
+    {
+        return MFPutWorkItem(this->native.work_queue, &this->native, NULL);
+    }
     // the parent must be same for each call
     HRESULT mf_put_work_item(const std::weak_ptr<T>& parent) 
     {

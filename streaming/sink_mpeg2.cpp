@@ -9,7 +9,7 @@
 
 sink_mpeg2::sink_mpeg2(const media_session_t& session) : 
     media_sink(session),
-    audio_session(new media_session),
+    audio_session(new media_session(session->get_time_source())),
     stopped_signal(NULL)
 {
     this->write_packets_callback.Attach(new async_callback_t(&sink_mpeg2::write_packets_cb));
@@ -198,7 +198,8 @@ void stream_mpeg2::dispatch_request(request_packet& rp)
             (*it)->available = false;
 
             result_t res = (*it)->request_sample(rp, this);
-            (res);
+            if(res == FATAL_ERROR)
+                std::cout << "scene switched" << std::endl;
             return;
         }
     }

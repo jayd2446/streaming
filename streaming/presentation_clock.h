@@ -24,7 +24,6 @@ private:
 public:
     presentation_time_source();
 
-    // TODO: the calculations in this function might overflow
     time_unit system_time_to_time_source(time_unit) const;
 
     time_unit get_current_time() const;

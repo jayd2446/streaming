@@ -183,9 +183,6 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 media_stream::result_t stream_color_converter::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
-    // TODO: resources shouldn't be initialized here because of the multithreaded
-    // nature they might be initialized more than once
-
     HRESULT hr = S_OK;
     CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;
 

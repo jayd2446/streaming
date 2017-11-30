@@ -10,8 +10,6 @@
 
 control_pipeline::control_pipeline() : 
     preview_wnd(NULL),
-    time_source(new presentation_time_source),
-    session(new media_session),
     scene_active(NULL),
     d3d11dev_adapter(0),
     stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL))
@@ -46,8 +44,18 @@ void control_pipeline::reset_components(bool create_new)
         this->mpeg_sink = NULL;
         this->aac_encoder_transform = NULL;
         this->audio_sink = NULL;
+        this->session = NULL;
+        this->time_source = NULL;
         return;
     }
+
+    // create the time source and session
+    this->time_source.reset(new presentation_time_source);
+    this->time_source->set_current_time(0);
+    // time source must be started early because the audio processor might use the time source
+    // before the topology is started
+    this->time_source->start();
+    this->session.reset(new media_session(this->time_source));
 
     // create and initialize the videoprocessor transform
     this->videoprocessor_transform.reset(new transform_videoprocessor(this->session, this->context_mutex));
@@ -101,7 +109,7 @@ control_scene& control_pipeline::get_scene(int index)
     return this->scenes[index];
 }
 
-source_loopback_t control_pipeline::create_audio_source(const std::wstring& id, bool capture)
+source_audio_t control_pipeline::create_audio_source(const std::wstring& id, bool capture)
 {
     if(this->scene_active)
     {
@@ -114,9 +122,13 @@ source_loopback_t control_pipeline::create_audio_source(const std::wstring& id, 
         }
     }
 
-    source_loopback_t loopback_source(new source_loopback(this->mpeg_sink->audio_session));
-    loopback_source->initialize(id, capture);
-    return loopback_source;
+    source_audio_t audio_source;
+    audio_source.first.reset(new source_loopback(this->mpeg_sink->audio_session));
+    audio_source.second.reset(new transform_audioprocessor(this->mpeg_sink->audio_session));
+    // audio processor must be initialized before starting/initializing the audio device
+    audio_source.second->initialize(audio_source.first.get());
+    audio_source.first->initialize(id, capture);
+    return audio_source;
 }
 
 source_displaycapture5_t control_pipeline::create_displaycapture_source(
@@ -145,21 +157,9 @@ source_displaycapture5_t control_pipeline::create_displaycapture_source(
 
 transform_audiomix_t control_pipeline::create_audio_mixer()
 {
-    transform_audiomix_t transform_audio_mixer(
-        new transform_audiomix(this->mpeg_sink->audio_session));
+    transform_audiomix_t transform_audio_mixer(new transform_audiomix(this->mpeg_sink->audio_session));
     transform_audio_mixer->initialize();
     return transform_audio_mixer;
-}
-
-transform_audioprocessor_t control_pipeline::create_audio_processor()
-{
-    // do not share audio processor components between scenes because they are bound
-    // to specific sample rates and channels;
-    // audio processors can be shared if the input matches in the old and the new one
-    transform_audioprocessor_t transform_audio_processor(
-        new transform_audioprocessor(this->mpeg_sink->audio_session));
-    transform_audio_processor->initialize();
-    return transform_audio_processor;
 }
 
 void control_pipeline::set_active(control_scene& scene)
@@ -176,20 +176,18 @@ void control_pipeline::set_active(control_scene& scene)
 
     if(starting)
     {
-        // start the time source
-        this->time_source->set_current_time(0);
-        this->time_source->start();
+        //// start the time source
+        //this->time_source->start();
 
         // start the media session with the topology
-        this->session->start_playback(this->scene_active->video_topology, 0);
+        this->session->start_playback(
+            this->scene_active->video_topology, this->time_source->get_current_time());
     }
     else
     {
         this->session->switch_topology(this->scene_active->video_topology);
     }
 }
-
-#include <iostream>
 
 void control_pipeline::set_inactive()
 {
@@ -199,12 +197,8 @@ void control_pipeline::set_inactive()
     this->scene_active = NULL;
     this->session->stop_playback();
     this->session->shutdown();
-    std::cout << "FORCE STOPPING..." << std::endl;
-    this->mpeg_sink->get_output()->force_stop();
     this->reset_components(false);
 
     WaitForSingleObject(this->stopped_signal, INFINITE);
-    // stop the time source last, otherwise the pipeline
-    // might stall and never stop
-    this->time_source->stop();
+    ResetEvent(this->stopped_signal);
 }

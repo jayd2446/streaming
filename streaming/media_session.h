@@ -65,6 +65,7 @@ public:
     };
 private:
     std::atomic_bool is_shutdown;
+    presentation_time_source_t time_source;
 
     media_topology_t current_topology;
 
@@ -82,7 +83,7 @@ private:
     void request_sample_cb(void*);
     void give_sample_cb(void*);
 public:
-    media_session();
+    explicit media_session(const presentation_time_source_t&);
     ~media_session();
 
     bool get_current_topology(media_topology_t&) const;
@@ -91,6 +92,8 @@ public:
     // create a cyclic dependency between clock and components;
     // returns false if the clock is NULL
     bool get_current_clock(presentation_clock_t&) const;
+
+    const presentation_time_source_t& get_time_source() const {return this->time_source;}
 
     void switch_topology(const media_topology_t& new_topology);
     // starts the new topology immediately;

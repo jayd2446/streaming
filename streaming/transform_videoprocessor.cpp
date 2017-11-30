@@ -106,6 +106,8 @@ void stream_videoprocessor::processing_cb(void*)
         // if setting enabled state of a stream to false
         // TODO: this container can be listed in class declaration so that it won't be
         // allocated every time
+        // TODO: it seems that the video processor won't allow inputs from the same
+        // texture
         std::vector<D3D11_VIDEO_PROCESSOR_STREAM> streams;
         streams.reserve(this->input_streams.size());
         for(auto it = this->input_streams.begin(); it != this->input_streams.end(); it++, i++)
@@ -182,7 +184,7 @@ void stream_videoprocessor::processing_cb(void*)
             // the video processor alpha blends the input streams to the target output
             CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
                 this->transform->videoprocessor, this->output_view,
-                0, streams.size(), &streams[0]));
+                0, (UINT)streams.size(), &streams[0]));
         }
         else
             // TODO: read lock buffers is just a workaround for a deadlock bug

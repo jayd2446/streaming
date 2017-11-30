@@ -188,6 +188,7 @@
     <ClInclude Include="async_callback.h" />
     <ClInclude Include="control_pipeline.h" />
     <ClInclude Include="control_scene.h" />
+    <ClInclude Include="device_wasapi.h" />
     <ClInclude Include="gui_frame.h" />
     <ClInclude Include="gui_maindlg.h" />
     <ClInclude Include="gui_newdlg.h" />

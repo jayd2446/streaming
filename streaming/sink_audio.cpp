@@ -46,9 +46,9 @@ void sink_audio::initialize(const output_file_t& file_output)
     this->file_output = file_output;
 }
 
-stream_audio_t sink_audio::create_stream(presentation_clock_t& clock, const source_loopback_t& source)
+stream_audio_t sink_audio::create_stream(presentation_clock_t& clock)
 {
-    stream_audio_t stream(new stream_audio(this->shared_from_this<sink_audio>(), source));
+    stream_audio_t stream(new stream_audio(this->shared_from_this<sink_audio>()));
     stream->register_sink(clock);
 
     return stream;
@@ -65,8 +65,8 @@ stream_audio_worker_t sink_audio::create_worker_stream()
 /////////////////////////////////////////////////////////////////
 
 
-stream_audio::stream_audio(const sink_audio_t& sink, const source_loopback_t& source) : 
-    sink(sink), source(source), unavailable(0)
+stream_audio::stream_audio(const sink_audio_t& sink) : 
+    sink(sink), unavailable(0), running(false)
 {
 }
 
@@ -79,6 +79,7 @@ bool stream_audio::on_clock_start(time_unit t)
     rp.request_time = t;
     rp.timestamp = t;
     
+    this->running = true;
     this->dispatch_request(rp);
     return true;
 }
@@ -93,11 +94,14 @@ void stream_audio::on_clock_stop(time_unit t)
     rp.timestamp = t;
 
     this->dispatch_request(rp);
+    this->running = false;
 }
 
 void stream_audio::dispatch_request(request_packet& rp)
 {
     assert_(this->unavailable <= 240);
+    if(!this->running)
+        return;
 
     scoped_lock lock(this->worker_streams_mutex);
     for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)

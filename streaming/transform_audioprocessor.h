@@ -12,6 +12,8 @@
 
 #define OUT_BUFFER_FRAMES 1024
 
+class source_loopback;
+
 // resamples and cuts the audio
 
 class transform_audioprocessor : public media_source
@@ -20,6 +22,8 @@ class transform_audioprocessor : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef request_queue::request_t request_t;
+    typedef std::deque<CComPtr<IMFSample>> sample_container;
+    typedef async_callback<transform_audioprocessor> async_callback_t;
 private:
     bool running;
     CComPtr<IMFTransform> processor;
@@ -28,23 +32,30 @@ private:
     UINT32 channels, sample_rate, block_align;
     std::recursive_mutex set_type_mutex;
 
-    request_queue requests, requests_resample;
+    source_loopback* audio_device;
+
+    request_queue requests;
     std::recursive_mutex samples_mutex, process_mutex;
-    std::deque<CComPtr<IMFSample>> samples;
+    sample_container samples;
 
     frame_unit sample_base;
     frame_unit next_sample_pos;
+    frame_unit consumed_samples_end;
 
     void reset_input_type(UINT channels, UINT sample_rate, UINT bit_depth);
     bool resampler_process_output(IMFSample*);
     // resamples all the samples and pushes them to samples container
-    void resample(const media_buffer_samples_t&, const request_packet&);
+    void resample(const media_buffer_samples&);
     // tries to serve the request queue
-    void try_serve();
+    void try_serve(const media_buffer_samples&);
+    // called by the audio device
+    void serve_cb(void*);
 public:
+    CComPtr<async_callback_t> serve_callback;
+
     explicit transform_audioprocessor(const media_session_t& session);
 
-    void initialize();
+    void initialize(source_loopback* audio_device);
     media_stream_t create_stream();
 };
 

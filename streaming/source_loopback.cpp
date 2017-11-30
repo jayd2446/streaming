@@ -84,17 +84,17 @@ HRESULT source_loopback::add_event_to_wait_queue()
 {
     HRESULT hr = S_OK;
 
-    //CComPtr<IMFAsyncResult> asyncresult;
-    //CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->process_callback->native, NULL, &asyncresult));
-    //// use the priority of 1 for audio
-    //CHECK_HR(hr = this->process_callback->mf_put_waiting_work_item(
-    //    this->shared_from_this<source_loopback>(),
-    //    this->process_event, 1, asyncresult, &this->callback_key));
-
-    // schedule a work item for a half of the buffer duration
-    CHECK_HR(hr = this->process_callback->mf_schedule_work_item(
+    CComPtr<IMFAsyncResult> asyncresult;
+    CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->process_callback->native, NULL, &asyncresult));
+    // use the priority of 1 for audio
+    CHECK_HR(hr = this->process_callback->mf_put_waiting_work_item(
         this->shared_from_this<source_loopback>(),
-        -this->buffer_actual_duration / MILLISECOND_IN_TIMEUNIT / 2, &this->callback_key));
+        this->process_event, 1, asyncresult, &this->callback_key));
+
+    //// schedule a work item for a half of the buffer duration
+    //CHECK_HR(hr = this->process_callback->mf_schedule_work_item(
+    //    this->shared_from_this<source_loopback>(),
+    //    -this->buffer_actual_duration / MILLISECOND_IN_TIMEUNIT / 2, &this->callback_key));
 
 done:
     return hr;
@@ -117,9 +117,10 @@ done:
 
 void source_loopback::process_cb(void*)
 {
-    /*ResetEvent(this->process_event);*/
+    ResetEvent(this->process_event);
 
     std::unique_lock<std::recursive_mutex> lock(this->process_mutex, std::try_to_lock);
+    assert_(lock.owns_lock());
     if(!lock.owns_lock())
         return;
 
@@ -148,17 +149,19 @@ void source_loopback::process_cb(void*)
         getbuffer = true;
         // try fetch a next packet if no frames were returned
         // or if the frames were already returned
-        if(returned_frames == 0 || (returned_devposition + returned_frames) <= this->next_frame_position)
+        if(returned_frames == 0/* || (returned_devposition + returned_frames) <= this->next_frame_position*/)
         {
             getbuffer = false;
             CHECK_HR(hr = this->audio_capture_client->ReleaseBuffer(returned_frames));
             continue;
         }
-        frames = returned_frames - 
+        /*frames = returned_frames - 
             (UINT32)std::max(0LL, (LONGLONG)this->next_frame_position - (LONGLONG)returned_devposition);
         devposition = std::max(this->next_frame_position, returned_devposition);
         assert_(devposition + frames == returned_devposition + returned_frames);
-        data += (devposition - returned_devposition) * this->get_block_align();
+        data += (devposition - returned_devposition) * this->get_block_align();*/
+        frames = returned_frames;
+        devposition = returned_devposition;
 
         CHECK_HR(hr = MFCreateSample(&sample));
 
@@ -247,9 +250,52 @@ done:
 
     lock.unlock();
     this->add_event_to_wait_queue();
+    this->serve_requests();
 }
 
-HRESULT source_loopback::initialize(const std::wstring& device_id, bool capture)
+void source_loopback::serve_cb(void*)
+{
+    // make sure only one thread is serving the requests
+    assert_(false);
+    std::unique_lock<std::recursive_mutex> lock(this->serve_mutex, std::try_to_lock);
+    if(!lock.owns_lock())
+        return;
+
+    request_t request;
+    while(this->requests.pop(request))
+    {
+        request_t request2;
+        if(this->requests.get(request2))
+        {
+            // send empty responses for old requests
+            media_sample_view_t sample_view;
+            request.stream->process_sample(sample_view, request.rp, NULL);
+        }
+        else
+        {
+            // add the buffer for the newest request
+            media_buffer_samples_t samples(new media_buffer_samples);
+            media_sample_view_t sample_view(new media_sample_view(samples));
+            {
+                scoped_lock lock(this->samples_mutex);
+                samples->samples.swap(this->samples);
+            }
+            samples->bit_depth = sizeof(bit_depth_t) * 8;
+            samples->channels = this->channels;
+            samples->sample_rate = this->samples_per_second;
+            request.stream->process_sample(sample_view, request.rp, NULL);
+        }
+    }
+}
+
+void source_loopback::serve_requests()
+{
+    const HRESULT hr = this->serve_callback->mf_put_work_item();
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        throw std::exception();
+}
+
+void source_loopback::initialize(const std::wstring& device_id, bool capture)
 {
     HRESULT hr = S_OK;
 
@@ -267,8 +313,9 @@ HRESULT source_loopback::initialize(const std::wstring& device_id, bool capture)
     CHECK_HR(hr = this->audio_client->GetMixFormat(&engine_format));
 
     CHECK_HR(hr = this->audio_client->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, (capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK) | AUTOCONVERT_PCM, 
-        0, BUFFER_DURATION, engine_format, NULL));
+        AUDCLNT_SHAREMODE_SHARED, 
+        (capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK) | AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 
+        BUFFER_DURATION, 0, engine_format, NULL));
 
     CHECK_HR(hr = this->audio_client->GetBufferSize(&buffer_frame_count));
 
@@ -300,17 +347,18 @@ HRESULT source_loopback::initialize(const std::wstring& device_id, bool capture)
     this->buffer_actual_duration = 
         (REFERENCE_TIME)((double)SECOND_IN_TIME_UNIT * buffer_frame_count / this->samples_per_second);
 
-    //// create manual reset event handle
-    //this->process_event.Attach(CreateEvent(
-    //    NULL, TRUE, FALSE, NULL));  
-    //if(!this->process_event)
-    //    CHECK_HR(hr = E_FAIL);
-
-    //CHECK_HR(hr = this->audio_client->SetEventHandle(this->process_event));
+    // create manual reset event handle
+    assert_(!this->process_event);
+    this->process_event.Attach(CreateEvent(
+        NULL, TRUE, FALSE, NULL));  
+    if(!this->process_event)
+        CHECK_HR(hr = E_FAIL);
+    CHECK_HR(hr = this->audio_client->SetEventHandle(this->process_event));
 
     //// set the event to mf queue
     //CHECK_HR(hr = this->add_event_to_wait_queue());
 
+    assert_(this->serve_callback);
     CHECK_HR(hr = this->add_event_to_wait_queue());
 
     // start capturing
@@ -321,8 +369,6 @@ done:
         CoTaskMemFree(engine_format);
     if(FAILED(hr))
         throw std::exception();
-
-    return hr;
 }
 
 HRESULT source_loopback::start()
@@ -343,6 +389,15 @@ media_stream_t source_loopback::create_stream()
     return media_stream_t(new stream_loopback(this->shared_from_this<source_loopback>()));
 }
 
+void source_loopback::swap_buffers(media_buffer_samples& samples)
+{
+    scoped_lock lock(this->samples_mutex);
+    samples.samples.swap(this->samples);
+    samples.bit_depth = sizeof(bit_depth_t) * 8;
+    samples.channels = this->channels;
+    samples.sample_rate = this->samples_per_second;
+}
+
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
@@ -356,7 +411,7 @@ stream_loopback::stream_loopback(const source_loopback_t& source) :
 
 media_stream::result_t stream_loopback::request_sample(request_packet& rp, const media_stream*)
 {
-    media_buffer_samples_t samples(new media_buffer_samples);
+    /*media_buffer_samples_t samples(new media_buffer_samples);
     media_sample_view_t sample_view(new media_sample_view(samples));
     {
         scoped_lock lock(this->source->samples_mutex);
@@ -365,9 +420,16 @@ media_stream::result_t stream_loopback::request_sample(request_packet& rp, const
 
     samples->bit_depth = sizeof(source_loopback::bit_depth_t) * 8;
     samples->channels = this->source->channels;
-    samples->sample_rate = this->source->samples_per_second;
+    samples->sample_rate = this->source->samples_per_second;*/
+    assert_(false);
 
-    return this->process_sample(sample_view, rp, NULL);
+    source_loopback::request_t request;
+    request.stream = this;
+    request.rp = rp;
+    
+    this->source->requests.push(request);
+    return OK;
+    /*return this->process_sample(sample_view, rp, NULL);*/
 }
 
 media_stream::result_t stream_loopback::process_sample(

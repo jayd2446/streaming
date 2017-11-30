@@ -191,8 +191,8 @@ void transform_h264_encoder::processing_cb(void*)
         // do not use MFCreateVideoSampleFromSurface because it creates evr thread
         CHECK_HR(hr = MFCreateSample(&sample));
         CHECK_HR(hr = sample->AddBuffer(buffer));
-        UINT64 duration;
-        CHECK_HR(hr = MFFrameRateToAverageTimePerFrame(60, 1, &duration));
+        /*UINT64 duration;
+        CHECK_HR(hr = MFFrameRateToAverageTimePerFrame(60, 1, &duration));*/
         CHECK_HR(hr = sample->SetSampleTime(timestamp));
         /*CHECK_HR(hr = sample->SetSampleDuration(duration));*/
         CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));

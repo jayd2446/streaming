@@ -109,13 +109,12 @@ void control_scene::reset_topology(bool create_new)
     this->audio_topology.reset(new media_topology(this->pipeline.time_source));
 
     // TODO: support for multiple displaycapture and audio sources via mixer transforms
-    // TODO: loopback source param in audio sink is redundant
     // TODO: fps num and den in pipeline
 
     // create streams
     stream_mpeg2_t mpeg_stream = this->pipeline.mpeg_sink->create_stream(this->video_topology->get_clock());
-    stream_audio_t audio_stream = this->pipeline.audio_sink->create_stream(
-        this->audio_topology->get_clock(), this->audio_sources[0].second);
+    stream_audio_t audio_stream = 
+        this->pipeline.audio_sink->create_stream(this->audio_topology->get_clock());
 
     this->pipeline.mpeg_sink->set_new_audio_topology(audio_stream, this->audio_topology);
     mpeg_stream->set_pull_rate(60, 1);
@@ -172,9 +171,9 @@ void control_scene::reset_topology(bool create_new)
 
             audio_stream->add_worker_stream(worker_stream);
 
-            // chain first audio source to processor
-            media_stream_t first_audio_stream = this->audio_sources[0].second->create_stream();
-            media_stream_t last_stream = this->audio_processors[0]->create_stream();
+            // chain first audio source to its audio processor
+            media_stream_t first_audio_stream = this->audio_sources[0].second.first->create_stream();
+            media_stream_t last_stream = this->audio_sources[0].second.second->create_stream();
             this->audio_topology->connect_streams(first_audio_stream, last_stream);
 
             // chain audio mixers
@@ -182,8 +181,9 @@ void control_scene::reset_topology(bool create_new)
             {
                 stream_audiomix_t audiomix_stream = this->audio_mixers[i - 1]->create_stream();
                 // no need for switch-case because currently all audio items are of loopback source type
-                media_stream_t audio_stream = this->audio_sources[i].second->create_stream();
-                media_stream_t audioprocessor_stream = this->audio_processors[i]->create_stream();
+                media_stream_t audio_stream = this->audio_sources[i].second.first->create_stream();
+                media_stream_t audioprocessor_stream = 
+                    this->audio_sources[i].second.second->create_stream();
 
                 audiomix_stream->set_primary_stream(last_stream.get());
 
@@ -206,8 +206,7 @@ void control_scene::activate_scene()
     assert_(this->displaycapture_sources.empty() && 
         this->audio_sources.empty() &&
         this->videoprocessor_stream_controllers.empty() &&
-        this->audio_mixers.empty() &&
-        this->audio_processors.empty());
+        this->audio_mixers.empty());
 
     // activate displaycapture items
     for(auto it = this->displaycapture_items.begin(); it != this->displaycapture_items.end(); it++)
@@ -232,14 +231,10 @@ void control_scene::activate_scene()
     // activate audio items
     for(auto it = this->audio_items.begin(); it != this->audio_items.end(); it++)
     {
-        source_loopback_t loopback_source = this->pipeline.create_audio_source(
+        source_audio_t audio_source = this->pipeline.create_audio_source(
             it->device_id, it->capture);
-        this->audio_sources.push_back(std::make_pair(*it, loopback_source));
+        this->audio_sources.push_back(std::make_pair(*it, audio_source));
     }
-
-    // activate audio processors
-    for(auto it = this->audio_items.begin(); it != this->audio_items.end(); it++)
-        this->audio_processors.push_back(this->pipeline.create_audio_processor());
 
     // activate audio mixers
     for(int i = 0; i < (int)this->audio_items.size() - 1; i++)
@@ -255,7 +250,6 @@ void control_scene::deactivate_scene()
     this->audio_sources.clear();
     this->videoprocessor_stream_controllers.clear();
     this->audio_mixers.clear();
-    this->audio_processors.clear();
 
     // reset the topologies
     this->reset_topology(false);

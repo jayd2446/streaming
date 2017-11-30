@@ -1,10 +1,11 @@
+#include <wmcodecdsp.h>
 #include "transform_audioprocessor.h"
 #include "transform_aac_encoder.h"
-#include <Mferror.h>
-#include <initguid.h>
-#include <wmcodecdsp.h>
-#include <iostream>
 #include "source_loopback.h"
+#include "assert.h"
+#include <Mferror.h>
+//#include <initguid.h>
+#include <iostream>
 EXTERN_GUID(CLSID_CResamplerMediaObject, 0xf447b69e, 0x1884, 0x4a7e, 0x80, 0x55, 0x34, 0x6f, 0x74, 0xd6, 0xed, 0xb3);
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
@@ -12,13 +13,15 @@ EXTERN_GUID(CLSID_CResamplerMediaObject, 0xf447b69e, 0x1884, 0x4a7e, 0x80, 0x55,
 #undef min
 
 transform_audioprocessor::transform_audioprocessor(const media_session_t& session) :
-    media_source(session), channels(transform_aac_encoder::channels), 
-    sample_rate(transform_aac_encoder::sample_rate), 
-    block_align(transform_aac_encoder::block_align), 
+    media_source(session), channels(/*transform_aac_encoder::channels*/0), 
+    sample_rate(/*transform_aac_encoder::sample_rate*/0), 
+    block_align(/*transform_aac_encoder::block_align*/0), 
     running(false),
-    sample_base(-1),
-    next_sample_pos(-1)
+    sample_base(std::numeric_limits<frame_unit>::min()),
+    next_sample_pos(0),
+    consumed_samples_end(std::numeric_limits<frame_unit>::min())
 {
+    this->serve_callback.Attach(new async_callback_t(&transform_audioprocessor::serve_cb));
 }
 
 void transform_audioprocessor::reset_input_type(UINT channels, UINT sample_rate, UINT bit_depth)
@@ -106,22 +109,24 @@ done:
     return SUCCEEDED(hr);
 }
 
-void transform_audioprocessor::resample(
-    const media_buffer_samples_t& samples, const request_packet& rp)
+void transform_audioprocessor::resample(const media_buffer_samples& samples)
 {
-    this->reset_input_type(samples->channels, samples->sample_rate, samples->bit_depth);
+    this->reset_input_type(samples.channels, samples.sample_rate, samples.bit_depth);
 
-    // do not resample if the samples already have valid properties
-    if(samples->bit_depth == sizeof(transform_aac_encoder::bit_depth_t) &&
-        samples->channels == transform_aac_encoder::channels &&
-        samples->sample_rate == transform_aac_encoder::sample_rate)
-    {
-        scoped_lock lock(this->samples_mutex);
-        // TODO: rather inefficient
-        for(auto it = samples->samples.begin(); it != samples->samples.end(); it++)
-            this->samples.push_back(*it);
-        return;
-    }
+    // TODO: resampling should be skipped;
+    // this means that only the sample bases should be set
+
+    //// do not resample if the samples already have valid properties
+    //if(samples.bit_depth == sizeof(transform_aac_encoder::bit_depth_t) &&
+    //    samples.channels == transform_aac_encoder::channels &&
+    //    samples.sample_rate == transform_aac_encoder::sample_rate)
+    //{
+    //    scoped_lock lock(this->samples_mutex);
+    //    // TODO: rather inefficient
+    //    for(auto it = samples.samples.begin(); it != samples.samples.end(); it++)
+    //        this->samples.push_back(*it);
+    //    return;
+    //}
 
     // resample
     HRESULT hr = S_OK;
@@ -173,7 +178,7 @@ void transform_audioprocessor::resample(
     };
 
     reset_sample();
-    for(auto it = samples->samples.begin(); it != samples->samples.end(); it++)
+    for(auto it = samples.samples.begin(); it != samples.samples.end(); it++)
     {
         // create a sample that has time and duration converted from frame unit to time unit
         CComPtr<IMFSample> sample;
@@ -184,8 +189,8 @@ void transform_audioprocessor::resample(
         CHECK_HR(hr = (*it)->GetSampleTime(&time));
         CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
         CHECK_HR(hr = (*it)->GetBufferByIndex(0, &buffer));
-        time = (LONGLONG)((double)time * SECOND_IN_TIME_UNIT / samples->sample_rate);
-        dur = (LONGLONG)((double)dur * SECOND_IN_TIME_UNIT / samples->sample_rate);
+        time = (LONGLONG)((double)time * SECOND_IN_TIME_UNIT / samples.sample_rate);
+        dur = (LONGLONG)((double)dur * SECOND_IN_TIME_UNIT / samples.sample_rate);
 
         CHECK_HR(hr = MFCreateSample(&sample));
         CHECK_HR(hr = sample->SetSampleTime(time));
@@ -202,19 +207,27 @@ void transform_audioprocessor::resample(
                 process_sample();
 
             // set the new base
-            const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples->sample_rate;
-            presentation_clock_t clock;
-            rp.get_clock(clock);
+            const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples.sample_rate;
+            const frame_unit old_base = this->sample_base;
+            presentation_time_source_t time_source = this->session->get_time_source();
             frame_unit sample_time = (frame_unit)
-                (clock->get_time_source()->system_time_to_time_source(sample_base.time) / sample_duration);
+                (time_source->system_time_to_time_source(sample_base.time) / sample_duration);
             this->sample_base = (frame_unit)
-                ((double)transform_aac_encoder::sample_rate / samples->sample_rate * sample_time);
+                ((double)transform_aac_encoder::sample_rate / samples.sample_rate * sample_time);
+
+            if((old_base + this->next_sample_pos) > this->sample_base)
+            {
+                const frame_unit base_drift = old_base + this->next_sample_pos - this->sample_base;
+                std::cout << "SAMPLE BASE DRIFT: " << base_drift << " frames, ";
+                std::cout << 
+                    (double)MILLISECOND_IN_TIMEUNIT / transform_aac_encoder::sample_rate * base_drift 
+                    << "ms" << std::endl;
+            }
+
             this->next_sample_pos = 0;
         }
 
     back:
-        frame_unit next_pos = this->next_sample_pos;
-        frame_unit base = this->sample_base;
         hr = this->processor->ProcessInput(0, sample, 0);
         if(hr == MF_E_NOTACCEPTING)
         {
@@ -233,24 +246,15 @@ done:
         throw std::exception();
 }
 
-void transform_audioprocessor::try_serve()
+void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
 {
-    // only one thread should be processing the requests so that resampling and cut operations
-    // stay consistent
-    std::unique_lock<std::recursive_mutex> lock(this->process_mutex, std::try_to_lock);
-    if(!lock.owns_lock())
-        return;
-
     // resample the samples
-    request_t request;
-    while(this->requests_resample.pop(request))
-    {
-        media_buffer_samples_t samples = request.sample_view->get_buffer<media_buffer_samples>();
-        this->resample(samples, request.rp);
-    }
+    if(!samples.samples.empty())
+        this->resample(samples);
 
-    HRESULT hr = S_OK;
     // try to serve
+    HRESULT hr = S_OK;
+    request_t request;
     while(this->requests.get(request))
     {
         // clock is assumed to be valid if there's a request pending
@@ -267,7 +271,8 @@ void transform_audioprocessor::try_serve()
 
         std::unique_lock<std::recursive_mutex> lock2(this->samples_mutex);
         size_t consumed_samples = 0;
-        for(auto it = this->samples.begin(); it != this->samples.end(); it++)
+        frame_unit consumed_samples_end = this->consumed_samples_end;
+        for(auto it = this->samples.begin(); it != this->samples.end() && !dispatch; it++)
         {
             CComPtr<IMFSample> sample;
             CComPtr<IMFMediaBuffer> buffer, oldbuffer;
@@ -295,46 +300,71 @@ void transform_audioprocessor::try_serve()
 
             const frame_unit frame_diff_end = std::max(frame_end - request_end, 0LL);
             const DWORD offset_end  = (DWORD)frame_diff_end * transform_aac_encoder::block_align;
+            const frame_unit new_sample_time = sample_pos;
+            const frame_unit new_sample_dur = sample_dur - frame_diff_end;
 
-            assert_(((int)buflen - (int)offset_end) > 0);
-            CHECK_HR(hr = MFCreateMediaBufferWrapper(oldbuffer, 0, buflen - offset_end, &buffer));
-            CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
-            if(offset_end > 0)
+            // discard frames that have older time stamp than the last consumed one
+            if(new_sample_time >= consumed_samples_end)
             {
-                // remove the consumed part of the old buffer
-                CComPtr<IMFMediaBuffer> new_buffer;
-                CHECK_HR(hr = MFCreateMediaBufferWrapper(
-                    oldbuffer, buflen - offset_end, offset_end, &new_buffer));
-                CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
-                CHECK_HR(hr = (*it)->RemoveAllBuffers());
-                CHECK_HR(hr = (*it)->AddBuffer(new_buffer));
-                const LONGLONG new_sample_dur = offset_end / transform_aac_encoder::block_align;
-                const LONGLONG new_sample_time = sample_pos + sample_dur - new_sample_dur;
-                CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
-                CHECK_HR(hr = (*it)->SetSampleDuration(new_sample_dur));
+                assert_(((int)buflen - (int)offset_end) > 0);
+                CHECK_HR(hr = MFCreateMediaBufferWrapper(oldbuffer, 0, buflen - offset_end, &buffer));
+                CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+                if(offset_end > 0)
+                {
+                    // remove the consumed part of the old buffer
+                    CComPtr<IMFMediaBuffer> new_buffer;
+                    CHECK_HR(hr = MFCreateMediaBufferWrapper(
+                        oldbuffer, buflen - offset_end, offset_end, &new_buffer));
+                    CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+                    CHECK_HR(hr = (*it)->RemoveAllBuffers());
+                    CHECK_HR(hr = (*it)->AddBuffer(new_buffer));
+                    const LONGLONG new_sample_dur = offset_end / transform_aac_encoder::block_align;
+                    const LONGLONG new_sample_time = sample_pos + sample_dur - new_sample_dur;
+                    CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
+                    CHECK_HR(hr = (*it)->SetSampleDuration(new_sample_dur));
+                }
+                else
+                    consumed_samples++;
+                CHECK_HR(hr = MFCreateSample(&sample));
+                CHECK_HR(hr = sample->AddBuffer(buffer));
+                CHECK_HR(hr = sample->SetSampleTime(new_sample_time));
+                CHECK_HR(hr = sample->SetSampleDuration(new_sample_dur));
+
+                // TODO: define this flag in audio processor
+                // because of data discontinuity the new sample base might yield sample times
+                // that 'travel back in time', so keep track of last consumed sample and discard
+                // samples that are older than that;
+                // the audio might become out of sync by the amount of discarded frames
+                // (actually it won't)
+                if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
+                    // TODO: pushing samples to a container could be deferred to
+                    // dispatching block
+                    samples->samples.push_back(sample);
             }
             else
+            {
+                std::cout << "discarded" << std::endl;
                 consumed_samples++;
-            CHECK_HR(hr = MFCreateSample(&sample));
-            CHECK_HR(hr = sample->AddBuffer(buffer));
-            const frame_unit new_sample_time = frame_pos;
-            const frame_unit new_sample_dur = sample_dur - frame_diff_end;
-            CHECK_HR(hr = sample->SetSampleTime(new_sample_time));
-            CHECK_HR(hr = sample->SetSampleDuration(new_sample_dur));
+            }
 
-            // TODO: define this flag in audio processor
-            if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
-                samples->samples.push_back(sample);
+            consumed_samples_end = std::max(new_sample_time + new_sample_dur, consumed_samples_end);
+            /*if(dispatch)
+                this->consumed_samples_end = 
+                std::max(new_sample_time + new_sample_dur, this->consumed_samples_end);*/
         }
 
         // TODO: stale requests should be checked other way
         // request is considered stale if the device time has already passed the request time
         // and there isn't any samples to serve
-        if(request.rp.request_time <= (clock->get_current_time() - SECOND_IN_TIME_UNIT))
+        const time_unit current_time = clock->get_current_time();
+        if(request.rp.request_time <= (current_time - SECOND_IN_TIME_UNIT * 2))
             dispatch = true;
 
         if(dispatch)
         {
+            // update the consumed samples position
+            this->consumed_samples_end = consumed_samples_end;
+
             // erase all consumed samples
             for(size_t i = 0; i < consumed_samples; i++)
                 this->samples.pop_front();
@@ -343,7 +373,7 @@ void transform_audioprocessor::try_serve()
             this->requests.pop(request);
 
             lock2.unlock();
-            lock.unlock();
+            /*lock.unlock();*/
             // dispatch the request
             media_sample_view_t sample_view;
             if(!samples->samples.empty())
@@ -354,7 +384,7 @@ void transform_audioprocessor::try_serve()
                 samples->sample_rate = transform_aac_encoder::sample_rate;
             }
             this->session->give_sample(request.stream, sample_view, request.rp, false);
-            lock.lock();
+            /*lock.lock();*/
         }
         else
             break;
@@ -365,7 +395,20 @@ done:
         throw std::exception();
 }
 
-void transform_audioprocessor::initialize()
+void transform_audioprocessor::serve_cb(void*)
+{
+    // only one thread should be processing the requests so that resampling and cut operations
+    // stay consistent
+    std::unique_lock<std::recursive_mutex> lock(this->process_mutex, std::try_to_lock);
+    if(!lock.owns_lock())
+        return;
+
+    media_buffer_samples samples;
+    this->audio_device->swap_buffers(samples);
+    this->try_serve(samples);
+}
+
+void transform_audioprocessor::initialize(source_loopback* audio_device)
 {
     HRESULT hr = S_OK;
     CComPtr<IWMResamplerProps> props;
@@ -389,6 +432,10 @@ void transform_audioprocessor::initialize()
         transform_aac_encoder::block_align));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 
         transform_aac_encoder::sample_rate * transform_aac_encoder::block_align));
+
+    this->serve_callback->set_callback(this->shared_from_this<transform_audioprocessor>());
+    this->audio_device = audio_device;
+    this->audio_device->serve_callback = this->serve_callback;
 
 done:
     if(FAILED(hr))
@@ -414,34 +461,39 @@ stream_audioprocessor::stream_audioprocessor(const transform_audioprocessor_t& t
 
 void stream_audioprocessor::processing_cb(void*)
 {
-    this->transform->try_serve();
+    /*this->transform->try_serve();*/
 }
 
 media_stream::result_t stream_audioprocessor::request_sample(request_packet& rp, const media_stream*)
 {
-    return this->transform->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
+    transform_audioprocessor::request_t request;
+    request.stream = this;
+    request.rp = rp;
+    this->transform->requests.push(request);
+    return OK;
+
+    /*return this->transform->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;*/
 }
 
 media_stream::result_t stream_audioprocessor::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample_view_t&, request_packet&, const media_stream*)
 {
-    HRESULT hr = S_OK;
+    assert_(false);
+
+    /*HRESULT hr = S_OK;
     transform_audioprocessor::request_t request;
     request.stream = this;
     request.rp = rp;
 
     this->transform->requests.push(request);
-    if(sample_view)
-    {
-        request.sample_view = sample_view;
-        this->transform->requests_resample.push(request);
-    }
+    request.sample_view = sample_view;
+    this->transform->requests_resample.push(request);
     CHECK_HR(hr = 
         this->process_callback->mf_put_work_item(this->shared_from_this<stream_audioprocessor>()));
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw std::exception();*/
 
     return OK;
 }

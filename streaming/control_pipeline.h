@@ -58,10 +58,9 @@ private:
     void reset_components(bool create_new);
     // creates and initializes the component
     // or returns the component from the current scene
-    source_loopback_t create_audio_source(const std::wstring& id, bool capture);
+    source_audio_t create_audio_source(const std::wstring& id, bool capture);
     source_displaycapture5_t create_displaycapture_source(UINT adapter_ordinal, UINT output_ordinal);
     transform_audiomix_t create_audio_mixer();
-    transform_audioprocessor_t create_audio_processor();
 public:
     control_pipeline();
 

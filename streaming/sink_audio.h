@@ -41,7 +41,7 @@ public:
 
     void initialize(const output_file_t& file_output);
 
-    stream_audio_t create_stream(presentation_clock_t&, const source_loopback_t&);
+    stream_audio_t create_stream(presentation_clock_t&);
     // worker streams duplicate the topology so that individual branches can be
     // multithreaded
     stream_audio_worker_t create_worker_stream();
@@ -52,8 +52,8 @@ class stream_audio : public media_stream, public presentation_clock_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    source_loopback_t source;
     sink_audio_t sink;
+    bool running;
 
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_audio_worker_t> worker_streams;
@@ -68,7 +68,7 @@ private:
 
     void dispatch_request(request_packet&);
 public:
-    stream_audio(const sink_audio_t& sink, const source_loopback_t& source);
+    explicit stream_audio(const sink_audio_t& sink);
 
     void add_worker_stream(const stream_audio_worker_t& worker_stream);
 
