@@ -176,6 +176,9 @@ void control_scene::reset_topology(bool create_new)
             media_stream_t last_stream = this->audio_sources[0].second.second->create_stream();
             this->audio_topology->connect_streams(first_audio_stream, last_stream);
 
+            // TODO: audio mixers should be chained parallel
+            // instead of serially
+
             // chain audio mixers
             for(size_t i = 1; i < this->audio_items.size(); i++)
             {

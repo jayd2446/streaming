@@ -8,6 +8,8 @@
 #include <iostream>
 EXTERN_GUID(CLSID_CResamplerMediaObject, 0xf447b69e, 0x1884, 0x4a7e, 0x80, 0x55, 0x34, 0x6f, 0x74, 0xd6, 0xed, 0xb3);
 
+#define HALF_FILTER_LENGTH 30 /* 60 is max, but wmp and groove music uses 30 */
+
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 #undef max
 #undef min
@@ -417,7 +419,7 @@ void transform_audioprocessor::initialize(source_loopback* audio_device)
         __uuidof(IMFTransform), (LPVOID*)&this->processor));
     CHECK_HR(hr = this->processor->QueryInterface(&props));
     // best quality
-    CHECK_HR(hr = props->SetHalfFilterLength(60));
+    CHECK_HR(hr = props->SetHalfFilterLength(HALF_FILTER_LENGTH));
 
     // set output type
     CHECK_HR(hr = MFCreateMediaType(&this->output_type));

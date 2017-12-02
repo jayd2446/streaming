@@ -25,6 +25,8 @@
 class source_loopback;
 typedef std::shared_ptr<source_loopback> source_loopback_t;
 
+struct IMMDevice;
+
 // timestamps are aligned
 
 class source_loopback : public media_source
@@ -43,8 +45,9 @@ public:
     typedef transform_aac_encoder::bit_depth_t bit_depth_t;
     typedef std::deque<CComPtr<IMFSample>> sample_container;
 private:
-    CComPtr<IAudioClient> audio_client;
+    CComPtr<IAudioClient> audio_client, audio_client_render;
     CComPtr<IAudioCaptureClient> audio_capture_client;
+    CComPtr<IAudioRenderClient> audio_render_client;
     CComPtr<IAudioClock> audio_clock;
     CHandle process_event;
     MFWORKITEM_KEY callback_key;
@@ -60,8 +63,9 @@ private:
     UINT64 device_time_position;
     UINT64 next_frame_position;
     REFERENCE_TIME buffer_actual_duration;
+    UINT32 render_buffer_frame_count;
 
-    bool started;
+    bool started, capture;
 
     request_queue requests;
 
@@ -71,9 +75,16 @@ private:
     HRESULT add_event_to_wait_queue();
     HRESULT create_waveformat_type(WAVEFORMATEX*);
     void process_cb(void*);
+    // https://blogs.msdn.microsoft.com/matthew_van_eerde/2008/12/10/sample-playing-silence-via-wasapi-event-driven-pull-mode/
+    // https://github.com/mvaneerde/blog/blob/master/silence/silence/silence.cpp
+    HRESULT play_silence();
     void serve_cb(void*);
     void serve_requests();
-    HRESULT start();
+
+    //  plays silence in loopback devices so that sample positions
+    // stay consistent in regard to time and the source loopback pushes
+    // samples to downstream consistently
+    HRESULT initialize_render(IMMDevice*, WAVEFORMATEX*);
 
     double sine_var;
 public:

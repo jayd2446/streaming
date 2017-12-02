@@ -60,7 +60,8 @@ source_loopback::source_loopback(const media_session_t& session) :
     media_source(session), device_time_position(0), started(false), 
     generate_sine(false), sine_var(0),
     consumed_samples_end(std::numeric_limits<frame_unit>::min()),
-    next_frame_position(0)
+    next_frame_position(0),
+    capture(false)
 {
     HRESULT hr = S_OK;
     DWORD task_id;
@@ -77,6 +78,12 @@ done:
 
 source_loopback::~source_loopback()
 {
+    if(this->started)
+    {
+        this->audio_client->Stop();
+        if(!this->capture)
+            this->audio_client_render->Stop();
+    }
     MFUnlockWorkQueue(this->work_queue_id);
 }
 
@@ -201,7 +208,7 @@ void source_loopback::process_cb(void*)
         if(!flags)
         {
             /*std::cout << "OK, " << devposition << ", " << devposition + frames << std::endl;*/
-            /*std::cout << "OK" << std::endl*/;
+            /*std::cout << "OK" << std::endl;*/
         }
 
         // convert and copy to buffer
@@ -244,13 +251,35 @@ void source_loopback::process_cb(void*)
 
 done:
     if(getbuffer)
+    {
+        getbuffer = false;
         this->audio_capture_client->ReleaseBuffer(returned_frames);
+    }
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
+
+    if(!this->capture)
+        CHECK_HR(hr = this->play_silence());
 
     lock.unlock();
     this->add_event_to_wait_queue();
     this->serve_requests();
+}
+
+HRESULT source_loopback::play_silence()
+{
+    HRESULT hr = S_OK;
+    UINT32 frames_padding;
+    LPBYTE data;
+
+    CHECK_HR(hr = this->audio_client_render->GetCurrentPadding(&frames_padding));
+    CHECK_HR(hr = this->audio_render_client->GetBuffer(
+        this->render_buffer_frame_count - frames_padding, &data));
+    CHECK_HR(hr = this->audio_render_client->ReleaseBuffer(
+        this->render_buffer_frame_count - frames_padding, AUDCLNT_BUFFERFLAGS_SILENT));
+
+done:
+    return hr;
 }
 
 void source_loopback::serve_cb(void*)
@@ -295,6 +324,27 @@ void source_loopback::serve_requests()
         throw std::exception();
 }
 
+HRESULT source_loopback::initialize_render(IMMDevice* device, WAVEFORMATEX* engine_format)
+{
+    HRESULT hr = S_OK;
+    LPBYTE data;
+
+    CHECK_HR(hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&audio_client_render));
+    CHECK_HR(hr = audio_client_render->Initialize(
+        AUDCLNT_SHAREMODE_SHARED, 0, BUFFER_DURATION, 0, engine_format, NULL));
+
+    CHECK_HR(hr = audio_client_render->GetBufferSize(&this->render_buffer_frame_count));
+    CHECK_HR(hr = 
+        audio_client_render->GetService(__uuidof(IAudioRenderClient), (void**)&this->audio_render_client));
+    CHECK_HR(hr = this->audio_render_client->GetBuffer(this->render_buffer_frame_count, &data));
+    CHECK_HR(hr = this->audio_render_client->ReleaseBuffer(
+        this->render_buffer_frame_count, AUDCLNT_BUFFERFLAGS_SILENT));
+    CHECK_HR(hr = audio_client_render->Start());
+
+done:
+    return hr;
+}
+
 void source_loopback::initialize(const std::wstring& device_id, bool capture)
 {
     HRESULT hr = S_OK;
@@ -303,6 +353,8 @@ void source_loopback::initialize(const std::wstring& device_id, bool capture)
     CComPtr<IMMDevice> device;
     WAVEFORMATEX* engine_format = NULL;
     UINT32 buffer_frame_count;
+
+    this->capture = capture;
 
     CHECK_HR(hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator),
@@ -314,7 +366,7 @@ void source_loopback::initialize(const std::wstring& device_id, bool capture)
 
     CHECK_HR(hr = this->audio_client->Initialize(
         AUDCLNT_SHAREMODE_SHARED, 
-        (capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK) | AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 
+        (this->capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK) | AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 
         BUFFER_DURATION, 0, engine_format, NULL));
 
     CHECK_HR(hr = this->audio_client->GetBufferSize(&buffer_frame_count));
@@ -347,6 +399,17 @@ void source_loopback::initialize(const std::wstring& device_id, bool capture)
     this->buffer_actual_duration = 
         (REFERENCE_TIME)((double)SECOND_IN_TIME_UNIT * buffer_frame_count / this->samples_per_second);
 
+    //// create waitable timer
+    //assert_(!this->process_event);
+    //this->process_event.Attach(CreateWaitableTimer(NULL, FALSE, NULL));
+    //if(!this->process_event)
+    //    CHECK_HR(hr = HRESULT_FROM_WIN32(GetLastError()));
+    //LARGE_INTEGER first_fire;
+    //first_fire.QuadPart = -BUFFER_DURATION / 2; // negative means relative time
+    //LONG time_between_fires = BUFFER_DURATION / 2 / MILLISECOND_IN_TIMEUNIT;
+    //if(!SetWaitableTimer(this->process_event, &first_fire, time_between_fires, NULL, NULL, FALSE))
+    //    CHECK_HR(hr = HRESULT_FROM_WIN32(GetLastError()));
+
     // create manual reset event handle
     assert_(!this->process_event);
     this->process_event.Attach(CreateEvent(
@@ -362,26 +425,20 @@ void source_loopback::initialize(const std::wstring& device_id, bool capture)
     CHECK_HR(hr = this->add_event_to_wait_queue());
 
     // start capturing
-    CHECK_HR(hr = this->start());
+    CHECK_HR(hr = this->audio_client->Start());
+
+    // initialize silence fix
+    // (https://github.com/jp9000/obs-studio/blob/master/plugins/win-wasapi/win-wasapi.cpp#L199)
+    if(!this->capture)
+        CHECK_HR(hr = this->initialize_render(device, engine_format));
+
+    this->started = true;
 
 done:
     if(engine_format)
         CoTaskMemFree(engine_format);
     if(FAILED(hr))
         throw std::exception();
-}
-
-HRESULT source_loopback::start()
-{
-    HRESULT hr = S_OK;
-    if(!this->started)
-    {
-        CHECK_HR(hr = this->audio_client->Start());
-        this->started = true;
-    }
-
-done:
-    return hr;
 }
 
 media_stream_t source_loopback::create_stream()
