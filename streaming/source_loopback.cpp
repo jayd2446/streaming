@@ -329,17 +329,17 @@ HRESULT source_loopback::initialize_render(IMMDevice* device, WAVEFORMATEX* engi
     HRESULT hr = S_OK;
     LPBYTE data;
 
-    CHECK_HR(hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, (void**)&audio_client_render));
-    CHECK_HR(hr = audio_client_render->Initialize(
+    CHECK_HR(hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, 
+        (void**)&this->audio_client_render));
+    CHECK_HR(hr = this->audio_client_render->Initialize(
         AUDCLNT_SHAREMODE_SHARED, 0, BUFFER_DURATION, 0, engine_format, NULL));
 
-    CHECK_HR(hr = audio_client_render->GetBufferSize(&this->render_buffer_frame_count));
-    CHECK_HR(hr = 
-        audio_client_render->GetService(__uuidof(IAudioRenderClient), (void**)&this->audio_render_client));
+    CHECK_HR(hr = this->audio_client_render->GetBufferSize(&this->render_buffer_frame_count));
+    CHECK_HR(hr = this->audio_client_render->GetService(
+        __uuidof(IAudioRenderClient), (void**)&this->audio_render_client));
     CHECK_HR(hr = this->audio_render_client->GetBuffer(this->render_buffer_frame_count, &data));
     CHECK_HR(hr = this->audio_render_client->ReleaseBuffer(
         this->render_buffer_frame_count, AUDCLNT_BUFFERFLAGS_SILENT));
-    CHECK_HR(hr = audio_client_render->Start());
 
 done:
     return hr;
@@ -399,6 +399,11 @@ void source_loopback::initialize(const std::wstring& device_id, bool capture)
     this->buffer_actual_duration = 
         (REFERENCE_TIME)((double)SECOND_IN_TIME_UNIT * buffer_frame_count / this->samples_per_second);
 
+    // initialize silence fix
+    // (https://github.com/jp9000/obs-studio/blob/master/plugins/win-wasapi/win-wasapi.cpp#L199)
+    if(!this->capture)
+        CHECK_HR(hr = this->initialize_render(device, engine_format));
+
     //// create waitable timer
     //assert_(!this->process_event);
     //this->process_event.Attach(CreateWaitableTimer(NULL, FALSE, NULL));
@@ -425,12 +430,9 @@ void source_loopback::initialize(const std::wstring& device_id, bool capture)
     CHECK_HR(hr = this->add_event_to_wait_queue());
 
     // start capturing
-    CHECK_HR(hr = this->audio_client->Start());
-
-    // initialize silence fix
-    // (https://github.com/jp9000/obs-studio/blob/master/plugins/win-wasapi/win-wasapi.cpp#L199)
     if(!this->capture)
-        CHECK_HR(hr = this->initialize_render(device, engine_format));
+        CHECK_HR(hr = this->audio_client_render->Start());
+    CHECK_HR(hr = this->audio_client->Start());
 
     this->started = true;
 

@@ -36,6 +36,9 @@ void sink_audio::write_packets_cb(void*)
             continue;
 
         media_buffer_samples_t samples = request.sample_view->get_buffer<media_buffer_samples>();
+        if(!samples)
+            continue;
+
         for(auto it = samples->samples.begin(); it != samples->samples.end(); it++)
             this->file_output->write_sample(false, *it);
     }
@@ -149,8 +152,7 @@ media_stream::result_t stream_audio::process_sample(
     request.stream = this;
     this->sink->write_queue.push(request);
 
-    if(sample_view)
-        this->sink->write_packets();
+    this->sink->write_packets();
 
     return OK;
 }

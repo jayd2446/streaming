@@ -7,9 +7,10 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-sink_mpeg2::sink_mpeg2(const media_session_t& session) : 
+sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& audio_session) : 
     media_sink(session),
-    audio_session(new media_session(session->get_time_source())),
+    audio_session(audio_session),
+    /*audio_session(new media_session(session->get_time_source())),*/
     stopped_signal(NULL)
 {
     this->write_packets_callback.Attach(new async_callback_t(&sink_mpeg2::write_packets_cb));
@@ -17,8 +18,8 @@ sink_mpeg2::sink_mpeg2(const media_session_t& session) :
 
 sink_mpeg2::~sink_mpeg2()
 {
-    this->audio_session->stop_playback();
-    this->audio_session->shutdown();
+    /*this->audio_session->stop_playback();
+    this->audio_session->shutdown();*/
 }
 
 void sink_mpeg2::write_packets()
@@ -41,6 +42,9 @@ void sink_mpeg2::write_packets_cb(void*)
     while(this->write_queue.pop(request))
     {
         /*std::cout << request.rp.packet_number << std::endl;*/
+        if(!request.sample_view)
+            continue;
+
         media_buffer_memorybuffer_t sample = request.sample_view->get_buffer<media_buffer_memorybuffer>();
         if(!sample)
             continue;
@@ -49,11 +53,13 @@ void sink_mpeg2::write_packets_cb(void*)
     }
 }
 
-void sink_mpeg2::initialize(HANDLE stopped_signal,
+void sink_mpeg2::initialize(
+    bool null_file,
+    HANDLE stopped_signal,
     const CComPtr<IMFMediaType>& video_type, const CComPtr<IMFMediaType>& audio_type)
 {
     this->file_output.reset(new output_file);
-    this->file_output->initialize(stopped_signal, video_type, audio_type);
+    this->file_output->initialize(null_file, stopped_signal, video_type, audio_type);
 }
 
 void sink_mpeg2::set_new_audio_topology(const stream_audio_t& audio_sink_stream,
@@ -101,6 +107,10 @@ stream_mpeg2::~stream_mpeg2()
 bool stream_mpeg2::on_clock_start(time_unit t)
 {
     this->set_schedule_cb_work_queue(this->work_queue_id);
+
+    // try to set the initial time for the output;
+    // the output will modify the sample timestamps so that they start at 0
+    this->sink->get_output()->set_initial_time(t);
 
     // set the new audio topology for the audio session
     media_topology_t new_audio_topology = std::atomic_load(&this->sink->new_audio_topology);
@@ -199,7 +209,7 @@ void stream_mpeg2::dispatch_request(request_packet& rp)
 
             result_t res = (*it)->request_sample(rp, this);
             if(res == FATAL_ERROR)
-                std::cout << "scene switched" << std::endl;
+                std::cout << "topology switched" << std::endl;
             return;
         }
     }
@@ -227,8 +237,7 @@ media_stream::result_t stream_mpeg2::process_sample(
     // it must be ensured that the resource is unlocked in this call;
     // currently though, the sample views won't lock at this point anymore
 
-    if(sample_view->get_buffer<media_buffer_memorybuffer>())
-        this->sink->write_packets();
+    this->sink->write_packets();
 
     return OK;
 }

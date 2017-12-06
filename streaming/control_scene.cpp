@@ -1,5 +1,6 @@
 #include "control_scene.h"
 #include "control_pipeline.h"
+#include "source_null.h"
 #include "assert.h"
 #include <functiondiscoverykeys_devpkey.h>
 
@@ -108,15 +109,15 @@ void control_scene::reset_topology(bool create_new)
     this->video_topology.reset(new media_topology(this->pipeline.time_source));
     this->audio_topology.reset(new media_topology(this->pipeline.time_source));
 
-    // TODO: support for multiple displaycapture and audio sources via mixer transforms
     // TODO: fps num and den in pipeline
 
     // create streams
-    stream_mpeg2_t mpeg_stream = this->pipeline.mpeg_sink->create_stream(this->video_topology->get_clock());
+    stream_mpeg2_t mpeg_stream = 
+        this->pipeline.mpeg_sink.second->create_stream(this->video_topology->get_clock());
     stream_audio_t audio_stream = 
-        this->pipeline.audio_sink->create_stream(this->audio_topology->get_clock());
+        this->pipeline.audio_sink.second->create_stream(this->audio_topology->get_clock());
 
-    this->pipeline.mpeg_sink->set_new_audio_topology(audio_stream, this->audio_topology);
+    this->pipeline.mpeg_sink.second->set_new_audio_topology(audio_stream, this->audio_topology);
     mpeg_stream->set_pull_rate(60, 1);
 
     for(int i = 0; i < WORKER_STREAMS; i++)
@@ -125,15 +126,6 @@ void control_scene::reset_topology(bool create_new)
 
         // video
         {
-            stream_mpeg2_worker_t worker_stream = this->pipeline.mpeg_sink->create_worker_stream();
-            media_stream_t encoder_stream = this->pipeline.h264_encoder_transform->create_stream();
-            media_stream_t color_converter_stream = this->pipeline.color_converter_transform->create_stream();
-            media_stream_t preview_stream = this->pipeline.preview_sink->create_stream();
-
-            // TODO: encoder stream is redundant
-            mpeg_stream->add_worker_stream(worker_stream);
-            mpeg_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
-
             // send the source input streams to videoprocessor transform
             stream_videoprocessor_t videoprocessor_stream = 
                 this->pipeline.videoprocessor_transform->create_stream();
@@ -156,21 +148,14 @@ void control_scene::reset_topology(bool create_new)
                 }
             }
 
-            // connect the video processor stream to the rest of the streams
-            this->video_topology->connect_streams(videoprocessor_stream, color_converter_stream);
-            this->video_topology->connect_streams(videoprocessor_stream, preview_stream);
-            this->video_topology->connect_streams(color_converter_stream, encoder_stream);
-            this->video_topology->connect_streams(encoder_stream, worker_stream);
-            this->video_topology->connect_streams(worker_stream, mpeg_stream);
+            // set the pipeline specific part of the topology
+            this->pipeline.build_video_topology_branch(
+                this->video_topology, videoprocessor_stream, mpeg_stream);
         }
 
         // audio
+        if(!this->audio_sources.empty())
         {
-            stream_audio_worker_t worker_stream = this->pipeline.audio_sink->create_worker_stream();
-            media_stream_t aac_encoder_stream = this->pipeline.aac_encoder_transform->create_stream();
-
-            audio_stream->add_worker_stream(worker_stream);
-
             // chain first audio source to its audio processor
             media_stream_t first_audio_stream = this->audio_sources[0].second.first->create_stream();
             media_stream_t last_stream = this->audio_sources[0].second.second->create_stream();
@@ -197,29 +182,44 @@ void control_scene::reset_topology(bool create_new)
                 last_stream = audiomix_stream;
             }
 
-            this->audio_topology->connect_streams(last_stream, aac_encoder_stream);
-            this->audio_topology->connect_streams(aac_encoder_stream, worker_stream);
-            this->audio_topology->connect_streams(worker_stream, audio_stream);
+            // set the pipeline specific part of the topology
+            this->pipeline.build_audio_topology_branch(
+                this->audio_topology, last_stream, audio_stream);
+        }
+        else
+        {
+            source_null_t null_source(new source_null(this->pipeline.audio_session));
+            media_stream_t null_stream = null_source->create_stream();
+            this->pipeline.build_audio_topology_branch(
+                this->audio_topology, null_stream, audio_stream);
         }
     }
 }
 
 void control_scene::activate_scene()
 {
-    assert_(this->displaycapture_sources.empty() && 
-        this->audio_sources.empty() &&
-        this->videoprocessor_stream_controllers.empty() &&
-        this->audio_mixers.empty());
+    /*if(!reactivate)
+        assert_(this->displaycapture_sources.empty() && 
+            this->audio_sources.empty() &&
+            this->videoprocessor_stream_controllers.empty() &&
+            this->audio_mixers.empty());*/
+
+    // activate scene cannot directly modify the containers because when updating a scene
+    // the old container must be immutable so that the pipeline can properly share
+    // the components
 
     // activate displaycapture items
+    std::vector<std::pair<displaycapture_item, source_displaycapture5_t>> displaycapture_sources;
     for(auto it = this->displaycapture_items.begin(); it != this->displaycapture_items.end(); it++)
     {
         source_displaycapture5_t displaycapture_source = this->pipeline.create_displaycapture_source(
             it->adapter_ordinal, it->output_ordinal);
-        this->displaycapture_sources.push_back(std::make_pair(*it, displaycapture_source));
+        displaycapture_sources.push_back(std::make_pair(*it, displaycapture_source));
     }
+    this->displaycapture_sources.swap(displaycapture_sources);
 
     // activate video processor stream controllers
+    std::vector<stream_videoprocessor_controller_t> videoprocessor_stream_controllers;
     for(auto it = this->video_items.begin(); it != this->video_items.end(); it++)
     {
         stream_videoprocessor_controller_t controller(new stream_videoprocessor_controller);
@@ -228,20 +228,25 @@ void control_scene::activate_scene()
         params.dest_rect = it->dest_rect;
         controller->set_params(params);
 
-        this->videoprocessor_stream_controllers.push_back(controller);
+        videoprocessor_stream_controllers.push_back(controller);
     }
+    this->videoprocessor_stream_controllers.swap(videoprocessor_stream_controllers);
 
     // activate audio items
+    std::vector<std::pair<audio_item, source_audio_t>> audio_sources;
     for(auto it = this->audio_items.begin(); it != this->audio_items.end(); it++)
     {
         source_audio_t audio_source = this->pipeline.create_audio_source(
             it->device_id, it->capture);
-        this->audio_sources.push_back(std::make_pair(*it, audio_source));
+        audio_sources.push_back(std::make_pair(*it, audio_source));
     }
+    this->audio_sources.swap(audio_sources);
 
     // activate audio mixers
+    std::vector<transform_audiomix_t> audio_mixers;
     for(int i = 0; i < (int)this->audio_items.size() - 1; i++)
-        this->audio_mixers.push_back(this->pipeline.create_audio_mixer());
+        audio_mixers.push_back(this->pipeline.create_audio_mixer());
+    this->audio_mixers.swap(audio_mixers);
 
     // reset the topologies
     this->reset_topology(true);

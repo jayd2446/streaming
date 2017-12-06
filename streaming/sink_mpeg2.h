@@ -35,6 +35,7 @@ private:
     request_queue write_queue;
     CComPtr<async_callback_t> write_packets_callback;
 
+    media_session_t audio_session;
     stream_audio_t audio_sink_stream, new_audio_sink_stream;
     media_topology_t new_audio_topology;
 
@@ -44,14 +45,13 @@ private:
     void write_packets();
     void write_packets_cb(void*);
 public:
-    media_session_t audio_session;
-
-    explicit sink_mpeg2(const media_session_t& session);
+    explicit sink_mpeg2(const media_session_t& session, const media_session_t& audio_session);
     ~sink_mpeg2();
 
     const output_file_t& get_output() const {return this->file_output;}
 
     void initialize(
+        bool null_file,
         HANDLE stopped_signal,
         const CComPtr<IMFMediaType>& video_type, 
         const CComPtr<IMFMediaType>& audio_type);

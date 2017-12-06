@@ -44,6 +44,9 @@ void gui_maindlg::add_new_item(new_item_t item)
             this->wnd_video_list.AddString(L"Video");
 
             this->wnd_record.EnableWindow();
+
+            // update the selected scene in the pipeline
+            this->wnd_parent.ctrl_pipeline.set_active(scene);
         }
     }
     else if(item == NEW_AUDIO)
@@ -58,6 +61,9 @@ void gui_maindlg::add_new_item(new_item_t item)
             this->wnd_audio_list.AddString(dlg.audios[dlg.cursel].device_friendlyname.c_str());
 
             this->wnd_record.EnableWindow();
+
+            // update the selected scene in the pipeline
+            this->wnd_parent.ctrl_pipeline.set_active(scene);
         }
     }
 }
@@ -100,16 +106,18 @@ LRESULT gui_maindlg::OnBnClickedNewaudio(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
 
 LRESULT gui_maindlg::OnBnClickedButtonRecord(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    if(!this->wnd_parent.ctrl_pipeline.is_running())
+    if(!this->wnd_parent.ctrl_pipeline.is_recording())
     {
         const int index = this->wnd_scene_list.GetCurSel();
-        this->wnd_parent.ctrl_pipeline.set_active(
-            this->wnd_parent.ctrl_pipeline.get_scene(index));
+        this->wnd_parent.ctrl_pipeline.start_recording(
+            L"test.mp4", this->wnd_parent.ctrl_pipeline.get_scene(index));
         this->wnd_record.SetWindowTextW(L"Stop Recording");
     }
     else
     {
-        this->wnd_parent.ctrl_pipeline.set_inactive();
+        this->wnd_parent.ctrl_pipeline.stop_recording();
+        // called when this dialog is destroyed
+        /*this->wnd_parent.ctrl_pipeline.set_inactive();*/
         this->wnd_record.SetWindowTextW(L"Start Recording");
     }
 
@@ -126,5 +134,13 @@ LRESULT gui_maindlg::OnLbnSelchangeListScenes(WORD /*wNotifyCode*/, WORD /*wID*/
             this->wnd_parent.ctrl_pipeline.get_scene(index));
     }
 
+    return 0;
+}
+
+
+LRESULT gui_maindlg::OnDestroy(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
+{
+    if(this->wnd_parent.ctrl_pipeline.is_running())
+        this->wnd_parent.ctrl_pipeline.set_inactive();
     return 0;
 }

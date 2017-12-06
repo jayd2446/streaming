@@ -105,6 +105,9 @@
     <ClCompile Include="output_file.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source_null.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -219,6 +222,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="output_file.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_null.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

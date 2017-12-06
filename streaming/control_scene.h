@@ -5,6 +5,7 @@
 #include "transform_videoprocessor.h"
 #include "transform_audioprocessor.h"
 #include "transform_audiomix.h"
+#include "sink_mpeg2.h"
 #include <mmdeviceapi.h>
 #include <string>
 #include <vector>

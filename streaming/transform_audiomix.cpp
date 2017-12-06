@@ -92,14 +92,15 @@ CComPtr<IMFMediaBuffer> transform_audiomix::mix(
     for(UINT32 i = 0; i < (offset_end - offset_start) / block_align * channels; i++)
     {
         double in = ((bit_depth_t*)data_out)[i], in2 = ((bit_depth_t*)data_in)[i];
-        in += std::numeric_limits<bit_depth_t>::max();
+        in += in2;
+        /*in += std::numeric_limits<bit_depth_t>::max();
         in2 += std::numeric_limits<bit_depth_t>::max();
 
         in += in2;
         in /= std::numeric_limits<ubit_depth_t>::max() * 2;
         in *= 2;
         in -= 1;
-        in *= std::numeric_limits<bit_depth_t>::max();
+        in *= std::numeric_limits<bit_depth_t>::max();*/
 
         int32_t out = (int32_t)in;
         // clamp
