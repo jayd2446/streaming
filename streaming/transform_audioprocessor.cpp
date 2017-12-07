@@ -259,10 +259,6 @@ void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
     request_t request;
     while(this->requests.get(request))
     {
-        // clock is assumed to be valid if there's a request pending
-        presentation_clock_t clock;
-        request.rp.get_clock(clock);
-
         // samples are collected up to the request time;
         // sample that goes over the request time will not be collected
 
@@ -350,17 +346,7 @@ void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
             }
 
             consumed_samples_end = std::max(new_sample_time + new_sample_dur, consumed_samples_end);
-            /*if(dispatch)
-                this->consumed_samples_end = 
-                std::max(new_sample_time + new_sample_dur, this->consumed_samples_end);*/
         }
-
-        // TODO: stale requests should be checked other way
-        // request is considered stale if the device time has already passed the request time
-        // and there isn't any samples to serve
-        const time_unit current_time = clock->get_current_time();
-        if(request.rp.request_time <= (current_time - SECOND_IN_TIME_UNIT * 2))
-            dispatch = true;
 
         if(dispatch)
         {

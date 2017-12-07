@@ -196,6 +196,7 @@ media_stream::result_t stream_color_converter::process_sample(
         desc.MiscFlags = 0;
         desc.Usage = D3D11_USAGE_DEFAULT;
         desc.Format = DXGI_FORMAT_NV12;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
         CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
             &desc, NULL, &this->output_buffer->texture));
         CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));

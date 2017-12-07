@@ -156,6 +156,8 @@ void control_scene::reset_topology(bool create_new)
         // audio
         if(!this->audio_sources.empty())
         {
+            // TODO: source loopback isn't a component anymore
+
             // chain first audio source to its audio processor
             media_stream_t first_audio_stream = this->audio_sources[0].second.first->create_stream();
             media_stream_t last_stream = this->audio_sources[0].second.second->create_stream();

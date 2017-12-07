@@ -63,6 +63,7 @@ void transform_aac_encoder::processing_cb(void*)
                 CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
 
 #ifdef _DEBUG
+                // TODO: this might trigger if the ending request times differ for the mixer streams
                 if(ts < this->last_time_stamp)
                     DebugBreak();
                 this->last_time_stamp = ts + dur;

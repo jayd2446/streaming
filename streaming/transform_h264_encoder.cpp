@@ -1,5 +1,6 @@
 #include "transform_h264_encoder.h"
 #include <Mferror.h>
+#include <initguid.h>
 #include <evr.h>
 #include <codecapi.h>
 #include <iostream>
@@ -16,10 +17,12 @@ void CHECK_HR(HRESULT hr)
 #undef max
 #undef min
 
-transform_h264_encoder::transform_h264_encoder(const media_session_t& session) :
+transform_h264_encoder::transform_h264_encoder(const media_session_t& session, 
+    std::recursive_mutex& context_mutex) :
     media_source(session),
     encoder_requests(0),
-    last_time_stamp(std::numeric_limits<time_unit>::min())
+    last_time_stamp(std::numeric_limits<time_unit>::min()),
+    context_mutex(context_mutex)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
     this->process_output_callback.Attach(new async_callback_t(&transform_h264_encoder::process_output_cb));
@@ -195,7 +198,10 @@ void transform_h264_encoder::processing_cb(void*)
         CHECK_HR(hr = MFFrameRateToAverageTimePerFrame(60, 1, &duration));*/
         CHECK_HR(hr = sample->SetSampleTime(timestamp));
         /*CHECK_HR(hr = sample->SetSampleDuration(duration));*/
-        CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));
+        {
+            scoped_lock lock(this->context_mutex);
+            CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));
+        }
     }
 
 done:
@@ -334,10 +340,10 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
     CHECK_HR(hr = this->encoder->GetOutputStreamInfo(this->output_id, &this->output_stream_info));
 
     // associate a dxgidevicemanager with the encoder
-    CHECK_HR(hr = MFCreateDXGIDeviceManager(&this->reset_token, &this->devmngr));
+    /*CHECK_HR(hr = MFCreateDXGIDeviceManager(&this->reset_token, &this->devmngr));
     CHECK_HR(hr = this->devmngr->ResetDevice(this->d3d11dev, this->reset_token));
     CHECK_HR(hr = this->encoder->ProcessMessage(
-        MFT_MESSAGE_SET_D3D_MANAGER, (ULONG_PTR)this->devmngr.p));
+        MFT_MESSAGE_SET_D3D_MANAGER, (ULONG_PTR)this->devmngr.p));*/
 
     // get the media event generator interface
     CHECK_HR(hr = this->encoder->QueryInterface(&this->event_generator));
@@ -352,9 +358,12 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
     */
 
     // start the encoder
-    CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
-    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, NULL));
-    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));
+    {
+        scoped_lock lock(this->context_mutex);
+        CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
+        CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, NULL));
+        CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));
+    }
 
 done:
     // release allocated memory

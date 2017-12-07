@@ -99,6 +99,7 @@ transform_videoprocessor_t control_pipeline::create_videoprocessor()
     if(this->videoprocessor_transform)
         return this->videoprocessor_transform;
 
+    // TODO: nvidia video processor accepts less than 16 streams
     transform_videoprocessor_t videoprocessor_transform(
         new transform_videoprocessor(this->session, this->context_mutex));
     videoprocessor_transform->initialize(16, this->d3d11dev, this->devctx);
@@ -112,7 +113,8 @@ transform_h264_encoder_t control_pipeline::create_h264_encoder(bool null_file)
     if(this->h264_encoder_transform)
         return this->h264_encoder_transform;
 
-    transform_h264_encoder_t h264_encoder_transform(new transform_h264_encoder(this->session));
+    transform_h264_encoder_t h264_encoder_transform(
+        new transform_h264_encoder(this->session, this->context_mutex));
     h264_encoder_transform->initialize(this->d3d11dev);
     return h264_encoder_transform;
 }
@@ -379,28 +381,12 @@ void control_pipeline::set_active(control_scene& scene)
 {
     const bool first_start = !this->scene_active;
 
-    /*if(starting)
-        this->reset_components(true);*/
     this->activate_components();
 
     scene.activate_scene();
     if(this->scene_active && this->scene_active != &scene)
         this->scene_active->deactivate_scene();
     this->scene_active = &scene;
-
-    //if(&scene != this->scene_active)
-    //{
-    //    scene.activate_scene();
-    //    if(this->scene_active != NULL)
-    //        this->scene_active->deactivate_scene();
-    //    this->scene_active = &scene;
-    //}
-    //else
-    //{
-    //    // just update the current scene;
-    //    // bool parameter is just for debugging purposes
-    //    this->scene_active->activate_scene(true);
-    //}
 
     if(first_start)
     {
@@ -411,14 +397,10 @@ void control_pipeline::set_active(control_scene& scene)
         else
             assert_(false);
 #endif
-        //// start the time source
-        //this->time_source->start();
-
         // start the media session with the topology
         // it's ok to start with time point of 0 because the starting happens only once
         // in the lifetime of pipeline;
-        this->session->start_playback(
-            this->scene_active->video_topology, 0/*this->time_source->get_current_time()*/);
+        this->session->start_playback(this->scene_active->video_topology, 0);
     }
     else
     {

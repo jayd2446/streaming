@@ -50,6 +50,8 @@ private:
     std::recursive_mutex processed_samples_mutex;
     std::unordered_map<time_unit /*request time*/, request_t> processed_samples;
 
+    std::recursive_mutex& context_mutex;
+
     // debug
     time_unit last_time_stamp;
 
@@ -64,7 +66,7 @@ private:
 public:
     CComPtr<IMFMediaType> output_type;
 
-    explicit transform_h264_encoder(const media_session_t& session);
+    explicit transform_h264_encoder(const media_session_t& session, std::recursive_mutex& context_mutex);
 
     HRESULT initialize(const CComPtr<ID3D11Device>&);
     media_stream_t create_stream();
