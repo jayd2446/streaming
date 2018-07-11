@@ -8,17 +8,17 @@
 
 #pragma comment(lib, "dxguid.lib")
 
-void CHECK_HR(HRESULT hr)
-{
-    if(FAILED(hr))
-        throw std::exception();
-}
-//#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+//void CHECK_HR(HRESULT hr)
+//{
+//    if(FAILED(hr))
+//        throw std::exception();
+//}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 #undef max
 #undef min
 
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session, 
-    std::recursive_mutex& context_mutex) :
+    context_mutex_t context_mutex) :
     media_source(session),
     encoder_requests(0),
     last_time_stamp(std::numeric_limits<time_unit>::min()),
@@ -40,8 +40,8 @@ HRESULT transform_h264_encoder::set_input_stream_type()
     CHECK_HR(hr = input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
     CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));
     /*CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));*/
-    CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, 60, 1));
-    CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, 1920, 1080));
+    CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, frame_rate_num, frame_rate_den));
+    CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
     CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
@@ -199,7 +199,7 @@ void transform_h264_encoder::processing_cb(void*)
         CHECK_HR(hr = sample->SetSampleTime(timestamp));
         /*CHECK_HR(hr = sample->SetSampleDuration(duration));*/
         {
-            scoped_lock lock(this->context_mutex);
+            scoped_lock lock(*this->context_mutex);
             CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));
         }
     }
@@ -359,7 +359,7 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
 
     // start the encoder
     {
-        scoped_lock lock(this->context_mutex);
+        scoped_lock lock(*this->context_mutex);
         CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
         CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, NULL));
         CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));

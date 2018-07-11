@@ -12,7 +12,8 @@ control_pipeline::control_pipeline() :
     preview_wnd(NULL),
     scene_active(NULL),
     d3d11dev_adapter(0),
-    stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL))
+    stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL)),
+    context_mutex(new std::recursive_mutex)
 {
     if(!this->stopped_signal)
         throw std::exception();
@@ -99,10 +100,9 @@ transform_videoprocessor_t control_pipeline::create_videoprocessor()
     if(this->videoprocessor_transform)
         return this->videoprocessor_transform;
 
-    // TODO: nvidia video processor accepts less than 16 streams
     transform_videoprocessor_t videoprocessor_transform(
         new transform_videoprocessor(this->session, this->context_mutex));
-    videoprocessor_transform->initialize(16, this->d3d11dev, this->devctx);
+    videoprocessor_transform->initialize(this->d3d11dev, this->devctx);
     return videoprocessor_transform;
 }
 
@@ -184,65 +184,6 @@ sink_audio_t control_pipeline::create_audio_sink(bool null_file, const output_fi
     audio_sink->initialize(output);
     return audio_sink;
 }
-
-//void control_pipeline::reset_components(bool create_new)
-//{
-//    if(!create_new)
-//    {
-//        this->videoprocessor_transform = NULL;
-//        this->h264_encoder_transform = NULL;
-//        this->color_converter_transform = NULL;
-//        this->preview_sink = NULL;
-//        this->mpeg_sink = NULL;
-//        this->aac_encoder_transform = NULL;
-//        this->audio_sink = NULL;
-//        this->session = NULL;
-//        this->audio_session = NULL;
-//        this->time_source = NULL;
-//        return;
-//    }
-//
-//    // create the time source and session
-//    this->time_source.reset(new presentation_time_source);
-//    this->time_source->set_current_time(0);
-//    // time source must be started early because the audio processor might use the time source
-//    // before the topology is started
-//    this->time_source->start();
-//    this->session.reset(new media_session(this->time_source));
-//
-//    // create and initialize the videoprocessor transform
-//    this->videoprocessor_transform.reset(new transform_videoprocessor(this->session, this->context_mutex));
-//    this->videoprocessor_transform->initialize(16, this->d3d11dev, this->devctx);
-//
-//    // create and initialize the h264 encoder transform
-//    this->h264_encoder_transform.reset(new transform_h264_encoder(this->session));
-//    this->h264_encoder_transform->initialize(this->d3d11dev);
-//
-//    // create and initialize the color converter transform
-//    this->color_converter_transform.reset(new transform_color_converter(this->session, this->context_mutex));
-//    this->color_converter_transform->initialize(this->d3d11dev, this->devctx);
-//
-//    // create and initialize the preview window sink
-//    this->preview_sink.reset(new sink_preview2(this->session, this->context_mutex));
-//    this->preview_sink->initialize(this->preview_wnd, this->d3d11dev);
-//
-//    // create the mpeg2 sink
-//    this->mpeg_sink.reset(new sink_mpeg2(this->session));
-//
-//    // create and initialize the aac encoder transform
-//    this->aac_encoder_transform.reset(new transform_aac_encoder(this->mpeg_sink->audio_session));
-//    this->aac_encoder_transform->initialize();
-//
-//    // initialize the mpeg2 sink
-//    this->mpeg_sink->initialize(
-//        this->stopped_signal,
-//        this->h264_encoder_transform->output_type, 
-//        this->aac_encoder_transform->output_type);
-//
-//    // create and initialize the audio sink
-//    this->audio_sink.reset(new sink_audio(this->mpeg_sink->audio_session));
-//    this->audio_sink->initialize(this->mpeg_sink->get_output());
-//}
 
 void control_pipeline::initialize(HWND preview_wnd)
 {

@@ -1,9 +1,27 @@
 #include "gui_frame.h"
 
-extern CAppModule _Module;
+// windows 10 specific
+DECLARE_HANDLE(DPI_AWARENESS_CONTEXT);
+typedef BOOL (WINAPI *PFNSETPROCESSDPIAWARENESSCONTEXT)(DPI_AWARENESS_CONTEXT value);
+#define DPI_AWARENESS_CONTEXT_UNAWARE              ((DPI_AWARENESS_CONTEXT)-1)
+#define DPI_AWARENESS_CONTEXT_SYSTEM_AWARE         ((DPI_AWARENESS_CONTEXT)-2)
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE    ((DPI_AWARENESS_CONTEXT)-3)
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
 
-gui_frame::gui_frame() : wnd_maindlg(*this), wnd_preview(*this)
+gui_frame::gui_frame(CAppModule& module) : module(module), wnd_maindlg(*this), wnd_preview(*this)
 {
+    PFNSETPROCESSDPIAWARENESSCONTEXT SetProcessDpiAwarenessContext  = (PFNSETPROCESSDPIAWARENESSCONTEXT)
+        GetProcAddress(GetModuleHandle(L"user32.dll"), "SetProcessDpiAwarenessContext");
+    
+    if(SetProcessDpiAwarenessContext)
+    {
+        // this failed previously because for some reason
+        // the debug version of this exe had the dpi setting overridden in the
+        // compatibility section of the exe;
+        // https://stackoverflow.com/questions/46651074/wm-dpichanged-not-received-when-scaling-performed-by-application
+        BOOL success = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        assert_(success);
+    }
 }
 
 BOOL gui_frame::PreTranslateMessage(MSG* pMsg)
@@ -18,9 +36,17 @@ BOOL gui_frame::OnIdle()
     return FALSE;
 }
 
+void gui_frame::OnDestroy()
+{
+    CMessageLoop* loop = this->module.GetMessageLoop();
+    loop->RemoveIdleHandler(this);
+    loop->RemoveMessageFilter(this);
+    this->SetMsgHandled(FALSE);
+}
+
 int gui_frame::OnCreate(LPCREATESTRUCT)
 {
-    CMessageLoop* loop = _Module.GetMessageLoop();
+    CMessageLoop* loop = this->module.GetMessageLoop();
     loop->AddMessageFilter(this);
     loop->AddIdleHandler(this);
 
@@ -40,6 +66,22 @@ int gui_frame::OnCreate(LPCREATESTRUCT)
 
     this->ctrl_pipeline.initialize(this->wnd_preview);
 
+    return 0;
+}
+
+void gui_frame::OnSetFocus(CWindow /*old*/)
+{
+    this->wnd_maindlg.SetFocus();
+}
+
+LRESULT gui_frame::OnDpiChanged(UINT /*uMsg*/, WPARAM wParam, LPARAM lParam, BOOL& /*bHandled*/)
+{
+    // https://github.com/Microsoft/Windows-classic-samples/blob/master/Samples/DPIAwarenessPerWindow/cpp/DpiAwarenessContext.cpp#L280
+    const UINT dpi = HIWORD(wParam);
+    LPCRECT new_scale = (LPCRECT)lParam;
+
+    dpi;
+    this->SetWindowPos(NULL, new_scale, SWP_NOZORDER | SWP_NOACTIVATE);
     return 0;
 }
 

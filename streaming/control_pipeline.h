@@ -66,7 +66,7 @@ private:
     CComPtr<IDXGIFactory1> dxgifactory;
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11DeviceContext> devctx;
-    std::recursive_mutex context_mutex;
+    context_mutex_t context_mutex;
 
     void activate_components();
     void deactivate_components();

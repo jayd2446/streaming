@@ -22,6 +22,7 @@ class gui_frame :
 {
 private:
     CSplitterWindow wnd_splitter;
+    CAppModule& module;
 public:
     DECLARE_FRAME_WND_CLASS(L"streaming", IDR_MAINFRAME);
 
@@ -29,17 +30,23 @@ public:
     gui_preview wnd_preview;
     control_pipeline ctrl_pipeline;
 
-    gui_frame();
+    explicit gui_frame(CAppModule&);
 
     BOOL PreTranslateMessage(MSG* pMsg);
     BOOL OnIdle();
 
     BEGIN_MSG_MAP(gui_frame)
+        MSG_WM_DESTROY(OnDestroy)
         MSG_WM_CREATE(OnCreate)
-        CHAIN_MSG_MAP(CFrameWindowImpl<gui_frame>)
+        MSG_WM_SETFOCUS(OnSetFocus)
+        MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         COMMAND_ID_HANDLER(ID_ABOUT, OnAbout)
+        CHAIN_MSG_MAP(CFrameWindowImpl<gui_frame>)
     END_MSG_MAP()
 
+    void OnDestroy();
     int OnCreate(LPCREATESTRUCT);
+    void OnSetFocus(CWindow /*old*/);
+    LRESULT OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
     LRESULT OnAbout(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };

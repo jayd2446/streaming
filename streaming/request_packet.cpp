@@ -38,13 +38,10 @@ void request_queue::push(const request_t& request)
         this->requests.push_back(request);
     }
 
-    if(request.rp.packet_number < this->first_packet_number)
-    {
-        // queue won't work properly if the first packet number is greater than
-        // the one in the submitted request
-        assert_(false);
-    }
-    else if(request.rp.packet_number > this->last_packet_number)
+    // queue won't work properly if the first packet number is greater than
+    // the one in the submitted request
+    assert_(request.rp.packet_number >= this->first_packet_number);
+    if(request.rp.packet_number > this->last_packet_number)
     {
         const int diff = request.rp.packet_number - this->last_packet_number;
         this->requests.insert(this->requests.end(), diff, request);

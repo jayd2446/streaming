@@ -28,6 +28,7 @@ public:
     typedef std::lock_guard<std::mutex> scoped_lock;
     struct params_t
     {
+        bool enable_alpha;
         RECT source_rect, dest_rect;
     };
 private:
@@ -50,7 +51,10 @@ public:
 private:
 public:
     params_t params;
+
     media_sample_view_videoprocessor(const params_t&, 
+        const media_buffer_texture_t& texture_buffer, view_lock_t = LOCK_BUFFERS);
+    media_sample_view_videoprocessor(
         const media_buffer_texture_t& texture_buffer, view_lock_t = LOCK_BUFFERS);
 };
 
@@ -64,20 +68,18 @@ public:
 private:
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;
-    CComPtr<ID3D11VideoProcessor> videoprocessor;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
     CComPtr<ID3D11VideoContext> videocontext;
     D3D11_VIDEO_PROCESSOR_CAPS videoprocessor_caps;
 
-    std::recursive_mutex& context_mutex;
+    context_mutex_t context_mutex;
 public:
-    transform_videoprocessor(const media_session_t& session, std::recursive_mutex& context_mutex);
+    transform_videoprocessor(const media_session_t& session, context_mutex_t context_mutex);
 
-    // TODO: add support for more than max input streams
-    void initialize(UINT input_streams, const CComPtr<ID3D11Device>&, ID3D11DeviceContext*);
+    void initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext*);
     stream_videoprocessor_t create_stream();
 
-    UINT max_input_streams() const {return this->videoprocessor_caps.MaxInputStreams;}
+    UINT max_input_streams() const {return /*this->videoprocessor_caps.MaxInputStreams*/10;}
 };
 
 typedef std::shared_ptr<transform_videoprocessor> transform_videoprocessor_t;
@@ -92,27 +94,49 @@ public:
     {
         request_packet rp; 
         media_sample_view_videoprocessor_t sample_view;
+        stream_videoprocessor_controller_t user_params;
     };
 private:
     transform_videoprocessor_t transform;
+    CComPtr<ID3D11VideoProcessor> videoprocessor;
     CComPtr<async_callback_t> processing_callback;
-    media_buffer_texture_t output_buffer, output_buffer_null;
-    CComPtr<ID3D11VideoProcessorOutputView> output_view;
+    media_buffer_texture_t output_buffer[2];
+    media_buffer_texture_t output_buffer_null;
+    CComPtr<ID3D11VideoProcessorOutputView> output_view[2];
     RECT output_target_rect;
     std::recursive_mutex mutex;
-    bool view_initialized;
 
     typedef std::pair<packet, const media_stream*> input_streams_t;
     std::vector<input_streams_t> input_streams;
-    std::vector<D3D11_VIDEO_PROCESSOR_STREAM> input_streams_params;
     int samples_received;
+
+    void release_input_streams(std::vector<D3D11_VIDEO_PROCESSOR_STREAM>& streams);
+    HRESULT set_input_stream(
+        const media_sample_view_videoprocessor::params_t& stream_params,
+        const media_sample_view_videoprocessor::params_t& user_params,
+        const CComPtr<ID3D11Texture2D>&,
+        D3D11_VIDEO_PROCESSOR_STREAM&, 
+        UINT index,
+        bool&);
+    HRESULT blit(
+        const std::vector<D3D11_VIDEO_PROCESSOR_STREAM>& streams,
+        const CComPtr<ID3D11VideoProcessorOutputView>&);
+    // returns false if the stream won't be shown
+    bool calculate_stream_rects(
+        const media_sample_view_videoprocessor::params_t& stream_params,
+        const media_sample_view_videoprocessor::params_t& user_params,
+        RECT& src_rect, RECT& dst_rect);
 
     void processing_cb(void*);
 public:
     explicit stream_videoprocessor(const transform_videoprocessor_t& transform);
 
-    // first input stream will appear topmost(imitates obs source ordering)
-    void add_input_stream(const media_stream* stream);
+    // last input stream appears topmost
+    void add_input_stream(
+        const media_stream* stream,
+        const stream_videoprocessor_controller_t& user_params);
+    // this function is not thread safe
+    size_t input_streams_count() const {return this->input_streams.size();}
 
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     // called by the downstream from media session

@@ -8,6 +8,12 @@ media_buffer::media_buffer() :
 {
 }
 
+media_buffer::~media_buffer()
+{
+    assert_(!this->write_lock);
+    assert_(!this->read_lock);
+}
+
 void media_buffer::lock()
 {
     scoped_lock lock(this->mutex);
@@ -89,4 +95,21 @@ media_sample_view_texture::media_sample_view_texture(
     texture_buffer(texture),
     media_sample_view(texture, view_lock)
 {
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+media_sample_view_::~media_sample_view_()
+{
+    this->buffer_view.reset();
+    this->buffer.reset();
+}
+
+void media_sample_view_::deleter(media_buffer* buffer)
+{
+    buffer->unlock();
 }

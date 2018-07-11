@@ -22,12 +22,11 @@ private:
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;
     CComPtr<ID3D11VideoContext> videocontext;
-    CComPtr<ID3D11VideoProcessor> videoprocessor;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
 
-    std::recursive_mutex& context_mutex;
+    context_mutex_t context_mutex;
 public:
-    transform_color_converter(const media_session_t& session, std::recursive_mutex& context_mutex);
+    transform_color_converter(const media_session_t& session, context_mutex_t context_mutex);
 
     HRESULT initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext* devctx);
     media_stream_t create_stream();
@@ -46,6 +45,7 @@ private:
     CComPtr<async_callback_t> processing_callback;
     media_buffer_texture_t output_buffer, output_buffer_null;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
+    CComPtr<ID3D11VideoProcessor> videoprocessor;
     bool view_initialized;
     packet pending_packet;
 

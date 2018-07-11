@@ -21,7 +21,7 @@ class sink_preview2 : public media_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    std::recursive_mutex& context_mutex;
+    context_mutex_t context_mutex;
 
     HWND hwnd;
     UINT width, height;
@@ -38,7 +38,7 @@ private:
 
     void draw_sample(const media_sample_view_t& sample_view, request_packet& rp);
 public:
-    sink_preview2(const media_session_t& session, std::recursive_mutex& context_mutex);
+    sink_preview2(const media_session_t& session, context_mutex_t context_mutex);
 
     // initializes the window
     void initialize(HWND, CComPtr<ID3D11Device>&);

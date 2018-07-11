@@ -10,7 +10,7 @@
 //}
 
 transform_color_converter::transform_color_converter(
-    const media_session_t& session, std::recursive_mutex& context_mutex) :
+    const media_session_t& session, context_mutex_t context_mutex) :
     media_source(session), context_mutex(context_mutex)
 {
 }
@@ -49,12 +49,6 @@ HRESULT transform_color_converter::initialize(
     if(!(flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT))
         throw std::exception();
 
-    // create the video processor
-    CHECK_HR(hr = this->videodevice->CreateVideoProcessor(this->enumerator, 0, &this->videoprocessor));
-
-    // set the state for the video processor
-
-
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -80,7 +74,15 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
     output_buffer_null(new media_buffer_texture),
     view_initialized(false)
 {
+    HRESULT hr = S_OK;
     this->processing_callback.Attach(new async_callback_t(&stream_color_converter::processing_cb));
+
+    CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessor(
+        this->transform->enumerator, 0, &this->videoprocessor));
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
 }
 
 void stream_color_converter::processing_cb(void*)
@@ -128,27 +130,27 @@ void stream_color_converter::processing_cb(void*)
             stream.pInputSurfaceRight = NULL;
             stream.ppFutureSurfacesRight = NULL;
 
-            scoped_lock lock(this->transform->context_mutex);
+            scoped_lock lock(*this->transform->context_mutex);
 
             // set the target rectangle for the output
             // (sets the rectangle where the output blit on the output texture will appear)
             this->transform->videocontext->VideoProcessorSetOutputTargetRect(
-                this->transform->videoprocessor, TRUE, &source_rect);
+                this->videoprocessor, TRUE, &source_rect);
 
             // set the source rectangle of the stream
             // (the part of the stream texture which will be included in the blit)
             this->transform->videocontext->VideoProcessorSetStreamSourceRect(
-                this->transform->videoprocessor, 0, TRUE, &source_rect);
+                this->videoprocessor, 0, TRUE, &source_rect);
 
             // set the destination rectangle of the stream
             // (where the stream will appear in the output blit)
             this->transform->videocontext->VideoProcessorSetStreamDestRect(
-                this->transform->videoprocessor, 0, TRUE, &source_rect);
+                this->videoprocessor, 0, TRUE, &source_rect);
 
             // blit
             const UINT stream_count = 1;
             CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
-                this->transform->videoprocessor, this->output_view,
+                this->videoprocessor, this->output_view,
                 0, stream_count, &stream));
         }
         else

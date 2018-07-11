@@ -3,7 +3,7 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
-sink_preview2::sink_preview2(const media_session_t& session, std::recursive_mutex& context_mutex) : 
+sink_preview2::sink_preview2(const media_session_t& session, context_mutex_t context_mutex) : 
     media_sink(session), context_mutex(context_mutex)
 {
 }
@@ -109,7 +109,7 @@ void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_
         rect.right = (FLOAT)this->width;
         rect.bottom = (FLOAT)this->height;
 
-        scoped_lock lock(this->context_mutex);
+        scoped_lock lock(*this->context_mutex);
         CHECK_HR(hr = texture->QueryInterface(&surface));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
             surface,
@@ -138,7 +138,7 @@ media_stream_t sink_preview2::create_stream()
 
 void sink_preview2::update_size()
 {
-    scoped_lock lock(this->context_mutex);
+    scoped_lock lock(*this->context_mutex);
 
     RECT r;
     GetClientRect(this->hwnd, &r);

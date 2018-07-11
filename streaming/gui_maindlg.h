@@ -32,7 +32,7 @@ public:
     explicit gui_maindlg(gui_frame&);
     BOOL PreTranslateMessage(MSG* pMsg);
 
-    // command handlers handle events from the sub windows
+    // command handlers handle events from the child windows
     BEGIN_MSG_MAP(gui_maindlg)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         COMMAND_HANDLER(IDC_NEWSCENE, BN_CLICKED, OnBnClickedNewscene)

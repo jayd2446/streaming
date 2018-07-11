@@ -42,7 +42,12 @@ public:
         DXGI_ADAPTER_DESC1 adapter;
         DXGI_OUTPUT_DESC output;
 
-        displaycapture_item() {this->video.type = DISPLAYCAPTURE_ITEM;}
+        // displaycapture_item based reference index;
+        // negative number means no reference;
+        // the reference must point to earlier displaycapture_item
+        int reference;
+
+        displaycapture_item() : reference(-1) {this->video.type = DISPLAYCAPTURE_ITEM;}
     };
     struct audio_item
     {
@@ -66,6 +71,10 @@ private:
     std::vector<std::pair<audio_item, source_audio_t>> audio_sources;
     std::vector<transform_audiomix_t> audio_mixers;
 
+    // finds the non duplicate displaycapture source
+    // TODO: obsolete
+    /*bool find_displaycapture_source(const displaycapture_item&, source_displaycapture5_t&) const;*/
+
     bool list_available_audio_items(std::vector<audio_item>& audios, EDataFlow);
 
     void reset_topology(bool create_new);
@@ -81,7 +90,8 @@ public:
     bool list_available_displaycapture_items(std::vector<displaycapture_item>& displaycaptures);
     bool list_available_audio_items(std::vector<audio_item>& audios);
 
-    void add_displaycapture_item(const displaycapture_item&);
+    // forcing a new instance doesn't create a reference to older displaycapture item
+    void add_displaycapture_item(const displaycapture_item&, bool force_new_instance = false);
     /*void remove_video(const std::wstring& item_name);*/
     /*void rename_video(const std::wstring& old_name, const std::wstring& new_name);*/
 

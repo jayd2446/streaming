@@ -3,6 +3,7 @@
 #include "source_null.h"
 #include "assert.h"
 #include <functiondiscoverykeys_devpkey.h>
+#include <queue>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
@@ -97,6 +98,24 @@ bool control_scene::list_available_audio_items(std::vector<audio_item>& audios)
     return !audios.empty();
 }
 
+//bool control_scene::find_displaycapture_source(
+//    const displaycapture_item& item, source_displaycapture5_t& source) const
+//{
+//    for(auto it = this->displaycapture_sources.begin(); it != this->displaycapture_sources.end(); it++)
+//    {
+//        if(it->first.video.type == item.video.type &&
+//            it->first.adapter_ordinal == item.adapter_ordinal &&
+//            it->first.output_ordinal == item.output_ordinal &&
+//            !it->first.duplicate)
+//        {
+//            source = it->second;
+//            return true;
+//        }
+//    }
+//
+//    return false;
+//}
+
 void control_scene::reset_topology(bool create_new)
 {
     if(!create_new)
@@ -122,25 +141,91 @@ void control_scene::reset_topology(bool create_new)
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
-        int displaycapture_index = 0;
-
         // video
         {
+            // TODO: decide if move this struct to scene's displaycapture_sources vector
+            struct displaycapture_streams_t
+            {
+                stream_displaycapture5_t stream;
+                stream_displaycapture5_pointer_t pointer_stream;
+            };
+            std::vector<displaycapture_streams_t> displaycapture_streams;
+            displaycapture_streams.reserve(this->video_items.size());
+
             // send the source input streams to videoprocessor transform
             stream_videoprocessor_t videoprocessor_stream = 
                 this->pipeline.videoprocessor_transform->create_stream();
+
+            int displaycapture_index = 0;
             for(size_t i = 0; i < this->video_items.size(); i++)
             {
                 switch(this->video_items[i].type)
                 {
                 case DISPLAYCAPTURE_ITEM:
+                    displaycapture_streams.push_back(displaycapture_streams_t());
+
+                    if(this->displaycapture_sources[displaycapture_index].first.reference < 0)
                     {
-                        media_stream_t displaycapture_stream = 
-                            this->displaycapture_sources[displaycapture_index].second->create_stream(
-                            this->videoprocessor_stream_controllers[i]);
-                        videoprocessor_stream->add_input_stream(displaycapture_stream.get());
+                        const source_displaycapture5_t source = 
+                            this->displaycapture_sources[displaycapture_index].second;
+
+                        // TODO: control scene shouldnt control src rect for displaycapture sample
+                        stream_videoprocessor_controller_t 
+                            videoprocessor_stream_controller(new stream_videoprocessor_controller);
+                        stream_videoprocessor_controller::params_t params;
+                        params.source_rect.top = params.source_rect.left = 0;
+                        params.source_rect.right = transform_h264_encoder::frame_width;
+                        params.source_rect.bottom = transform_h264_encoder::frame_height;
+                        params.dest_rect = params.source_rect;
+                        params.enable_alpha = true;
+                        videoprocessor_stream_controller->set_params(params);
+
+                        stream_displaycapture5_t displaycapture_stream = source->create_stream(
+                            videoprocessor_stream_controller);
+                        stream_displaycapture5_pointer_t displaycapture_pointer_stream = 
+                            source->create_pointer_stream();
+
+                        displaycapture_stream->set_pointer_stream(displaycapture_pointer_stream);
+
+                        videoprocessor_stream->add_input_stream(
+                            displaycapture_stream.get(), this->videoprocessor_stream_controllers[i]);
+                        videoprocessor_stream->add_input_stream(
+                            displaycapture_pointer_stream.get(), this->videoprocessor_stream_controllers[i]);
+
                         this->video_topology->connect_streams(displaycapture_stream, videoprocessor_stream);
+                        this->video_topology->connect_streams(displaycapture_pointer_stream, videoprocessor_stream);
+
+                        // add the created streams to displaycapture streams cache so that
+                        // references can be resolved
+                        displaycapture_streams.back().stream = displaycapture_stream;
+                        displaycapture_streams.back().pointer_stream = displaycapture_pointer_stream;
                     }
+                    else
+                    {
+                        const int reference = 
+                            this->displaycapture_sources[displaycapture_index].first.reference;
+
+                        // the reference must point to earlier displaycapture_item
+                        // for topology building to work
+                        if(reference >= displaycapture_streams.size())
+                            throw std::exception();
+                        
+                        /*const source_displaycapture5_t source = 
+                            this->displaycapture_sources[reference].second;*/
+
+                        videoprocessor_stream->add_input_stream(
+                            displaycapture_streams[reference].stream.get(), 
+                            this->videoprocessor_stream_controllers[i]);
+                        videoprocessor_stream->add_input_stream(
+                            displaycapture_streams[reference].pointer_stream.get(),
+                            this->videoprocessor_stream_controllers[i]);
+
+                        this->video_topology->connect_streams(
+                            displaycapture_streams[reference].stream, videoprocessor_stream);
+                        this->video_topology->connect_streams(
+                            displaycapture_streams[reference].pointer_stream, videoprocessor_stream);
+                    }
+
                     displaycapture_index++;
                     break;
                 default:
@@ -214,9 +299,15 @@ void control_scene::activate_scene()
     std::vector<std::pair<displaycapture_item, source_displaycapture5_t>> displaycapture_sources;
     for(auto it = this->displaycapture_items.begin(); it != this->displaycapture_items.end(); it++)
     {
-        source_displaycapture5_t displaycapture_source = this->pipeline.create_displaycapture_source(
-            it->adapter_ordinal, it->output_ordinal);
-        displaycapture_sources.push_back(std::make_pair(*it, displaycapture_source));
+        if(it->reference < 0)
+        {
+            source_displaycapture5_t displaycapture_source = this->pipeline.create_displaycapture_source(
+                it->adapter_ordinal, it->output_ordinal);
+            displaycapture_sources.push_back(std::make_pair(*it, displaycapture_source));
+        }
+        else
+            // null source denotes a duplicate
+            displaycapture_sources.push_back(std::make_pair(*it, source_displaycapture5_t()));
     }
     this->displaycapture_sources.swap(displaycapture_sources);
 
@@ -265,13 +356,30 @@ void control_scene::deactivate_scene()
     this->reset_topology(false);
 }
 
-void control_scene::add_displaycapture_item(const displaycapture_item& item)
+void control_scene::add_displaycapture_item(
+    const displaycapture_item& item, bool force_new_instance)
 {
     if(item.video.type != DISPLAYCAPTURE_ITEM)
         throw std::exception();
 
     this->video_items.push_back(item.video);
     this->displaycapture_items.push_back(item);
+
+    if(!force_new_instance)
+    {
+        // try to make the new item reference older item
+        int i = this->displaycapture_items.size() - 2;
+        for(auto it = this->displaycapture_items.rbegin() + 1; 
+            it != this->displaycapture_items.rend(); it++, i--)
+        {
+            if(it->adapter_ordinal == item.adapter_ordinal && it->output_ordinal == item.output_ordinal
+                && it->reference < 0)
+            {
+                this->displaycapture_items.back().reference = i;
+                break;
+            }
+        }
+    }
 }
 
 void control_scene::add_audio_item(const audio_item& audio)

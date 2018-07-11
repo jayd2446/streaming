@@ -233,10 +233,9 @@ void transform_audioprocessor::resample(const media_buffer_samples& samples)
         hr = this->processor->ProcessInput(0, sample, 0);
         if(hr == MF_E_NOTACCEPTING)
         {
-            if(!this->resampler_process_output(out_sample))
-                goto back;
+            if(this->resampler_process_output(out_sample))
+                process_sample();
 
-            process_sample();
             goto back;
         }
         else 

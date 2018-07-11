@@ -30,6 +30,10 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
     typedef request_queue::request_t request_t;
+
+    static const UINT32 frame_width = 1920, frame_height = 1080;
+    static const UINT32 frame_rate_num = 60;
+    static const UINT32 frame_rate_den = 1;
 private:
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -50,7 +54,7 @@ private:
     std::recursive_mutex processed_samples_mutex;
     std::unordered_map<time_unit /*request time*/, request_t> processed_samples;
 
-    std::recursive_mutex& context_mutex;
+    context_mutex_t context_mutex;
 
     // debug
     time_unit last_time_stamp;
@@ -66,7 +70,7 @@ private:
 public:
     CComPtr<IMFMediaType> output_type;
 
-    explicit transform_h264_encoder(const media_session_t& session, std::recursive_mutex& context_mutex);
+    explicit transform_h264_encoder(const media_session_t& session, context_mutex_t context_mutex);
 
     HRESULT initialize(const CComPtr<ID3D11Device>&);
     media_stream_t create_stream();

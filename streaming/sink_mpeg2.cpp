@@ -227,17 +227,26 @@ void stream_mpeg2::add_worker_stream(const stream_mpeg2_worker_t& worker_stream)
 media_stream::result_t stream_mpeg2::process_sample(
     const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
 {
-    sink_audio::request_t request;
-    request.rp = rp;
-    request.sample_view = sample_view;
-    request.stream = this;
-    this->sink->write_queue.push(request);
+    if(!sample_view)
+        return OK;
 
-    // if the sample view is locking a resource,
-    // it must be ensured that the resource is unlocked in this call;
-    // currently though, the sample views won't lock at this point anymore
+    // only write packets that aren't texture buffer type
+    if(!sample_view->get_buffer<media_buffer_texture>())
+    {
+        sink_audio::request_t request;
+        request.rp = rp;
+        request.sample_view = sample_view;
+        request.stream = this;
+        this->sink->write_queue.push(request);
 
-    this->sink->write_packets();
+        // if the sample view is locking a resource,
+        // it must be ensured that the resource is unlocked in this call;
+        // currently though, the sample views won't lock at this point anymore
+        // (except when the sample is passed from video mixer)
+        // (it evidently causes a deadlock)
+
+        this->sink->write_packets();
+    }
 
     return OK;
 }

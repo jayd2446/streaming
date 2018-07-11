@@ -31,14 +31,19 @@ void gui_maindlg::add_new_item(new_item_t item)
         const INT_PTR ret = dlg.DoModal(*this, item);
         if(ret == 0)
         {
-            static int i = 1;
+            static int i = 0;
             dlg.displaycaptures[dlg.cursel].video.source_rect = {0};
             dlg.displaycaptures[dlg.cursel].video.dest_rect = {0};
-            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1920;
-            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1080;
-            dlg.displaycaptures[dlg.cursel].video.dest_rect.right = 1920 / i;
-            dlg.displaycaptures[dlg.cursel].video.dest_rect.bottom = 1080 / i;
-            i *= 2;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1920 - i * 50;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1080 - i * 50;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.left = i * 20;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.top = i * 4;
+
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.left = i * 80;
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.top = i * 80;
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.right = 1920 - i * 80;
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.bottom = 1080 - i * 80;
+            i++;
 
             scene.add_displaycapture_item(dlg.displaycaptures[dlg.cursel]);
             this->wnd_video_list.AddString(L"Video");

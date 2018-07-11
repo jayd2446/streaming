@@ -4,6 +4,9 @@
 #include "presentation_clock.h"
 #include "enable_shared_from_this.h"
 #include <memory>
+#include <mutex>
+
+typedef std::shared_ptr<std::recursive_mutex> context_mutex_t;
 
 class media_component : public virtual enable_shared_from_this
 {

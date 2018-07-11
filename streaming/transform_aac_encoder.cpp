@@ -74,7 +74,6 @@ void transform_aac_encoder::processing_cb(void*)
                 CHECK_HR(hr = (*it)->SetSampleTime(ts));
                 CHECK_HR(hr = (*it)->SetSampleDuration(dur));
                
-
                 /*std::cout << "ts: " << ts << ", dur+ts: " << ts + dur << std::endl;*/
 
             back:
