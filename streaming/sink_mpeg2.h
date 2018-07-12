@@ -29,6 +29,7 @@ class sink_mpeg2 : public media_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<sink_mpeg2> async_callback_t;
+    typedef request_queue_<media_sample_view_h264> request_queue;
     typedef request_queue::request_t request_t;
 private:
     HANDLE stopped_signal;

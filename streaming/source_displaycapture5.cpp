@@ -305,31 +305,15 @@ void stream_displaycapture5::capture_frame_cb(void*)
     // the cached texture, and this thread has already locked the sample;
     // unlocking the capture frame mutex must be ensured before trying to lock the
     // cache texture
-    
     std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);
-
-    /*const*/ /*media_buffer_texture_t buffer = this_->buffer;*/
-        /*this_->source->unused_buffer ? this_->source->unused_buffer : this_->buffer;*/
-    /*const*/ /*media_buffer_texture_t pointer_buffer = this_->pointer_stream->buffer;*/
-        /*this_->source->unused_pointer_buffer ? 
-        this_->source->unused_pointer_buffer : this_->pointer_stream->buffer;*/
-
-    /*assert_(buffer != this->source->newest_buffer);*/
 
     stream_videoprocessor_controller::params_t params;
     this->videoprocessor_controller->get_params(params);
     // enable alpha is only for pointer which has alpha values
     params.enable_alpha = false;
-    media_sample_view_videoprocessor_t sample_view(
-        new media_sample_view_videoprocessor(params, this->buffer));
-    media_sample_view_videoprocessor_t pointer_sample_view(
-        new media_sample_view_videoprocessor(this->pointer_stream->buffer));
-
-    {
-        /*media_sample_view_ sample_view2(
-            media_sample_texture_(), media_sample_view_::READ_LOCK_BUFFERS);*/
-    }
-
+    media_sample_view_videoprocessor_ sample_view(media_sample_videoprocessor(params, this->buffer));
+    media_sample_view_videoprocessor_ pointer_sample_view(
+        media_sample_videoprocessor(this->pointer_stream->buffer));
 
     /*std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);*/
 
@@ -352,55 +336,23 @@ void stream_displaycapture5::capture_frame_cb(void*)
             this->buffer, timestamp, clock);
     }
 
-    //if(!frame_captured)
-    //{
-    //    // TODO: media_sample_view can be allocated in the stack
-
-    //    // sample view must be reset to null before assigning a new sample view,
-    //    // that is because the media_sample_view would lock the sample before
-    //    // sample_view releasing its own reference to another sample_view
-    //    sample_view.reset();
-    //    // TODO: do not repeatedly use dynamic allocation
-    //    // use the newest buffer from the source;
-    //    // the buffer switch must be here so that that sample_view.reset() unlocks the old buffer
-    //    sample_view.reset(new media_sample_view_videoprocessor(params,
-    //        this_->source->newest_buffer, media_sample_view::READ_LOCK_BUFFERS));
-
-    //    // unused buffer == newest buffer == this buffer
-
-    //    if(this_->source->newest_buffer != this_->buffer)
-    //        this_->source->unused_buffer = this_->buffer;
-    //    else if(this_->source->unused_buffer == this_->source->newest_buffer)
-    //        this_->source->unused_buffer = NULL;
-    //}
-    //else
-    //{
-    //    // switch the buffer to read_lock_sample
-    //    sample_view->sample.buffer->unlock_write();
-
-    //    if(this_->source->newest_buffer != this_->buffer)
-    //        this_->source->unused_buffer = this_->buffer;
-    //    else if(this_->source->unused_buffer == this_->source->newest_buffer)
-    //        this_->source->unused_buffer = NULL;
-    //}
-
     if(!frame_captured)
     {
-        sample_view.reset();
-        sample_view.reset(new media_sample_view_videoprocessor(params,
-            this->source->newest_buffer, media_sample_view::READ_LOCK_BUFFERS));
+        // sample view must be reset to null before assigning a new sample view,
+        // that is because the media_sample_view would lock the sample before
+        // sample_view releasing its own reference to another sample_view
+        sample_view.attach(this->source->newest_buffer, media_sample_view::READ_LOCK_BUFFERS);
     }
     else
-        sample_view->sample.buffer->unlock_write();
+        sample_view.sample.buffer->unlock_write();
 
     if(!new_pointer_shape)
     {
-        pointer_sample_view.reset();
-        pointer_sample_view.reset(new media_sample_view_videoprocessor(
-            this->source->newest_pointer_buffer, media_sample_view::READ_LOCK_BUFFERS));
+        pointer_sample_view.attach(
+            this->source->newest_pointer_buffer, media_sample_view::READ_LOCK_BUFFERS);
     }
     else
-        pointer_sample_view->sample.buffer->unlock_write();
+        pointer_sample_view.sample.buffer->unlock_write();
 
     /*if(!new_pointer_shape)
     {
@@ -428,14 +380,14 @@ void stream_displaycapture5::capture_frame_cb(void*)
 
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
-    if(sample_view->texture_buffer->texture)
-        sample_view->texture_buffer->texture->GetDesc(ptr_desc = &desc);
+    if(sample_view.sample.buffer->texture)
+        sample_view.sample.buffer->texture->GetDesc(ptr_desc = &desc);
 
-    sample_view->sample.timestamp = rp.request_time;
+    sample_view.sample.timestamp = rp.request_time;
     /*this->sample->timestamp = timestamp;*/
 
     lock.unlock();
-    this->process_sample(sample_view, rp, NULL);
+    this->process_sample(reinterpret_cast<media_sample_view_t&>(sample_view), rp, NULL);
     this->pointer_stream->dispatch(
         new_pointer_shape, pointer_position, ptr_desc, pointer_sample_view, rp);
 }
@@ -605,7 +557,7 @@ void stream_displaycapture5_pointer::dispatch(
     bool new_pointer_shape, 
     const DXGI_OUTDUPL_POINTER_POSITION& pointer_position, 
     const D3D11_TEXTURE2D_DESC* desktop_desc,
-    media_sample_view_videoprocessor_t& sample_view,
+    media_sample_view_videoprocessor_& sample_view,
     request_packet& rp)
 {
     /*if(!pointer_position.Visible || !desktop_desc)
@@ -618,25 +570,25 @@ void stream_displaycapture5_pointer::dispatch(
         return;
     }*/
 
-    if(pointer_position.Visible && desktop_desc && sample_view->texture_buffer->texture)
+    if(pointer_position.Visible && desktop_desc && sample_view.sample.buffer->texture)
     {
         D3D11_TEXTURE2D_DESC desc;
-        sample_view->texture_buffer->texture->GetDesc(&desc);
+        sample_view.sample.buffer->texture->GetDesc(&desc);
 
-        sample_view->params.enable_alpha = true;
-        sample_view->params.source_rect.left = sample_view->params.source_rect.top = 0;
-        sample_view->params.source_rect.right = desc.Width;
-        sample_view->params.source_rect.bottom = desc.Height;
-        sample_view->params.dest_rect.left = pointer_position.Position.x;
-        sample_view->params.dest_rect.top = pointer_position.Position.y;
-        sample_view->params.dest_rect.right = sample_view->params.dest_rect.left + desc.Width;
-        sample_view->params.dest_rect.bottom = sample_view->params.dest_rect.top + desc.Height;
+        sample_view.sample.params.enable_alpha = true;
+        sample_view.sample.params.source_rect.left = sample_view.sample.params.source_rect.top = 0;
+        sample_view.sample.params.source_rect.right = desc.Width;
+        sample_view.sample.params.source_rect.bottom = desc.Height;
+        sample_view.sample.params.dest_rect.left = pointer_position.Position.x;
+        sample_view.sample.params.dest_rect.top = pointer_position.Position.y;
+        sample_view.sample.params.dest_rect.right = 
+            sample_view.sample.params.dest_rect.left + desc.Width;
+        sample_view.sample.params.dest_rect.bottom = 
+            sample_view.sample.params.dest_rect.top + desc.Height;
     }
     else
     {
-        sample_view.reset();
-        sample_view.reset(new media_sample_view_videoprocessor(
-            this->null_buffer, media_sample_view::READ_LOCK_BUFFERS));
+        sample_view.attach(this->null_buffer, media_sample_view::READ_LOCK_BUFFERS);
     }
 
     /*if(!new_pointer_shape)
@@ -663,9 +615,9 @@ void stream_displaycapture5_pointer::dispatch(
         }
     }*/
 
-    sample_view->sample.timestamp = rp.request_time;
+    sample_view.sample.timestamp = rp.request_time;
 
-    this->source->session->give_sample(this, sample_view, rp, true);
+    this->source->session->give_sample(this, reinterpret_cast<media_sample_view_t&>(sample_view), rp, true);
 }
 
 media_stream::result_t stream_displaycapture5_pointer::request_sample(request_packet&, const media_stream*)

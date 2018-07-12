@@ -29,11 +29,13 @@ class transform_h264_encoder : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
+    typedef request_queue_<media_sample_view_texture_> request_queue;
     typedef request_queue::request_t request_t;
 
     static const UINT32 frame_width = 1920, frame_height = 1080;
     static const UINT32 frame_rate_num = 60;
     static const UINT32 frame_rate_den = 1;
+    static const UINT32 avg_bitrate = 6000 * 1000;
 private:
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;

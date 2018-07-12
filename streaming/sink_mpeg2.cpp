@@ -42,14 +42,14 @@ void sink_mpeg2::write_packets_cb(void*)
     while(this->write_queue.pop(request))
     {
         /*std::cout << request.rp.packet_number << std::endl;*/
-        if(!request.sample_view)
-            continue;
+        /*if(!request.sample_view)
+            continue;*/
 
-        media_buffer_memorybuffer_t sample = request.sample_view->get_buffer<media_buffer_memorybuffer>();
-        if(!sample)
+        media_buffer_h264_t buffer = request.sample_view.sample.buffer;
+        if(!buffer)
             continue;
         
-        this->file_output->write_sample(true, sample->sample);
+        this->file_output->write_sample(true, buffer->sample);
     }
 }
 
@@ -225,17 +225,22 @@ void stream_mpeg2::add_worker_stream(const stream_mpeg2_worker_t& worker_stream)
 }
 
 media_stream::result_t stream_mpeg2::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample_view_t& sample_view_, request_packet& rp, const media_stream*)
 {
-    if(!sample_view)
+    if(!sample_view_)
         return OK;
 
-    // only write packets that aren't texture buffer type
-    if(!sample_view->get_buffer<media_buffer_texture>())
+    const media_sample_view_base& sample_view =
+        reinterpret_cast<const media_sample_view_texture_&>(sample_view_);
+    const media_sample_view_h264* sample_view_h264 =
+        dynamic_cast<const media_sample_view_h264*>(&sample_view);
+
+    // add h264 samples to write queue
+    if(sample_view_h264)
     {
-        sink_audio::request_t request;
+        sink_mpeg2::request_t request;
         request.rp = rp;
-        request.sample_view = sample_view;
+        request.sample_view = *sample_view_h264;
         request.stream = this;
         this->sink->write_queue.push(request);
 

@@ -1,4 +1,5 @@
 #include "transform_color_converter.h"
+#include "transform_h264_encoder.h"
 #include <mfapi.h>
 #include <Mferror.h>
 
@@ -27,14 +28,14 @@ HRESULT transform_color_converter::initialize(
     // check the supported capabilities of the video processor
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc;
     desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
-    desc.InputFrameRate.Numerator = 60;
-    desc.InputFrameRate.Denominator = 1;
-    desc.InputWidth = 1920;
-    desc.InputHeight = 1080;
-    desc.OutputFrameRate.Numerator = 60;
-    desc.OutputFrameRate.Denominator = 1;
-    desc.OutputWidth = 1920;
-    desc.OutputHeight = 1080;
+    desc.InputFrameRate.Numerator = transform_h264_encoder::frame_rate_num;
+    desc.InputFrameRate.Denominator = transform_h264_encoder::frame_rate_den;
+    desc.InputWidth = transform_h264_encoder::frame_width;
+    desc.InputHeight = transform_h264_encoder::frame_height;
+    desc.OutputFrameRate.Numerator = transform_h264_encoder::frame_rate_num;
+    desc.OutputFrameRate.Denominator = transform_h264_encoder::frame_rate_den;
+    desc.OutputWidth = transform_h264_encoder::frame_width;
+    desc.OutputHeight = transform_h264_encoder::frame_height;
     desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
     CHECK_HR(hr = this->videodevice->CreateVideoProcessorEnumerator(&desc, &this->enumerator));
     UINT flags;
@@ -71,14 +72,41 @@ media_stream_t transform_color_converter::create_stream()
 stream_color_converter::stream_color_converter(const transform_color_converter_t& transform) :
     transform(transform),
     output_buffer(new media_buffer_texture),
-    output_buffer_null(new media_buffer_texture),
-    view_initialized(false)
+    output_buffer_null(new media_buffer_texture)
 {
     HRESULT hr = S_OK;
     this->processing_callback.Attach(new async_callback_t(&stream_color_converter::processing_cb));
 
     CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessor(
         this->transform->enumerator, 0, &this->videoprocessor));
+
+    // create the output texture
+    {
+        // create output texture with nv12 color format
+        D3D11_TEXTURE2D_DESC desc;
+        desc.Width = transform_h264_encoder::frame_width;
+        desc.Height = transform_h264_encoder::frame_height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.SampleDesc.Count = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.CPUAccessFlags = 0;
+        desc.MiscFlags = 0;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.Format = DXGI_FORMAT_NV12;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
+            &desc, NULL, &this->output_buffer->texture));
+        CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));
+
+        // create output view
+        D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
+        view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+        view_desc.Texture2D.MipSlice = 0;
+        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
+            this->output_buffer->texture, this->transform->enumerator,
+            &view_desc, &this->output_view));
+    }
 
 done:
     if(FAILED(hr))
@@ -91,14 +119,15 @@ void stream_color_converter::processing_cb(void*)
 
     {
         // lock the output sample
-        media_sample_view_t sample_view;
+        /*media_sample_view_t sample_view;*/
+        media_sample_view_texture_ sample_view;
 
-        CComPtr<ID3D11Texture2D> texture = 
-            this->pending_packet.sample_view->get_buffer<media_buffer_texture>()->texture;
+        CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample_view.sample.buffer->texture;
 
         if(texture)
         {
-            sample_view.reset(new media_sample_view(this->output_buffer));
+            sample_view.attach(this->output_buffer);
+            /*sample_view.reset(new media_sample_view(this->output_buffer));*/
 
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view;
@@ -113,10 +142,10 @@ void stream_color_converter::processing_cb(void*)
 
             // convert
             D3D11_VIDEO_PROCESSOR_STREAM stream;
-            RECT source_rect;
-            source_rect.top = source_rect.left = 0;
-            source_rect.right = 1920;
-            source_rect.bottom = 1080;
+            RECT dst_rect;
+            dst_rect.top = dst_rect.left = 0;
+            dst_rect.right = transform_h264_encoder::frame_width;
+            dst_rect.bottom = transform_h264_encoder::frame_height;
 
             stream.Enable = TRUE;
             stream.OutputIndex = 0;
@@ -135,17 +164,18 @@ void stream_color_converter::processing_cb(void*)
             // set the target rectangle for the output
             // (sets the rectangle where the output blit on the output texture will appear)
             this->transform->videocontext->VideoProcessorSetOutputTargetRect(
-                this->videoprocessor, TRUE, &source_rect);
+                this->videoprocessor, TRUE, &dst_rect);
 
             // set the source rectangle of the stream
-            // (the part of the stream texture which will be included in the blit)
+            // (the part of the stream texture which will be included in the blit);
+            // false indicates that the whole source is read
             this->transform->videocontext->VideoProcessorSetStreamSourceRect(
-                this->videoprocessor, 0, TRUE, &source_rect);
+                this->videoprocessor, 0, FALSE, &dst_rect);
 
             // set the destination rectangle of the stream
             // (where the stream will appear in the output blit)
             this->transform->videocontext->VideoProcessorSetStreamDestRect(
-                this->videoprocessor, 0, TRUE, &source_rect);
+                this->videoprocessor, 0, TRUE, &dst_rect);
 
             // blit
             const UINT stream_count = 1;
@@ -155,19 +185,21 @@ void stream_color_converter::processing_cb(void*)
         }
         else
             // TODO: read lock buffers is just a workaround for a deadlock bug
-            sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));
+            sample_view.attach(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS);
+            /*sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));*/
 
-        sample_view->sample.timestamp = this->pending_packet.sample_view->sample.timestamp;
+        sample_view.sample.timestamp = this->pending_packet.sample_view.sample.timestamp;
         
         request_packet rp = this->pending_packet.rp;
 
         // reset the sample view from the pending packet so it is unlocked
-        this->pending_packet.sample_view = NULL;
+        this->pending_packet.sample_view.detach();
         // remove the rps so that there aren't any circular dependencies at shutdown
         this->pending_packet.rp = request_packet();
 
         // give the sample to downstream
-        this->transform->session->give_sample(this, sample_view, rp, false);
+        this->transform->session->give_sample(
+            this, reinterpret_cast<media_sample_view_t&>(sample_view), rp, false);
     }
 
 done:
@@ -183,34 +215,12 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_color_converter::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample_view_t& sample_view_, request_packet& rp, const media_stream*)
 {
-    HRESULT hr = S_OK;
-    CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;
+    const media_sample_view_texture_& sample_view = 
+        reinterpret_cast<const media_sample_view_texture_&>(sample_view_);
 
-    if(!this->view_initialized && texture)
-    {
-        this->view_initialized = true;
-
-        // create output texture with nv12 color format
-        D3D11_TEXTURE2D_DESC desc;
-        texture->GetDesc(&desc);
-        desc.MiscFlags = 0;
-        desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.Format = DXGI_FORMAT_NV12;
-        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-            &desc, NULL, &this->output_buffer->texture));
-        CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));
-
-        // create output view
-        D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
-        view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-        view_desc.Texture2D.MipSlice = 0;
-        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-            this->output_buffer->texture, this->transform->enumerator,
-            &view_desc, &this->output_view));
-    }
+    /*CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;*/
 
     this->pending_packet.rp = rp;
     this->pending_packet.sample_view = sample_view;
@@ -218,7 +228,6 @@ media_stream::result_t stream_color_converter::process_sample(
     this->processing_cb(NULL);
     return OK;
 done:
-    this->view_initialized = false;
     throw std::exception();
     return FATAL_ERROR;
 }

@@ -33,8 +33,6 @@ HRESULT transform_h264_encoder::set_input_stream_type()
 {
     HRESULT hr = S_OK;
 
-    // TODO: input type should be get from the color converter transform
-
     CComPtr<IMFMediaType> input_type;
     CHECK_HR(hr = MFCreateMediaType(&input_type));
     CHECK_HR(hr = input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
@@ -57,9 +55,9 @@ HRESULT transform_h264_encoder::set_output_stream_type()
     CHECK_HR(hr = MFCreateMediaType(&this->output_type));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264));
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AVG_BITRATE, 6000*1000));
-    CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, 60, 1));
-    CHECK_HR(hr = MFSetAttributeSize(this->output_type, MF_MT_FRAME_SIZE, 1920, 1080));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AVG_BITRATE, avg_bitrate));
+    CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, frame_rate_num, frame_rate_den));
+    CHECK_HR(hr = MFSetAttributeSize(this->output_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
     CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
@@ -158,13 +156,14 @@ void transform_h264_encoder::processing_cb(void*)
             // pass the null sample to downstream and continue;
             // the passing must be done like this so that request queue doesn't corrupt;
             // null samples are generated only at the very startup of the session, though
-            if(!request.sample_view->get_buffer<media_buffer_texture>()->texture)
+            if(!request.sample_view.sample.buffer->texture)
             {
-                this->session->give_sample(request.stream, request.sample_view, request.rp, false);
+                this->session->give_sample(request.stream, 
+                    reinterpret_cast<media_sample_view_t&>(request.sample_view), request.rp, false);
                 continue;
             }
 
-            timestamp = request.sample_view->sample.timestamp;
+            timestamp = request.sample_view.sample.timestamp;
 
             // TODO: remove processed samples queue because it might introduce bugs
             // add the sample to the processed samples queue
@@ -187,7 +186,7 @@ void transform_h264_encoder::processing_cb(void*)
 
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
-            request.sample_view->get_buffer<media_buffer_texture>()->texture, 0, FALSE, &buffer));
+            request.sample_view.sample.buffer->texture, 0, FALSE, &buffer));
         /*CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
         CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
         CHECK_HR(hr = buffer->SetCurrentLength(len));*/
@@ -216,10 +215,9 @@ void transform_h264_encoder::process_output_cb(void*)
     // TODO: the call order can be ensured
 
     // the processed packets might arrive out of order
-    media_buffer_memorybuffer* buffer = NULL;
-    media_sample_view_t sample_view(
-        new media_sample_view(media_buffer_t(buffer = new media_buffer_memorybuffer)));
-    request_t request;
+    media_sample_view_h264 sample_view(media_sample_h264(media_buffer_h264_t(new media_buffer_h264)));
+    request_packet rp;
+    const media_stream* stream;
 
     const DWORD mft_provides_samples =
         this->output_stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
@@ -243,15 +241,14 @@ void transform_h264_encoder::process_output_cb(void*)
         scoped_lock lock(this->processed_samples_mutex);
         auto it = this->processed_samples.find(time);
         assert_(it != this->processed_samples.end());
-        request = it->second;
+        rp = it->second.rp;
+        stream = it->second.stream;
         this->processed_samples.erase(it);
     }
 
-    sample_view->sample.timestamp = time;
-    buffer->sample.Attach(output.pSample);
-
-    request.sample_view = sample_view;
-    this->session->give_sample(request.stream, request.sample_view, request.rp, false);
+    sample_view.sample.timestamp = time;
+    sample_view.sample.buffer->sample.Attach(output.pSample);
+    this->session->give_sample(stream, reinterpret_cast<media_sample_view_t&>(sample_view), rp, false);
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -412,7 +409,7 @@ media_stream::result_t stream_h264_encoder::process_sample(
 {
     transform_h264_encoder::request_t request;
     request.stream = this;
-    request.sample_view = sample_view;
+    request.sample_view = reinterpret_cast<const media_sample_view_texture_&>(sample_view);
     request.rp = rp;
 
     this->transform->requests.push(request);

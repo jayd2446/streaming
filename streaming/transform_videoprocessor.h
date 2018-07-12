@@ -60,6 +60,22 @@ public:
 
 typedef std::shared_ptr<media_sample_view_videoprocessor> media_sample_view_videoprocessor_t;
 
+class media_sample_videoprocessor : public media_sample_texture_
+{
+public:
+    typedef stream_videoprocessor_controller::params_t params_t;
+private:
+public:
+    params_t params;
+
+    media_sample_videoprocessor() {}
+    explicit media_sample_videoprocessor(const media_buffer_texture_t& texture_buffer);
+    media_sample_videoprocessor(const params_t&, const media_buffer_texture_t& texture_buffer);
+};
+
+typedef media_sample_view_<media_sample_videoprocessor> media_sample_view_videoprocessor_;
+
+
 class transform_videoprocessor : public media_source
 {
     friend class stream_videoprocessor;
@@ -93,7 +109,7 @@ public:
     struct packet 
     {
         request_packet rp; 
-        media_sample_view_videoprocessor_t sample_view;
+        media_sample_view_videoprocessor_ sample_view;
         stream_videoprocessor_controller_t user_params;
     };
 private:

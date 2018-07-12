@@ -68,6 +68,38 @@ media_sample::media_sample(const media_buffer_t& buffer, time_unit timestamp) :
 /////////////////////////////////////////////////////////////////
 
 
+media_sample_::media_sample_(time_unit timestamp) : timestamp(timestamp)
+{
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+media_sample_texture_::media_sample_texture_(const media_buffer_texture_t& texture_buffer) :
+    buffer(texture_buffer)
+{
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+media_sample_h264::media_sample_h264(const media_buffer_h264_t& buffer) :
+    buffer(buffer)
+{
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
 media_sample_view::media_sample_view(const media_buffer_t& buffer, view_lock_t view_lock) :
     sample(buffer)
 {
@@ -81,7 +113,8 @@ media_sample_view::media_sample_view(const media_buffer_t& buffer, view_lock_t v
 
 media_sample_view::~media_sample_view()
 {
-    this->sample.buffer->unlock();
+    if(this->sample.buffer)
+        this->sample.buffer->unlock();
 }
 
 
@@ -103,13 +136,35 @@ media_sample_view_texture::media_sample_view_texture(
 /////////////////////////////////////////////////////////////////
 
 
-media_sample_view_::~media_sample_view_()
+void media_sample_view_base::deleter(media_buffer* buffer)
 {
-    this->buffer_view.reset();
-    this->buffer.reset();
+    if(buffer)
+        buffer->unlock();
 }
 
-void media_sample_view_::deleter(media_buffer* buffer)
-{
-    buffer->unlock();
-}
+
+//media_sample_view_::~media_sample_view_()
+//{
+//    this->detach();
+//}
+//
+//void media_sample_view_::lock(view_lock_t view_lock)
+//{
+//     if(view_lock == READ_LOCK_BUFFERS)
+//        this->buffer_view->lock_read();
+//    else if(view_lock == LOCK_BUFFERS)
+//        this->buffer_view->lock();
+//    else
+//        assert_(false);
+//}
+//
+//void media_sample_view_::detach()
+//{
+//    this->buffer_view.reset();
+//    this->buffer.reset();
+//}
+//
+//void media_sample_view_::deleter(media_buffer* buffer)
+//{
+//    buffer->unlock();
+//}

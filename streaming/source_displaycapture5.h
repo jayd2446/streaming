@@ -122,7 +122,7 @@ public:
         bool new_pointer_shape, 
         const DXGI_OUTDUPL_POINTER_POSITION&,
         const D3D11_TEXTURE2D_DESC* desktop_desc,
-        media_sample_view_videoprocessor_t&,
+        media_sample_view_videoprocessor_&,
         request_packet&);
 
     result_t request_sample(request_packet&, const media_stream*);

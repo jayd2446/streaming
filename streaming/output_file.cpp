@@ -36,7 +36,7 @@ void output_file::initialize(
         // create file
         CHECK_HR(hr = MFCreateFile(
             MF_ACCESSMODE_READWRITE, MF_OPENMODE_DELETE_IF_EXIST, MF_FILEFLAGS_NONE, 
-            L"F:\\streaming\\test.mp4", &this->byte_stream));
+            L"test.mp4", &this->byte_stream));
 
         // create mpeg 4 media sink
         CHECK_HR(hr = MFCreateMPEG4MediaSink(

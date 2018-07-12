@@ -95,11 +95,14 @@ done:
         throw std::exception();
 }
 
-void sink_preview2::draw_sample(const media_sample_view_t& sample_view, request_packet&)
+void sink_preview2::draw_sample(const media_sample_view_t& sample_view_, request_packet&)
 {
     HRESULT hr = S_OK;
 
-    CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;
+    const media_sample_view_texture_& sample_view =
+        reinterpret_cast<const media_sample_view_texture_&>(sample_view_);
+
+    CComPtr<ID3D11Texture2D> texture = sample_view.sample.buffer->texture;
     if(texture)
     {
         CComPtr<ID2D1Bitmap1> bitmap;

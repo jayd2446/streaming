@@ -1,6 +1,7 @@
 #pragma once
 #include "media_topology.h"
 #include "media_sample.h"
+#include "assert.h"
 #include <mutex>
 #include <deque>
 
@@ -53,3 +54,101 @@ public:
     bool pop(request_t&);
     bool get(request_t&);
 };
+
+template<class SampleView>
+class request_queue_
+{
+public:
+    typedef SampleView sample_view_t;
+    struct request_t
+    {
+        media_stream* stream;
+        const media_stream* prev_stream;
+        request_packet rp;
+        sample_view_t sample_view;
+    };
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+private:
+    std::recursive_mutex requests_mutex;
+    std::deque<request_t> requests;
+    int first_packet_number, last_packet_number;
+
+    int get_index(int packet_number) const;
+public:
+    request_queue_();
+
+    // rp needs to be valid
+    void push(const request_t&);
+    bool pop(request_t&);
+    bool get(request_t&);
+};
+
+
+
+template<class T>
+request_queue_<T>::request_queue_() : 
+    first_packet_number(INVALID_PACKET_NUMBER), last_packet_number(INVALID_PACKET_NUMBER)
+{
+}
+
+template<class T>
+int request_queue_<T>::get_index(int packet_number) const
+{
+    return packet_number - this->first_packet_number;
+}
+
+template<class T>
+void request_queue_<T>::push(const request_t& request)
+{
+    scoped_lock lock(this->requests_mutex);
+    // starting packet number must be initialized lazily
+    if(this->first_packet_number == INVALID_PACKET_NUMBER)
+    {
+        assert_(this->requests.empty());
+        this->first_packet_number = 
+            this->last_packet_number = request.rp.topology->get_first_packet_number();
+        this->requests.push_back(request);
+    }
+
+    // queue won't work properly if the first packet number is greater than
+    // the one in the submitted request
+    assert_(request.rp.packet_number >= this->first_packet_number);
+    if(request.rp.packet_number > this->last_packet_number)
+    {
+        const int diff = request.rp.packet_number - this->last_packet_number;
+        this->requests.insert(this->requests.end(), diff, request);
+        this->last_packet_number = request.rp.packet_number;
+    }
+    else
+        this->requests[this->get_index(request.rp.packet_number)] = request;
+}
+
+template<class T>
+bool request_queue_<T>::pop(request_t& request)
+{
+    scoped_lock lock(this->requests_mutex);
+    if(this->get(request))
+    {
+        this->requests.pop_front();
+        this->first_packet_number++;
+        return true;
+    }
+
+    return false;
+}
+
+template<class T>
+bool request_queue_<T>::get(request_t& request)
+{
+    scoped_lock lock(this->requests_mutex);
+    if(!this->requests.empty())
+    {
+        if(this->first_packet_number == this->requests.front().rp.packet_number)
+        {
+            request = this->requests.front();
+            return true;
+        }
+    }
+
+    return false;
+}
