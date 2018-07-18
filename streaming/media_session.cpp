@@ -144,7 +144,7 @@ bool media_session::request_sample(
 
 bool media_session::give_sample(
     const media_stream* stream, 
-    const media_sample_view_t& sample_view, 
+    const media_sample& sample_view, 
     request_packet& rp,
     bool /*is_source*/)
 {
@@ -194,7 +194,7 @@ bool media_session::give_sample(
 
 void media_session::request_sample_cb(void*)
 {
-    request_sample_t request;
+    /*request_sample_t request;
     {
         scoped_lock lock(this->request_sample_mutex);
         request = this->request_sample_requests.front();
@@ -209,12 +209,12 @@ void media_session::request_sample_cb(void*)
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
         if((*jt)->request_sample(request.rp, request.stream) == media_stream::FATAL_ERROR)
-            return;
+            return;*/
 }
 
 void media_session::give_sample_cb(void*)
 {
-    give_sample_t request;
+    /*give_sample_t request;
     {
         scoped_lock lock(this->give_sample_mutex);
         request = this->give_sample_requests.front();
@@ -223,7 +223,7 @@ void media_session::give_sample_cb(void*)
 
     if(request.down_stream->process_sample(
         request.sample_view, request.rp, request.stream) == media_stream::FATAL_ERROR)
-        return;
+        return;*/
 }
 
 void media_session::shutdown()

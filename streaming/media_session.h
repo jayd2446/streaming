@@ -48,21 +48,21 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<media_session> async_callback_t;
 
-    struct give_sample_t
-    {
-        media_stream* down_stream;
-        // the stream stays alive as long as the rp is alive
-        const media_stream* stream;
-        media_sample_view_t sample_view;
-        request_packet rp;
-        bool is_source;
-    };
-    struct request_sample_t
-    {
-        // the stream stays alive as long as the rp is alive
-        const media_stream* stream;
-        request_packet rp;
-    };
+    //struct give_sample_t
+    //{
+    //    media_stream* down_stream;
+    //    // the stream stays alive as long as the rp is alive
+    //    const media_stream* stream;
+    //    media_sample_view_t sample_view;
+    //    request_packet rp;
+    //    bool is_source;
+    //};
+    //struct request_sample_t
+    //{
+    //    // the stream stays alive as long as the rp is alive
+    //    const media_stream* stream;
+    //    request_packet rp;
+    //};
 private:
     std::atomic_bool is_shutdown;
     presentation_time_source_t time_source;
@@ -74,11 +74,11 @@ private:
 
     std::recursive_mutex request_sample_mutex;
     CComPtr<async_callback_t> request_sample_callback;
-    std::queue<request_sample_t> request_sample_requests;
+    /*std::queue<request_sample_t> request_sample_requests;*/
 
     std::recursive_mutex give_sample_mutex;
     CComPtr<async_callback_t> give_sample_callback;
-    std::queue<give_sample_t> give_sample_requests;
+    /*std::queue<give_sample_t> give_sample_requests;*/
 
     void request_sample_cb(void*);
     void give_sample_cb(void*);
@@ -129,7 +129,7 @@ public:
     // TODO: give sample must not fail
     bool give_sample(
         const media_stream* this_output_stream, 
-        const media_sample_view_t& sample_view,
+        const media_sample& sample_view,
         request_packet&,
         bool is_source);
 

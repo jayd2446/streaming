@@ -16,13 +16,16 @@ class source_loopback;
 
 // resamples and cuts the audio
 
+// TODO: if input type is reset, the samples buffer must be dismissed
 class transform_audioprocessor : public media_source
 {
     friend class stream_audioprocessor;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    struct empty {};
+    typedef request_queue<empty> request_queue;
     typedef request_queue::request_t request_t;
-    typedef std::deque<CComPtr<IMFSample>> sample_container;
+    /*typedef std::deque<CComPtr<IMFSample>> sample_container;*/
     typedef async_callback<transform_audioprocessor> async_callback_t;
 private:
     bool running;
@@ -35,8 +38,10 @@ private:
     source_loopback* audio_device;
 
     request_queue requests;
-    std::recursive_mutex samples_mutex, process_mutex;
-    sample_container samples;
+    std::recursive_mutex buffer_mutex, serve_mutex, resample_mutex;
+    media_buffer_samples buffer;
+    /*sample_container samples;*/
+    media_buffer_samples_t unprocessed_samples;
 
     frame_unit sample_base;
     frame_unit next_sample_pos;
@@ -45,9 +50,9 @@ private:
     void reset_input_type(UINT channels, UINT sample_rate, UINT bit_depth);
     bool resampler_process_output(IMFSample*);
     // resamples all the samples and pushes them to samples container
-    void resample(const media_buffer_samples&);
+    void resample(const media_sample_audio&);
     // tries to serve the request queue
-    void try_serve(const media_buffer_samples&);
+    void try_serve();
     // called by the audio device
     void serve_cb(void*);
 public:
@@ -76,5 +81,5 @@ public:
 
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

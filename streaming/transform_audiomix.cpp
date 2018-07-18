@@ -138,173 +138,161 @@ stream_audiomix::stream_audiomix(const transform_audiomix_t& transform) :
 void stream_audiomix::process_cb(void*)
 {
     HRESULT hr = S_OK;
-    media_buffer_samples_t samples(new media_buffer_samples);
-    media_sample_view_t sample_view;
+    media_sample_audio audio(media_buffer_samples_t(new media_buffer_samples));
+    /*media_buffer_samples_t samples(new media_buffer_samples);
+    media_sample_view_t sample_view;*/
     request_packet rp = this->pending_request.rp;
     typedef int16_t bit_depth_t;
 
-    if(this->pending_request.sample_view && this->pending_request2.sample_view)
+    media_sample_audio& audio_sample = this->pending_request.audio_sample;
+    media_sample_audio& audio_sample2 = this->pending_request2.audio_sample;
+
+    auto it = audio_sample.buffer->samples.begin(), jt = audio_sample2.buffer->samples.begin();
+    bool ptr_it = true;
+    frame_unit ptr_tp_start = std::numeric_limits<frame_unit>::min();
+
+    assert_(audio_sample.bit_depth == (sizeof(bit_depth_t) * 8) && 
+        audio_sample2.bit_depth == (sizeof(bit_depth_t) * 8));
+    assert_(audio_sample.channels == audio_sample2.channels);
+    assert_(audio_sample.sample_rate == audio_sample2.sample_rate);
+
+    audio.bit_depth = audio_sample.bit_depth;
+    audio.channels = audio_sample.channels;
+    audio.sample_rate = audio_sample.sample_rate;
+
+    // increment the iterator of the one that has earlier ending timepoint
+    // set the pointer to the ending timepoint on the other iterator
+
+    // lock the ptr using ptr_it and ptr_tp info
+    // copy the region of ptr_tp and max of the end of ptr and the incremented iterator
+    // mix to the earlier ending timepoint
+    // set ptr_tp to the earlier timepoint and set ptr_it to the iterator that doesn't have the earlier timepoitn
+    // unlock ptr
+    // increment the iterator that includes the earlier timepoint
+    for(;it != audio_sample.buffer->samples.end() && jt != audio_sample2.buffer->samples.end();
+        ptr_it ? jt++ : it++)
     {
-        media_buffer_samples_t pending_samples = 
-            this->pending_request.sample_view->get_buffer<media_buffer_samples>();
-        media_buffer_samples_t pending_samples2 =
-            this->pending_request2.sample_view->get_buffer<media_buffer_samples>();
-        auto it = pending_samples->samples.begin(), jt = pending_samples2->samples.begin();
-        bool ptr_it = true;
-        frame_unit ptr_tp_start = std::numeric_limits<frame_unit>::min();
+        CComPtr<IMFSample> ptr_sample, sample;
+        frame_unit ts, ts2, dur, dur2;
+        frame_unit tp_start,  tp_end, tp_diff;
+        frame_unit ptr_tp_end;
 
-        assert_(pending_samples->bit_depth == (sizeof(bit_depth_t) * 8) && 
-            pending_samples2->bit_depth == (sizeof(bit_depth_t) * 8));
-        assert_(pending_samples->channels == pending_samples2->channels);
-        assert_(pending_samples->sample_rate == pending_samples2->sample_rate);
+        CHECK_HR(hr = (*it)->GetSampleTime(&ts));
+        CHECK_HR(hr = (*jt)->GetSampleTime(&ts2));
+        CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
+        CHECK_HR(hr = (*jt)->GetSampleDuration(&dur2));
 
-        samples->bit_depth = pending_samples->bit_depth;
-        samples->channels = pending_samples->channels;
-        samples->sample_rate = pending_samples->sample_rate;
+        ptr_it = (ts <= ts2);
+        ptr_tp_start = std::max(ptr_tp_start, std::min(ts, ts2));
 
-        // increment the iterator of the one that has earlier ending timepoint
-        // set the pointer to the ending timepoint on the other iterator
+        tp_start = ptr_it ? ts2 : ts;
+        tp_end = ptr_it ? (ts2 + dur2) : (ts + dur);
+        ptr_tp_end = ptr_it ? (ts + dur) : (ts2 + dur2);
 
-        // lock the ptr using ptr_it and ptr_tp info
-        // copy the region of ptr_tp and max of the end of ptr and the incremented iterator
-        // mix to the earlier ending timepoint
-        // set ptr_tp to the earlier timepoint and set ptr_it to the iterator that doesn't have the earlier timepoitn
-        // unlock ptr
-        // increment the iterator that includes the earlier timepoint
-        for(;it != pending_samples->samples.end() && jt != pending_samples2->samples.end();
-            ptr_it ? jt++ : it++)
+        // copy part up to ptr end or tp_start
+        // mix part up to ptr end or tp_end
+        // on end, iterator is incremented and ptr unlocked if ptr end reached
+
+        ptr_sample = ptr_it ? *it : *jt;
+        sample = ptr_it ? *jt : *it;
+
+        // copy up to ptr_tp_end, increment it and unlock the ptr
+        tp_diff = std::min(ptr_tp_end, tp_start);
+        /*assert_((tp_diff - ptr_tp_start) >= 0);*/
+        if((tp_diff - ptr_tp_start) > 0)
         {
-            CComPtr<IMFSample> ptr_sample, sample;
-            frame_unit ts, ts2, dur, dur2;
-            frame_unit tp_start,  tp_end, tp_diff;
-            frame_unit ptr_tp_end;
+            CComPtr<IMFSample> new_sample;
+            CComPtr<IMFMediaBuffer> buffer;
+            CHECK_HR(hr = MFCreateSample(&new_sample));
+            buffer = this->transform->copy(
+                audio_sample.bit_depth, audio_sample.channels,
+                ptr_sample, ptr_tp_start, tp_diff);
+            CHECK_HR(hr = new_sample->AddBuffer(buffer));
+            CHECK_HR(hr = new_sample->SetSampleTime(ptr_tp_start));
+            CHECK_HR(hr = new_sample->SetSampleDuration(tp_diff - ptr_tp_start));
+            audio.buffer->samples.push_back(new_sample);
 
-            CHECK_HR(hr = (*it)->GetSampleTime(&ts));
-            CHECK_HR(hr = (*jt)->GetSampleTime(&ts2));
-            CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
-            CHECK_HR(hr = (*jt)->GetSampleDuration(&dur2));
-
-            ptr_it = (ts <= ts2);
-            ptr_tp_start = std::max(ptr_tp_start, std::min(ts, ts2));
-
-            tp_start = ptr_it ? ts2 : ts;
-            tp_end = ptr_it ? (ts2 + dur2) : (ts + dur);
-            ptr_tp_end = ptr_it ? (ts + dur) : (ts2 + dur2);
-
-            // copy part up to ptr end or tp_start
-            // mix part up to ptr end or tp_end
-            // on end, iterator is incremented and ptr unlocked if ptr end reached
-
-            ptr_sample = ptr_it ? *it : *jt;
-            sample = ptr_it ? *jt : *it;
-
-            // copy up to ptr_tp_end, increment it and unlock the ptr
-            tp_diff = std::min(ptr_tp_end, tp_start);
-            /*assert_((tp_diff - ptr_tp_start) >= 0);*/
-            if((tp_diff - ptr_tp_start) > 0)
-            {
-                CComPtr<IMFSample> new_sample;
-                CComPtr<IMFMediaBuffer> buffer;
-                CHECK_HR(hr = MFCreateSample(&new_sample));
-                buffer = this->transform->copy(
-                    pending_samples->bit_depth, pending_samples->channels,
-                    ptr_sample, ptr_tp_start, tp_diff);
-                CHECK_HR(hr = new_sample->AddBuffer(buffer));
-                CHECK_HR(hr = new_sample->SetSampleTime(ptr_tp_start));
-                CHECK_HR(hr = new_sample->SetSampleDuration(tp_diff - ptr_tp_start));
-                samples->samples.push_back(new_sample);
-
-                ptr_tp_start = tp_diff;
-                if(ptr_tp_end <= tp_start)
-                {
-                    ptr_it = !ptr_it;
-                    continue;
-                }
-            }
-
-            // mix up to tp_diff
-            tp_diff = std::min(ptr_tp_end, tp_end);
-            {
-                CComPtr<IMFSample> new_sample;
-                CComPtr<IMFMediaBuffer> buffer;
-                CHECK_HR(hr = MFCreateSample(&new_sample));
-                buffer = this->transform->mix(
-                    pending_samples->bit_depth, pending_samples->channels,
-                    ptr_sample, sample, ptr_tp_start, tp_diff);
-                CHECK_HR(hr = new_sample->AddBuffer(buffer));
-                CHECK_HR(hr = new_sample->SetSampleTime(ptr_tp_start));
-                CHECK_HR(hr = new_sample->SetSampleDuration(tp_diff - ptr_tp_start));
-                samples->samples.push_back(new_sample);
-            }
             ptr_tp_start = tp_diff;
-            if(ptr_tp_end <= tp_end)
+            if(ptr_tp_end <= tp_start)
             {
-                if(ptr_tp_end == tp_end)
-                    ptr_it ? jt++ : it++;
                 ptr_it = !ptr_it;
                 continue;
             }
         }
 
-        // copy the left overs;
-        // happens only if the ending times are different for the pending samples
-        if(ptr_it ? it != pending_samples->samples.end() : jt != pending_samples2->samples.end())
+        // mix up to tp_diff
+        tp_diff = std::min(ptr_tp_end, tp_end);
         {
-            LONGLONG t, t2, dur, dur2;
-            CHECK_HR(hr = pending_samples->samples.back()->GetSampleTime(&t));
-            CHECK_HR(hr = pending_samples->samples.back()->GetSampleDuration(&dur));
-            CHECK_HR(hr = pending_samples2->samples.back()->GetSampleTime(&t2));
-            CHECK_HR(hr = pending_samples2->samples.back()->GetSampleDuration(&dur2));
-            /*if(std::abs((t + dur) - (t2 + dur2)) <= 2)
-            {
-                std::cout << "COPY SKIPPED" << std::endl;
-                goto skip;
-            }*/
-
-            std::cout << "COPY" << std::endl;
-
-            auto end = ptr_it ? pending_samples->samples.end() : pending_samples2->samples.end();
-            for(auto kt = ptr_it ? it : jt; kt != end; kt++)
-            {
-                CComPtr<IMFSample> sample;
-                CComPtr<IMFMediaBuffer> buffer;
-                frame_unit ts, dur, tp_start;
-
-                CHECK_HR(hr = (*kt)->GetSampleTime(&ts));
-                CHECK_HR(hr = (*kt)->GetSampleDuration(&dur));
-                tp_start = std::max(ptr_tp_start, ts);
-
-                CHECK_HR(hr = MFCreateSample(&sample));
-                buffer = this->transform->copy(
-                    pending_samples->bit_depth, pending_samples->channels,
-                    *kt, tp_start, ts + dur);
-                CHECK_HR(hr = sample->AddBuffer(buffer));
-                CHECK_HR(hr = sample->SetSampleTime(tp_start));
-                CHECK_HR(hr = sample->SetSampleDuration(ts + dur - tp_start));
-                samples->samples.push_back(sample);
-            }
+            CComPtr<IMFSample> new_sample;
+            CComPtr<IMFMediaBuffer> buffer;
+            CHECK_HR(hr = MFCreateSample(&new_sample));
+            buffer = this->transform->mix(
+                audio_sample.bit_depth, audio_sample.channels,
+                ptr_sample, sample, ptr_tp_start, tp_diff);
+            CHECK_HR(hr = new_sample->AddBuffer(buffer));
+            CHECK_HR(hr = new_sample->SetSampleTime(ptr_tp_start));
+            CHECK_HR(hr = new_sample->SetSampleDuration(tp_diff - ptr_tp_start));
+            audio.buffer->samples.push_back(new_sample);
         }
-    skip:
-
-        sample_view.reset(new media_sample_view(samples));
-        sample_view->sample.timestamp = std::min(
-            this->pending_request.sample_view->sample.timestamp,
-            this->pending_request2.sample_view->sample.timestamp);
+        ptr_tp_start = tp_diff;
+        if(ptr_tp_end <= tp_end)
+        {
+            if(ptr_tp_end == tp_end)
+                ptr_it ? jt++ : it++;
+            ptr_it = !ptr_it;
+            continue;
+        }
     }
-    else
+
+    // copy the left overs;
+    // happens only if the ending times are different for the pending samples
+    if(ptr_it ? it != audio_sample.buffer->samples.end() : jt != audio_sample2.buffer->samples.end())
     {
-        sample_view = this->pending_request.sample_view ?
-            this->pending_request.sample_view : this->pending_request2.sample_view;
-    }
+        LONGLONG t, t2, dur, dur2;
+        CHECK_HR(hr = audio_sample.buffer->samples.back()->GetSampleTime(&t));
+        CHECK_HR(hr = audio_sample.buffer->samples.back()->GetSampleDuration(&dur));
+        CHECK_HR(hr = audio_sample2.buffer->samples.back()->GetSampleTime(&t2));
+        CHECK_HR(hr = audio_sample2.buffer->samples.back()->GetSampleDuration(&dur2));
+        /*if(std::abs((t + dur) - (t2 + dur2)) <= 2)
+        {
+            std::cout << "COPY SKIPPED" << std::endl;
+            goto skip;
+        }*/
 
-    this->pending_request.sample_view = NULL;
-    this->pending_request2.sample_view = NULL;
+        std::cout << "COPY" << std::endl;
+
+        auto end = ptr_it ? audio_sample.buffer->samples.end() : audio_sample2.buffer->samples.end();
+        for(auto kt = ptr_it ? it : jt; kt != end; kt++)
+        {
+            CComPtr<IMFSample> sample;
+            CComPtr<IMFMediaBuffer> buffer;
+            frame_unit ts, dur, tp_start;
+
+            CHECK_HR(hr = (*kt)->GetSampleTime(&ts));
+            CHECK_HR(hr = (*kt)->GetSampleDuration(&dur));
+            tp_start = std::max(ptr_tp_start, ts);
+
+            CHECK_HR(hr = MFCreateSample(&sample));
+            buffer = this->transform->copy(
+                audio_sample.bit_depth, audio_sample.channels,
+                *kt, tp_start, ts + dur);
+            CHECK_HR(hr = sample->AddBuffer(buffer));
+            CHECK_HR(hr = sample->SetSampleTime(tp_start));
+            CHECK_HR(hr = sample->SetSampleDuration(ts + dur - tp_start));
+            audio.buffer->samples.push_back(sample);
+        }
+    }
+skip:
+
+    // currently the samples themselves in the buffer contain timestamps
+    audio.timestamp = std::min(audio_sample.timestamp, audio_sample2.timestamp);
+
     this->pending_request.rp = request_packet();
     this->pending_request2.rp = request_packet();
     this->pending_request.rp.packet_number = INVALID_PACKET_NUMBER;
     this->pending_request2.rp.packet_number = INVALID_PACKET_NUMBER;
 
-    this->transform->session->give_sample(this, sample_view, rp, false);
+    this->transform->session->give_sample(this, audio, rp, false);
 
 done:
     if(FAILED(hr))
@@ -317,23 +305,25 @@ media_stream::result_t stream_audiomix::request_sample(request_packet& rp, const
 }
 
 media_stream::result_t stream_audiomix::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream* prev_stream)
+    const media_sample& sample_view, request_packet& rp, const media_stream* prev_stream)
 {
     std::unique_lock<std::mutex> lock(this->mutex);
+
+    const media_sample_audio& audio_sample = reinterpret_cast<const media_sample_audio&>(sample_view);
 
     if(prev_stream == this->primary_stream)
     {
         assert_(this->pending_request.rp.packet_number == INVALID_PACKET_NUMBER);
 
         this->pending_request.rp = rp;
-        this->pending_request.sample_view = sample_view;
+        this->pending_request.audio_sample = audio_sample;
     }
     else
     {
         assert_(this->pending_request2.rp.packet_number == INVALID_PACKET_NUMBER);
 
         this->pending_request2.rp = rp;
-        this->pending_request2.sample_view = sample_view;
+        this->pending_request2.audio_sample = audio_sample;
     }
 
     if(this->pending_request.rp.packet_number != INVALID_PACKET_NUMBER &&

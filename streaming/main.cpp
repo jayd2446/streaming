@@ -13,7 +13,6 @@
 #include "transform_videoprocessor.h"
 #include "transform_h264_encoder.h"
 #include "transform_color_converter.h"
-#include "sink_mpeg.h"
 #include "sink_mpeg2.h"
 #include "sink_preview2.h"
 #include "source_loopback.h"

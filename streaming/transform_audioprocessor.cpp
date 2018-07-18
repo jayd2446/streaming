@@ -21,7 +21,8 @@ transform_audioprocessor::transform_audioprocessor(const media_session_t& sessio
     running(false),
     sample_base(std::numeric_limits<frame_unit>::min()),
     next_sample_pos(0),
-    consumed_samples_end(std::numeric_limits<frame_unit>::min())
+    consumed_samples_end(std::numeric_limits<frame_unit>::min()),
+    unprocessed_samples(new media_buffer_samples)
 {
     this->serve_callback.Attach(new async_callback_t(&transform_audioprocessor::serve_cb));
 }
@@ -111,9 +112,12 @@ done:
     return SUCCEEDED(hr);
 }
 
-void transform_audioprocessor::resample(const media_buffer_samples& samples)
+void transform_audioprocessor::resample(const media_sample_audio& audio)
 {
-    this->reset_input_type(samples.channels, samples.sample_rate, samples.bit_depth);
+    this->reset_input_type(audio.channels, audio.sample_rate, audio.bit_depth);
+
+    if(audio.buffer->samples.empty())
+        return;
 
     // TODO: resampling should be skipped;
     // this means that only the sample bases should be set
@@ -163,10 +167,10 @@ void transform_audioprocessor::resample(const media_buffer_samples& samples)
         CHECK_HR(hr = out_sample->SetSampleTime(frame_pos));
         CHECK_HR(hr = out_sample->SetSampleDuration(sample_dur));
 
-        // add the out sample to samples container
+        // add the out sample to buffer
         {
-            scoped_lock lock(this->samples_mutex);
-            this->samples.push_back(out_sample);
+            scoped_lock lock(this->buffer_mutex);
+            this->buffer.samples.push_back(out_sample);
         }
 
         // reset the out sample
@@ -180,7 +184,7 @@ void transform_audioprocessor::resample(const media_buffer_samples& samples)
     };
 
     reset_sample();
-    for(auto it = samples.samples.begin(); it != samples.samples.end(); it++)
+    for(auto it = audio.buffer->samples.begin(); it != audio.buffer->samples.end(); it++)
     {
         // create a sample that has time and duration converted from frame unit to time unit
         CComPtr<IMFSample> sample;
@@ -191,8 +195,8 @@ void transform_audioprocessor::resample(const media_buffer_samples& samples)
         CHECK_HR(hr = (*it)->GetSampleTime(&time));
         CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
         CHECK_HR(hr = (*it)->GetBufferByIndex(0, &buffer));
-        time = (LONGLONG)((double)time * SECOND_IN_TIME_UNIT / samples.sample_rate);
-        dur = (LONGLONG)((double)dur * SECOND_IN_TIME_UNIT / samples.sample_rate);
+        time = (LONGLONG)((double)time * SECOND_IN_TIME_UNIT / audio.sample_rate);
+        dur = (LONGLONG)((double)dur * SECOND_IN_TIME_UNIT / audio.sample_rate);
 
         CHECK_HR(hr = MFCreateSample(&sample));
         CHECK_HR(hr = sample->SetSampleTime(time));
@@ -209,13 +213,13 @@ void transform_audioprocessor::resample(const media_buffer_samples& samples)
                 process_sample();
 
             // set the new base
-            const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples.sample_rate;
+            const double sample_duration = SECOND_IN_TIME_UNIT / (double)audio.sample_rate;
             const frame_unit old_base = this->sample_base;
             presentation_time_source_t time_source = this->session->get_time_source();
             frame_unit sample_time = (frame_unit)
                 (time_source->system_time_to_time_source(sample_base.time) / sample_duration);
             this->sample_base = (frame_unit)
-                ((double)transform_aac_encoder::sample_rate / samples.sample_rate * sample_time);
+                ((double)transform_aac_encoder::sample_rate / audio.sample_rate * sample_time);
 
             if((old_base + this->next_sample_pos) > this->sample_base)
             {
@@ -247,11 +251,11 @@ done:
         throw std::exception();
 }
 
-void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
+void transform_audioprocessor::try_serve()
 {
-    // resample the samples
-    if(!samples.samples.empty())
-        this->resample(samples);
+    std::unique_lock<std::recursive_mutex> lock(this->serve_mutex, std::try_to_lock);
+    if(!lock.owns_lock())
+        return;
 
     // try to serve
     HRESULT hr = S_OK;
@@ -262,14 +266,20 @@ void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
         // sample that goes over the request time will not be collected
 
         bool dispatch = false;
-        media_buffer_samples_t samples(new media_buffer_samples);
+        // unfortunately to be able to share a sample between multiple inputs, the buffer
+        // must be wrapped into shared ptr and dynamically allocated
+        media_sample_audio audio(media_buffer_samples_t(new media_buffer_samples));
+        audio.bit_depth = sizeof(transform_aac_encoder::bit_depth_t) * 8;
+        audio.channels = transform_aac_encoder::channels;
+        audio.sample_rate = transform_aac_encoder::sample_rate;
+
         const double sample_duration = SECOND_IN_TIME_UNIT / (double)transform_aac_encoder::sample_rate;
         const frame_unit request_end = (frame_unit)(request.rp.request_time / sample_duration);
 
-        std::unique_lock<std::recursive_mutex> lock2(this->samples_mutex);
+        std::unique_lock<std::recursive_mutex> lock2(this->buffer_mutex);
         size_t consumed_samples = 0;
         frame_unit consumed_samples_end = this->consumed_samples_end;
-        for(auto it = this->samples.begin(); it != this->samples.end() && !dispatch; it++)
+        for(auto it = this->buffer.samples.begin(); it != this->buffer.samples.end() && !dispatch; it++)
         {
             CComPtr<IMFSample> sample;
             CComPtr<IMFMediaBuffer> buffer, oldbuffer;
@@ -336,7 +346,7 @@ void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
                 if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))
                     // TODO: pushing samples to a container could be deferred to
                     // dispatching block
-                    samples->samples.push_back(sample);
+                    audio.buffer->samples.push_back(sample);
             }
             else
             {
@@ -354,7 +364,7 @@ void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
 
             // erase all consumed samples
             for(size_t i = 0; i < consumed_samples; i++)
-                this->samples.pop_front();
+                this->buffer.samples.pop_front();
 
             // pop the request from the queue
             this->requests.pop(request);
@@ -362,15 +372,7 @@ void transform_audioprocessor::try_serve(const media_buffer_samples& samples)
             lock2.unlock();
             /*lock.unlock();*/
             // dispatch the request
-            media_sample_view_t sample_view;
-            if(!samples->samples.empty())
-            {
-                sample_view.reset(new media_sample_view(samples));
-                samples->bit_depth = sizeof(transform_aac_encoder::bit_depth_t) * 8;
-                samples->channels = transform_aac_encoder::channels;
-                samples->sample_rate = transform_aac_encoder::sample_rate;
-            }
-            this->session->give_sample(request.stream, sample_view, request.rp, false);
+            this->session->give_sample(request.stream, audio, request.rp, false);
             /*lock.lock();*/
         }
         else
@@ -386,13 +388,32 @@ void transform_audioprocessor::serve_cb(void*)
 {
     // only one thread should be processing the requests so that resampling and cut operations
     // stay consistent
-    std::unique_lock<std::recursive_mutex> lock(this->process_mutex, std::try_to_lock);
+    // (as long as the source keeps serving the requests, race conditions affecting this
+    // expression won't be a problem)
+    /*std::unique_lock<std::recursive_mutex> lock(this->serve_mutex, std::try_to_lock);
+    if(!lock.owns_lock())
+        return;*/
+
+    std::unique_lock<std::recursive_mutex> lock(this->resample_mutex, std::try_to_lock);
     if(!lock.owns_lock())
         return;
 
-    media_buffer_samples samples;
-    this->audio_device->swap_buffers(samples);
-    this->try_serve(samples);
+    media_sample_audio audio(this->unprocessed_samples);
+    this->audio_device->move_buffer(audio);
+    this->resample(audio);
+
+    lock.unlock();
+
+    this->try_serve();
+
+    //media_sample_audio audio(this->unprocessed_samples);
+
+    //media_buffer_samples samples;
+    //this->audio_device->swap_buffers(samples);
+
+    //// TODO: try serve should try the process mutex
+    //// TODO: resampling should be here
+    //this->try_serve(samples);
 }
 
 void transform_audioprocessor::initialize(source_loopback* audio_device)
@@ -463,7 +484,7 @@ media_stream::result_t stream_audioprocessor::request_sample(request_packet& rp,
 }
 
 media_stream::result_t stream_audioprocessor::process_sample(
-    const media_sample_view_t&, request_packet&, const media_stream*)
+    const media_sample&, request_packet&, const media_stream*)
 {
     assert_(false);
 

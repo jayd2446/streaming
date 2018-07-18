@@ -148,7 +148,6 @@ void source_loopback::process_cb(void*)
         UINT32 frames;
 
         // TODO: source loopback must be reinitialized if the device becomes invalid
-        // TODO: use event based capturing
 
         // no excessive delay should happen between getbuffer and releasebuffer calls
         CHECK_HR(hr = this->audio_capture_client->GetBuffer(
@@ -240,9 +239,11 @@ void source_loopback::process_cb(void*)
 
         // add sample
         {
-            scoped_lock lock(this->samples_mutex);
-            this->samples.push_back(sample);
+            /*scoped_lock lock(this->buffer_mutex);*/
+            this->buffer.lock();
+            this->buffer.samples.push_back(sample);
             this->next_frame_position = devposition + frames;
+            this->buffer.unlock();
         }
 
         getbuffer = false;
@@ -280,41 +281,6 @@ HRESULT source_loopback::play_silence()
 
 done:
     return hr;
-}
-
-void source_loopback::serve_cb(void*)
-{
-    // make sure only one thread is serving the requests
-    assert_(false);
-    std::unique_lock<std::recursive_mutex> lock(this->serve_mutex, std::try_to_lock);
-    if(!lock.owns_lock())
-        return;
-
-    request_t request;
-    while(this->requests.pop(request))
-    {
-        request_t request2;
-        if(this->requests.get(request2))
-        {
-            // send empty responses for old requests
-            media_sample_view_t sample_view;
-            request.stream->process_sample(sample_view, request.rp, NULL);
-        }
-        else
-        {
-            // add the buffer for the newest request
-            media_buffer_samples_t samples(new media_buffer_samples);
-            media_sample_view_t sample_view(new media_sample_view(samples));
-            {
-                scoped_lock lock(this->samples_mutex);
-                samples->samples.swap(this->samples);
-            }
-            samples->bit_depth = sizeof(bit_depth_t) * 8;
-            samples->channels = this->channels;
-            samples->sample_rate = this->samples_per_second;
-            request.stream->process_sample(sample_view, request.rp, NULL);
-        }
-    }
 }
 
 void source_loopback::serve_requests()
@@ -448,13 +414,20 @@ media_stream_t source_loopback::create_stream()
     return media_stream_t(new stream_loopback(this->shared_from_this<source_loopback>()));
 }
 
-void source_loopback::swap_buffers(media_buffer_samples& samples)
+void source_loopback::move_buffer(media_sample_audio& sample)
 {
-    scoped_lock lock(this->samples_mutex);
-    samples.samples.swap(this->samples);
-    samples.bit_depth = sizeof(bit_depth_t) * 8;
-    samples.channels = this->channels;
-    samples.sample_rate = this->samples_per_second;
+    this->buffer.lock();
+    sample.buffer->lock();
+
+    sample.buffer->samples.swap(this->buffer.samples);
+    this->buffer.samples.clear();
+
+    sample.bit_depth = sizeof(bit_depth_t) * 8;
+    sample.sample_rate = this->samples_per_second;
+    sample.channels = this->channels;
+
+    sample.buffer->unlock();
+    this->buffer.unlock();
 }
 
 
@@ -470,29 +443,12 @@ stream_loopback::stream_loopback(const source_loopback_t& source) :
 
 media_stream::result_t stream_loopback::request_sample(request_packet& rp, const media_stream*)
 {
-    /*media_buffer_samples_t samples(new media_buffer_samples);
-    media_sample_view_t sample_view(new media_sample_view(samples));
-    {
-        scoped_lock lock(this->source->samples_mutex);
-        samples->samples.swap(this->source->samples);
-    }
-
-    samples->bit_depth = sizeof(source_loopback::bit_depth_t) * 8;
-    samples->channels = this->source->channels;
-    samples->sample_rate = this->source->samples_per_second;*/
     assert_(false);
-
-    source_loopback::request_t request;
-    request.stream = this;
-    request.rp = rp;
-    
-    this->source->requests.push(request);
     return OK;
-    /*return this->process_sample(sample_view, rp, NULL);*/
 }
 
 media_stream::result_t stream_loopback::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     return this->source->session->give_sample(this, sample_view, rp, true) ? OK : FATAL_ERROR;
 }

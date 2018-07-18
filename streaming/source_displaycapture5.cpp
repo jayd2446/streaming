@@ -24,7 +24,8 @@ source_displaycapture5::source_displaycapture5(
     media_source(session),
     newest_buffer(new media_buffer_texture),
     newest_pointer_buffer(new media_buffer_texture),
-    context_mutex(context_mutex)
+    context_mutex(context_mutex),
+    output_index((UINT)-1)
 {
     this->pointer_position.Visible = FALSE;
     this->pointer_shape_info.Type = DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR;
@@ -42,16 +43,15 @@ stream_displaycapture5_pointer_t source_displaycapture5::create_pointer_stream()
         new stream_displaycapture5_pointer(this->shared_from_this<source_displaycapture5>()));
 }
 
-HRESULT source_displaycapture5::initialize(
-    UINT output_index, const CComPtr<ID3D11Device>& d3d11dev, const CComPtr<ID3D11DeviceContext>& devctx)
+HRESULT source_displaycapture5::reinitialize(UINT output_index)
 {
-    HRESULT hr;
+    if(output_index == (UINT)-1)
+        throw std::exception();
+
+    HRESULT hr = S_OK;
     CComPtr<IDXGIDevice1> dxgidev;
     CComPtr<IDXGIAdapter1> dxgiadapter;
     CComPtr<IDXGIOutput> output;
-
-    this->d3d11dev = d3d11dev;
-    this->d3d11devctx = devctx;
 
     // get dxgi dev
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&dxgidev));
@@ -60,11 +60,12 @@ HRESULT source_displaycapture5::initialize(
     CHECK_HR(hr = dxgidev->GetParent(__uuidof(IDXGIAdapter1), (void**)&dxgiadapter));
 
     // get the primary output
-    CHECK_HR(hr = dxgiadapter->EnumOutputs(output_index, &output));
+    CHECK_HR(hr = dxgiadapter->EnumOutputs(this->output_index, &output));
     DXGI_OUTPUT_DESC desc;
     CHECK_HR(hr = output->GetDesc(&desc));
 
     // qi for output1
+    this->output = NULL;
     CHECK_HR(hr = output->QueryInterface(&this->output));
 
     // create the desktop duplication
@@ -72,15 +73,30 @@ HRESULT source_displaycapture5::initialize(
     CHECK_HR(hr = this->output->DuplicateOutput(this->d3d11dev, &this->output_duplication));
 
 done:
+    return hr;
+}
+
+HRESULT source_displaycapture5::initialize(
+    UINT output_index, const CComPtr<ID3D11Device>& d3d11dev, const CComPtr<ID3D11DeviceContext>& devctx)
+{
+    HRESULT hr = S_OK;
+
+    this->d3d11dev = d3d11dev;
+    this->d3d11devctx = devctx;
+    this->output_index = output_index;
+
+    CHECK_HR(hr = this->reinitialize(output_index));
+
+done:
     if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
     {
         std::cerr << "maximum number of desktop duplication api applications running" << std::endl;
-        return hr;
+        /*return hr;*/
     }
-    else if(FAILED(hr))
-        throw std::exception();
+    /*else if(FAILED(hr))
+        throw std::exception();*/
 
-    return hr;
+    return S_OK;//hr;
 }
 
 HRESULT source_displaycapture5::initialize(
@@ -90,6 +106,8 @@ HRESULT source_displaycapture5::initialize(
     const CComPtr<ID3D11Device>& d3d11dev,
     const CComPtr<ID3D11DeviceContext>& devctx)
 {
+    throw std::exception(); // this function is not yet updated
+
     HRESULT hr = S_OK;
     CComPtr<IDXGIAdapter1> dxgiadapter;
 
@@ -195,7 +213,7 @@ bool source_displaycapture5::capture_frame(
 
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;
-    DXGI_OUTDUPL_FRAME_INFO frame_info = {0};
+    DXGI_OUTDUPL_FRAME_INFO frame_info;
     HRESULT hr = S_OK;
 
     // if new frame: unused buffer will save the new frame, newest buffer is set to point to unused buffer,
@@ -205,6 +223,14 @@ bool source_displaycapture5::capture_frame(
     // update the pointer position beforehand because acquirenextframe might return timeout error
     pointer_position = this->pointer_position;
     new_pointer_shape = false;
+
+capture:
+    frame = NULL;
+    screen_frame = NULL;
+    memset(&frame_info, 0, sizeof(DXGI_OUTDUPL_FRAME_INFO));
+
+    if(!this->output_duplication || !this->output || FAILED(hr))
+        CHECK_HR(hr = this->reinitialize(this->output_index));
 
     CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
@@ -269,16 +295,25 @@ bool source_displaycapture5::capture_frame(
         /*timestamp = clock->get_current_time()*/;
 
 done:
-    this->output_duplication->ReleaseFrame();
+    if(this->output_duplication)
+        this->output_duplication->ReleaseFrame();
 
-    if(hr == DXGI_ERROR_WAIT_TIMEOUT)
+    if(FAILED(hr))
     {
-        /*std::cout << "FRAME IS NULL------------------" << std::endl;*/
-        /*timestamp = clock->get_current_time();*/
-        return false;
+        if(hr == DXGI_ERROR_WAIT_TIMEOUT)
+        {
+            /*std::cout << "FRAME IS NULL------------------" << std::endl;*/
+            /*timestamp = clock->get_current_time();*/
+            return false;
+        }
+        else if(hr == DXGI_ERROR_ACCESS_LOST)
+            goto capture;
+        else if((hr == E_ACCESSDENIED && !this->output_duplication) || hr == DXGI_ERROR_UNSUPPORTED ||
+            hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE || hr == DXGI_ERROR_SESSION_DISCONNECTED)
+            return false;
+        else
+            throw std::exception();
     }
-    else if(FAILED(hr))
-        throw std::exception();
 
     return (frame_info.LastPresentTime.QuadPart != 0);
 }
@@ -311,8 +346,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     this->videoprocessor_controller->get_params(params);
     // enable alpha is only for pointer which has alpha values
     params.enable_alpha = false;
-    media_sample_view_videoprocessor_ sample_view(media_sample_videoprocessor(params, this->buffer));
-    media_sample_view_videoprocessor_ pointer_sample_view(
+    media_sample_view_videoprocessor sample_view(media_sample_videoprocessor(params, this->buffer));
+    media_sample_view_videoprocessor pointer_sample_view(
         media_sample_videoprocessor(this->pointer_stream->buffer));
 
     /*std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);*/
@@ -341,7 +376,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
         // sample view must be reset to null before assigning a new sample view,
         // that is because the media_sample_view would lock the sample before
         // sample_view releasing its own reference to another sample_view
-        sample_view.attach(this->source->newest_buffer, media_sample_view::READ_LOCK_BUFFERS);
+        sample_view.attach(this->source->newest_buffer, view_lock_t::READ_LOCK_BUFFERS);
     }
     else
         sample_view.sample.buffer->unlock_write();
@@ -349,31 +384,10 @@ void stream_displaycapture5::capture_frame_cb(void*)
     if(!new_pointer_shape)
     {
         pointer_sample_view.attach(
-            this->source->newest_pointer_buffer, media_sample_view::READ_LOCK_BUFFERS);
+            this->source->newest_pointer_buffer, view_lock_t::READ_LOCK_BUFFERS);
     }
     else
         pointer_sample_view.sample.buffer->unlock_write();
-
-    /*if(!new_pointer_shape)
-    {
-        pointer_sample_view.reset();
-        pointer_sample_view.reset(new media_sample_view_videoprocessor(
-            this_->source->newest_pointer_buffer, media_sample_view::READ_LOCK_BUFFERS));
-
-        if(this_->source->newest_pointer_buffer != this_->pointer_stream->buffer)
-            this_->source->unused_pointer_buffer = this_->pointer_stream->buffer;
-        else if(this_->source->unused_pointer_buffer == this_->source->newest_pointer_buffer)
-            this_->source->unused_pointer_buffer = NULL;
-    }
-    else
-    {
-        pointer_sample_view->sample.buffer->unlock_write();
-
-        if(this_->source->newest_pointer_buffer != this_->pointer_stream->buffer)
-            this_->source->unused_pointer_buffer = this_->pointer_stream->buffer;
-        else if(this_->source->unused_pointer_buffer == this_->source->newest_pointer_buffer)
-            this_->source->unused_pointer_buffer = NULL;
-    }*/
 
     request_packet rp = this->rp;
     this->rp = request_packet();
@@ -387,7 +401,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
     /*this->sample->timestamp = timestamp;*/
 
     lock.unlock();
-    this->process_sample(reinterpret_cast<media_sample_view_t&>(sample_view), rp, NULL);
+    this->process_sample(sample_view, rp, NULL);
     this->pointer_stream->dispatch(
         new_pointer_shape, pointer_position, ptr_desc, pointer_sample_view, rp);
 }
@@ -412,7 +426,7 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_displaycapture5::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     this->source->session->give_sample(this, sample_view, rp, true);
     return OK;
@@ -431,145 +445,13 @@ stream_displaycapture5_pointer::stream_displaycapture5_pointer(const source_disp
 {
 }
 
-//bool stream_displaycapture5_pointer::set_pointer_rect(
-//    media_sample_view_videoprocessor_t& sample_view, 
-//    const RECT& src_rect,
-//    const RECT& dest_rect) const
-//{
-//    if(this->desktop_width == -1 || this->desktop_height == -1)
-//        return false;
-//
-//    D3D11_TEXTURE2D_DESC desc;
-//    sample_view->texture_buffer->texture->GetDesc(&desc);
-//
-//    POINT real_pointer_size; // TODO: this is a parameter
-//    real_pointer_size.x = desc.Width;
-//    real_pointer_size.y = desc.Height;
-//
-//    // calculate the destination region
-//    RECT source_rect_diff;
-//    source_rect_diff.left = src_rect.left;
-//    source_rect_diff.top = src_rect.top;
-//    source_rect_diff.right = this->desktop_width - src_rect.right;
-//    source_rect_diff.bottom = this->desktop_height - src_rect.bottom;
-//
-//    double dest_src_ratio_w, dest_src_ratio_h;
-//    dest_src_ratio_w = 
-//        (double)(dest_rect.right - dest_rect.left) / (src_rect.right - src_rect.left);
-//    dest_src_ratio_h =
-//        (double)(dest_rect.bottom - dest_rect.top) / (src_rect.bottom - src_rect.top);
-//
-//    RECT dest_region = dest_rect;
-//    dest_region.left -= (LONG)(source_rect_diff.left * dest_src_ratio_w);
-//    dest_region.top -= (LONG)(source_rect_diff.top * dest_src_ratio_h);
-//    dest_region.right += (LONG)(source_rect_diff.right * dest_src_ratio_w);
-//    dest_region.bottom += (LONG)(source_rect_diff.bottom * dest_src_ratio_h);
-//
-//    // transform pointer coordinates to destination coordinates
-//    POINT pointer_pos = this->pointer_position.Position, pointer_size;
-//    pointer_pos.x = (LONG)(pointer_pos.x * dest_src_ratio_w + dest_region.left);
-//    pointer_pos.y = (LONG)(pointer_pos.y * dest_src_ratio_h + dest_region.top);
-//    pointer_size.x = (LONG)(real_pointer_size.x * dest_src_ratio_w);
-//    pointer_size.y = (LONG)(real_pointer_size.y * dest_src_ratio_h);
-//
-//    // clip pointer to dest rect
-//    // (source and dest rect are clipped the same way)
-//    // (source rect only has different coordinates)
-//    RECT pointer_src_rect, pointer_dst_rect;
-//    pointer_dst_rect.left = std::min(std::max(pointer_pos.x, dest_rect.left), dest_rect.right);
-//    pointer_dst_rect.right = 
-//        std::min(std::max(pointer_pos.x + pointer_size.x, dest_rect.left), dest_rect.right);
-//    pointer_dst_rect.top = std::min(std::max(pointer_pos.y, dest_rect.top), dest_rect.bottom);
-//    pointer_dst_rect.bottom = 
-//        std::min(std::max(pointer_pos.y + pointer_size.y, dest_rect.top), dest_rect.bottom);
-//        
-//    // TODO: loss of precision
-//    pointer_src_rect = pointer_dst_rect;
-//    pointer_src_rect.left -= pointer_pos.x;
-//    pointer_src_rect.right -= pointer_pos.x;
-//    pointer_src_rect.top -= pointer_pos.y;
-//    pointer_src_rect.bottom -= pointer_pos.y;
-//    pointer_src_rect.left /= dest_src_ratio_w;
-//    pointer_src_rect.right /= dest_src_ratio_w;
-//    pointer_src_rect.top /= dest_src_ratio_h;
-//    pointer_src_rect.bottom /= dest_src_ratio_h;
-//    // clamp
-//    pointer_src_rect.left = std::max(0L, pointer_src_rect.left);
-//    pointer_src_rect.right = std::min(real_pointer_size.x, pointer_src_rect.right);
-//    pointer_src_rect.top = std::max(0L, pointer_src_rect.top);
-//    pointer_src_rect.bottom = std::min(real_pointer_size.y, pointer_src_rect.bottom);
-//
-//    /*std::cout << pointer_src_rect.top << ", " << pointer_src_rect.bottom << std::endl;*/
-//
-//    sample_view->params.source_rect = pointer_src_rect;
-//    sample_view->params.dest_rect = pointer_dst_rect;
-//    
-//    return (pointer_src_rect.left < pointer_src_rect.right &&
-//        pointer_src_rect.top < pointer_src_rect.bottom);
-//
-//    /*const double pointer_ratio_w = 
-//        (double)(dest_rect.right - dest_rect.left) / this->desktop_width;
-//    const double pointer_ratio_h = 
-//        (double)(dest_rect.bottom - dest_rect.top) / this->desktop_height;
-//
-//    sample_view->params.source_rect.left = sample_view->params.source_rect.top = 0;
-//    sample_view->params.source_rect.right = (LONG)desc.Width;
-//    sample_view->params.source_rect.bottom = (LONG)desc.Height;
-//    sample_view->params.dest_rect.left = (LONG)
-//        (dest_rect.left + pointer_position.Position.x * pointer_ratio_w);
-//    sample_view->params.dest_rect.right = (LONG)
-//        ((dest_rect.left + pointer_position.Position.x * pointer_ratio_w) +
-//        desc.Width * pointer_ratio_w);
-//    sample_view->params.dest_rect.top = (LONG)
-//        (dest_rect.top + pointer_position.Position.y * pointer_ratio_h);
-//    sample_view->params.dest_rect.bottom = (LONG)
-//        ((dest_rect.top + pointer_position.Position.y * pointer_ratio_h) +
-//        desc.Height * pointer_ratio_h);
-//
-//    const LONG overlap_right_src =
-//        std::max(0L, (pointer_position.Position.x + (LONG)desc.Width) - this->desktop_width);
-//    const LONG overlap_right_dst =
-//        std::max(0L, sample_view->params.dest_rect.right - dest_rect.right);
-//    const LONG overlap_bottom_src =
-//        std::max(0L, (pointer_position.Position.y + (LONG)desc.Height) - this->desktop_height);
-//    const LONG overlap_bottom_dst =
-//        std::max(0L, sample_view->params.dest_rect.bottom - dest_rect.bottom);
-//    const LONG overlap_left_src = std::min(0L, pointer_position.Position.x);
-//    const LONG overlap_left_dst = 
-//        std::min(0L, sample_view->params.dest_rect.left - dest_rect.left);
-//    const LONG overlap_top_src = std::min(0L, pointer_position.Position.y);
-//    const LONG overlap_top_dst =
-//        std::min(0L, sample_view->params.dest_rect.top - dest_rect.top);
-//
-//    sample_view->params.source_rect.right -= overlap_right_src;
-//    sample_view->params.dest_rect.right -= overlap_right_dst;
-//    sample_view->params.source_rect.bottom -= overlap_bottom_src;
-//    sample_view->params.dest_rect.bottom -= overlap_bottom_dst;
-//    sample_view->params.source_rect.left -= overlap_left_src;
-//    sample_view->params.dest_rect.left -= overlap_left_dst;
-//    sample_view->params.source_rect.top -= overlap_top_src;
-//    sample_view->params.dest_rect.top -= overlap_top_dst;*/
-//
-//    /*return true;*/
-//}
-
 void stream_displaycapture5_pointer::dispatch(
     bool new_pointer_shape, 
     const DXGI_OUTDUPL_POINTER_POSITION& pointer_position, 
     const D3D11_TEXTURE2D_DESC* desktop_desc,
-    media_sample_view_videoprocessor_& sample_view,
+    media_sample_view_videoprocessor& sample_view,
     request_packet& rp)
 {
-    /*if(!pointer_position.Visible || !desktop_desc)
-    {
-        sample_view.reset();
-        sample_view.reset(new media_sample_view_videoprocessor(
-            this->null_buffer, media_sample_view::READ_LOCK_BUFFERS));
-
-        this->source->session->give_sample(this, sample_view, rp, true);
-        return;
-    }*/
-
     if(pointer_position.Visible && desktop_desc && sample_view.sample.buffer->texture)
     {
         D3D11_TEXTURE2D_DESC desc;
@@ -588,36 +470,12 @@ void stream_displaycapture5_pointer::dispatch(
     }
     else
     {
-        sample_view.attach(this->null_buffer, media_sample_view::READ_LOCK_BUFFERS);
+        sample_view.attach(this->null_buffer, view_lock_t::READ_LOCK_BUFFERS);
     }
-
-    /*if(!new_pointer_shape)
-    {
-        sample_view.reset();
-        sample_view.reset(new media_sample_view_videoprocessor(
-            std::atomic_load(&this->source->newest_pointer_buffer), 
-            media_sample_view::READ_LOCK_BUFFERS));
-    }
-    else
-    {
-        sample_view->sample.buffer->unlock_write();
-    }*/
-
-    // set the position where the pointer is blended
-    /*if(sample_view->texture_buffer->texture)
-    {
-        sample_view->params.enable_alpha = true;
-        if(!this->set_pointer_rect(sample_view, src_rect, dest_rect))
-        {
-            sample_view.reset();
-            sample_view.reset(new media_sample_view_videoprocessor(
-                this->null_buffer, media_sample_view::READ_LOCK_BUFFERS));
-        }
-    }*/
 
     sample_view.sample.timestamp = rp.request_time;
 
-    this->source->session->give_sample(this, reinterpret_cast<media_sample_view_t&>(sample_view), rp, true);
+    this->source->session->give_sample(this, sample_view, rp, true);
 }
 
 media_stream::result_t stream_displaycapture5_pointer::request_sample(request_packet&, const media_stream*)
@@ -627,7 +485,7 @@ media_stream::result_t stream_displaycapture5_pointer::request_sample(request_pa
 }
 
 media_stream::result_t stream_displaycapture5_pointer::process_sample(
-    const media_sample_view_t&, request_packet&, const media_stream*)
+    const media_sample&, request_packet&, const media_stream*)
 {
     assert_(false);
     return OK;

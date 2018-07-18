@@ -38,8 +38,8 @@ void transform_videoprocessor::initialize(const CComPtr<ID3D11Device>& d3d11dev,
     desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
     desc.InputFrameRate.Numerator = transform_h264_encoder::frame_rate_num;
     desc.InputFrameRate.Denominator = transform_h264_encoder::frame_rate_den;
-    desc.InputWidth = transform_h264_encoder::frame_width;
-    desc.InputHeight = transform_h264_encoder::frame_height;
+    desc.InputWidth = canvas_width;
+    desc.InputHeight = canvas_height;
     desc.OutputFrameRate.Numerator = transform_h264_encoder::frame_rate_num;
     desc.OutputFrameRate.Denominator = transform_h264_encoder::frame_rate_den;
     desc.OutputWidth = transform_h264_encoder::frame_width;
@@ -159,8 +159,8 @@ void stream_videoprocessor::release_input_streams(std::vector<D3D11_VIDEO_PROCES
 }
 
 HRESULT stream_videoprocessor::set_input_stream(
-    const media_sample_view_videoprocessor::params_t& stream_params,
-    const media_sample_view_videoprocessor::params_t& user_params,
+    const media_sample_videoprocessor::params_t& stream_params,
+    const media_sample_videoprocessor::params_t& user_params,
     const CComPtr<ID3D11Texture2D>& texture, D3D11_VIDEO_PROCESSOR_STREAM& native_params, UINT j,
     bool& ret)
 {
@@ -246,8 +246,8 @@ HRESULT stream_videoprocessor::blit(
 }
 
 bool stream_videoprocessor::calculate_stream_rects(
-    const media_sample_view_videoprocessor::params_t& stream_params, 
-    const media_sample_view_videoprocessor::params_t& user_params,
+    const media_sample_videoprocessor::params_t& stream_params, 
+    const media_sample_videoprocessor::params_t& user_params,
     RECT& src_rect, RECT& dst_rect)
 {
     // user src rect and sample dst rect are used to calculate the src rect
@@ -328,7 +328,7 @@ void stream_videoprocessor::processing_cb(void*)
     bool blit = false;
     {
         // lock the output sample
-        media_sample_view_texture_ sample_view, temp_sample_view;
+        media_sample_view_texture sample_view, temp_sample_view;
         /*media_sample_view_t sample_view, temp_sample_view;*/
         time_unit timestamp = std::numeric_limits<time_unit>::max();
 
@@ -345,9 +345,9 @@ void stream_videoprocessor::processing_cb(void*)
             bool blit_stream = false;
             CComPtr<ID3D11VideoProcessorInputView> input_view;
             CComPtr<ID3D11Texture2D> texture = it->first.sample_view.sample.buffer->texture;
-            const media_sample_view_videoprocessor::params_t& params = 
+            const media_sample_videoprocessor::params_t& params = 
                 it->first.sample_view.sample.params;
-            media_sample_view_videoprocessor::params_t user_params;
+            media_sample_videoprocessor::params_t user_params;
             D3D11_VIDEO_PROCESSOR_STREAM native_params;
 
             it->first.user_params->get_params(user_params);
@@ -356,7 +356,7 @@ void stream_videoprocessor::processing_cb(void*)
             {
                 // add the blitted output to input
                 bool blit_stream = false;
-                media_sample_view_videoprocessor::params_t params;
+                media_sample_videoprocessor::params_t params;
                 D3D11_VIDEO_PROCESSOR_STREAM native_params;
                 params.enable_alpha = false;
                 params.source_rect = this->output_target_rect;
@@ -394,7 +394,7 @@ void stream_videoprocessor::processing_cb(void*)
 
                 blit = true;
                 // temp lock for the output buffer
-                media_sample_view_texture_ sample_view;
+                media_sample_view_texture sample_view;
                 sample_view.attach(this->output_buffer[output_index]);
                 /*media_sample_view_t sample_view(new media_sample_view(this->output_buffer[output_index]));*/
                 CHECK_HR(hr = this->blit(streams, this->output_view[output_index]));
@@ -410,7 +410,7 @@ void stream_videoprocessor::processing_cb(void*)
         if(!blit && streams.empty())
             // TODO: read lock buffers is just a workaround for a deadlock bug
             /*sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));*/
-            sample_view.attach(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS);
+            sample_view.attach(this->output_buffer_null, view_lock_t::READ_LOCK_BUFFERS);
         else if(!streams.empty())
         {
             /*sample_view.reset(new media_sample_view(this->output_buffer[output_index]));*/
@@ -436,8 +436,7 @@ void stream_videoprocessor::processing_cb(void*)
             it->first.rp = request_packet();
         }
 
-        this->transform->session->give_sample(
-            this, reinterpret_cast<media_sample_view_t&>(sample_view), rp, false);
+        this->transform->session->give_sample(this, sample_view, rp, false);
         return;
     }
 
@@ -464,10 +463,10 @@ media_stream::result_t stream_videoprocessor::request_sample(
 }
 
 media_stream::result_t stream_videoprocessor::process_sample(
-    const media_sample_view_t& sample_view_, request_packet& rp, const media_stream* prev_stream)
+    const media_sample& sample_view_, request_packet& rp, const media_stream* prev_stream)
 {
-    const media_sample_view_videoprocessor_& sample_view = 
-        reinterpret_cast<const media_sample_view_videoprocessor_&>(sample_view_);
+    const media_sample_view_videoprocessor& sample_view = 
+        reinterpret_cast<const media_sample_view_videoprocessor&>(sample_view_);
 
     CComPtr<ID3D11Texture2D> texture = sample_view.sample.buffer->texture;
 
@@ -513,26 +512,6 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-media_sample_view_videoprocessor::media_sample_view_videoprocessor(
-    const params_t& params, 
-    const media_buffer_texture_t& texture_buffer, view_lock_t view_lock) :
-    params(params),
-    media_sample_view_texture(texture_buffer, view_lock)
-{
-}
-
-media_sample_view_videoprocessor::media_sample_view_videoprocessor(
-    const media_buffer_texture_t& texture_buffer, view_lock_t view_lock) :
-    media_sample_view_texture(texture_buffer, view_lock)
-{
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
 void stream_videoprocessor_controller::get_params(params_t& params) const
 {
     scoped_lock lock(this->mutex);
@@ -552,13 +531,13 @@ void stream_videoprocessor_controller::set_params(const params_t& params)
 
 
 media_sample_videoprocessor::media_sample_videoprocessor(const media_buffer_texture_t& texture_buffer) :
-    media_sample_texture_(texture_buffer)
+    media_sample_texture(texture_buffer)
 {
 }
 
 media_sample_videoprocessor::media_sample_videoprocessor(
     const params_t& params, const media_buffer_texture_t& texture_buffer) :
-    media_sample_texture_(texture_buffer),
+    media_sample_texture(texture_buffer),
     params(params)
 {
 }

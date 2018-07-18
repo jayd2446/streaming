@@ -33,7 +33,7 @@ public:
     // implements output stream functionality;
     // sample view can be NULL
     virtual result_t process_sample(
-        const media_sample_view_t&, request_packet&, const media_stream* previous_stream) = 0;
+        const media_sample&, request_packet&, const media_stream* previous_stream) = 0;
 };
 
 typedef std::shared_ptr<media_stream> media_stream_t;

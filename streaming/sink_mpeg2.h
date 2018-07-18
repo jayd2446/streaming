@@ -29,7 +29,7 @@ class sink_mpeg2 : public media_sink
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<sink_mpeg2> async_callback_t;
-    typedef request_queue_<media_sample_view_h264> request_queue;
+    typedef request_queue<media_sample_view_h264> request_queue;
     typedef request_queue::request_t request_t;
 private:
     HANDLE stopped_signal;
@@ -97,5 +97,5 @@ public:
 
     bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}
     result_t request_sample(request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

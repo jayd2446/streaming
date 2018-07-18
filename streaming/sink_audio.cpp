@@ -32,14 +32,12 @@ void sink_audio::write_packets_cb(void*)
     while(this->write_queue.pop(request))
     {
         /*std::cout << request.rp.packet_number << std::endl;*/
-        if(!request.sample_view)
+
+        media_buffer_samples_t buffer = request.sample_view.buffer;
+        if(!buffer || buffer->samples.empty())
             continue;
 
-        media_buffer_samples_t samples = request.sample_view->get_buffer<media_buffer_samples>();
-        if(!samples)
-            continue;
-
-        for(auto it = samples->samples.begin(); it != samples->samples.end(); it++)
+        for(auto it = buffer->samples.begin(); it != buffer->samples.end(); it++)
             this->file_output->write_sample(false, *it);
     }
 }
@@ -143,12 +141,17 @@ media_stream::result_t stream_audio::request_sample(
 }
 
 media_stream::result_t stream_audio::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    // TODO: this must be fixed
+    const media_sample_aac* audio_sample = dynamic_cast<const media_sample_aac*>(&sample_view);
+
+    // TODO: currently the write queue must be called every time
+    // so that it can be properly flushed when stopping recording
+
     sink_audio::request_t request;
     request.rp = rp;
-    request.sample_view = sample_view;
+    if(audio_sample)
+        request.sample_view = *audio_sample;
     request.stream = this;
     this->sink->write_queue.push(request);
 

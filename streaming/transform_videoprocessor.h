@@ -4,6 +4,7 @@
 #include "media_stream.h"
 #include "async_callback.h"
 #include "media_sample.h"
+#include "transform_h264_encoder.h"
 #include <d3d11.h>
 #include <atlbase.h>
 #include <memory>
@@ -41,26 +42,7 @@ public:
 
 typedef std::shared_ptr<stream_videoprocessor_controller> stream_videoprocessor_controller_t;
 
-// TODO: video processor sample view should inherit from a generic texture sample view
-// that has the texture buffer and locking capabilities;
-// texture sample view in turn inherits from the sample view that has the timestamp field
-class media_sample_view_videoprocessor : public media_sample_view_texture
-{
-public:
-    typedef stream_videoprocessor_controller::params_t params_t;
-private:
-public:
-    params_t params;
-
-    media_sample_view_videoprocessor(const params_t&, 
-        const media_buffer_texture_t& texture_buffer, view_lock_t = LOCK_BUFFERS);
-    media_sample_view_videoprocessor(
-        const media_buffer_texture_t& texture_buffer, view_lock_t = LOCK_BUFFERS);
-};
-
-typedef std::shared_ptr<media_sample_view_videoprocessor> media_sample_view_videoprocessor_t;
-
-class media_sample_videoprocessor : public media_sample_texture_
+class media_sample_videoprocessor : public media_sample_texture
 {
 public:
     typedef stream_videoprocessor_controller::params_t params_t;
@@ -73,14 +55,16 @@ public:
     media_sample_videoprocessor(const params_t&, const media_buffer_texture_t& texture_buffer);
 };
 
-typedef media_sample_view_<media_sample_videoprocessor> media_sample_view_videoprocessor_;
-
+typedef media_sample_view<media_sample_videoprocessor> media_sample_view_videoprocessor;
 
 class transform_videoprocessor : public media_source
 {
     friend class stream_videoprocessor;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+
+    static const UINT32 canvas_width = transform_h264_encoder::frame_width;
+    static const UINT32 canvas_height = transform_h264_encoder::frame_height;
 private:
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;
@@ -109,7 +93,7 @@ public:
     struct packet 
     {
         request_packet rp; 
-        media_sample_view_videoprocessor_ sample_view;
+        media_sample_view_videoprocessor sample_view;
         stream_videoprocessor_controller_t user_params;
     };
 private:
@@ -128,8 +112,8 @@ private:
 
     void release_input_streams(std::vector<D3D11_VIDEO_PROCESSOR_STREAM>& streams);
     HRESULT set_input_stream(
-        const media_sample_view_videoprocessor::params_t& stream_params,
-        const media_sample_view_videoprocessor::params_t& user_params,
+        const media_sample_videoprocessor::params_t& stream_params,
+        const media_sample_videoprocessor::params_t& user_params,
         const CComPtr<ID3D11Texture2D>&,
         D3D11_VIDEO_PROCESSOR_STREAM&, 
         UINT index,
@@ -139,8 +123,8 @@ private:
         const CComPtr<ID3D11VideoProcessorOutputView>&);
     // returns false if the stream won't be shown
     bool calculate_stream_rects(
-        const media_sample_view_videoprocessor::params_t& stream_params,
-        const media_sample_view_videoprocessor::params_t& user_params,
+        const media_sample_videoprocessor::params_t& stream_params,
+        const media_sample_videoprocessor::params_t& user_params,
         RECT& src_rect, RECT& dst_rect);
 
     void processing_cb(void*);
@@ -158,5 +142,5 @@ public:
     // called by the downstream from media session
     result_t request_sample(request_packet&, const media_stream*);
     // called by the upstream from media session
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

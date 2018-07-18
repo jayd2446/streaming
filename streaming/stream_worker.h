@@ -13,7 +13,7 @@ public:
     explicit stream_worker(const component_t& component);
 
     result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };
 
 
@@ -37,7 +37,7 @@ media_stream::result_t stream_worker<T>::request_sample(request_packet& rp, cons
 
 template<typename T>
 media_stream::result_t stream_worker<T>::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     this->available = true;
 

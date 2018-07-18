@@ -31,6 +31,7 @@ private:
     CComPtr<IDXGIOutputDuplication> output_duplication;
     CComPtr<ID3D11Device> d3d11dev, d3d11dev2;
     CComPtr<ID3D11DeviceContext> d3d11devctx, d3d11devctx2;
+    UINT output_index;
 
     std::recursive_mutex capture_frame_mutex;
     media_buffer_texture_t newest_buffer, newest_pointer_buffer;
@@ -43,6 +44,8 @@ private:
 
     HRESULT setup_initial_data(const media_buffer_texture_t&);
     HRESULT create_pointer_texture(const DXGI_OUTDUPL_FRAME_INFO&, const media_buffer_texture_t&);
+
+    HRESULT reinitialize(UINT output_index);
 public:
     source_displaycapture5(const media_session_t& session, context_mutex_t context_mutex);
 
@@ -57,6 +60,7 @@ public:
     stream_displaycapture5_t create_stream(const stream_videoprocessor_controller_t&);
     stream_displaycapture5_pointer_t create_pointer_stream();
 
+    // currently displaycapture initialization never fails;
     // uses the d3d11 device for capturing that is used in the pipeline
     HRESULT initialize(
         UINT output_index, 
@@ -99,7 +103,7 @@ public:
     // called by media session
     result_t request_sample(request_packet&, const media_stream*);
     // called by source_displaycapture
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream* = NULL);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream* = NULL);
 };
 
 class stream_displaycapture5_pointer : public media_stream
@@ -122,9 +126,9 @@ public:
         bool new_pointer_shape, 
         const DXGI_OUTDUPL_POINTER_POSITION&,
         const D3D11_TEXTURE2D_DESC* desktop_desc,
-        media_sample_view_videoprocessor_&,
+        media_sample_view_videoprocessor&,
         request_packet&);
 
     result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream* = NULL);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream* = NULL);
 };

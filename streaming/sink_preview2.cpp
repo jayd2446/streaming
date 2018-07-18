@@ -95,12 +95,12 @@ done:
         throw std::exception();
 }
 
-void sink_preview2::draw_sample(const media_sample_view_t& sample_view_, request_packet&)
+void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet&)
 {
     HRESULT hr = S_OK;
 
-    const media_sample_view_texture_& sample_view =
-        reinterpret_cast<const media_sample_view_texture_&>(sample_view_);
+    const media_sample_view_texture& sample_view =
+        reinterpret_cast<const media_sample_view_texture&>(sample_view_);
 
     CComPtr<ID3D11Texture2D> texture = sample_view.sample.buffer->texture;
     if(texture)
@@ -189,7 +189,7 @@ media_stream::result_t stream_preview2::request_sample(request_packet&, const me
 }
 
 media_stream::result_t stream_preview2::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     this->sink->draw_sample(sample_view, rp);
     return OK;

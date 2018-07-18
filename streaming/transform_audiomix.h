@@ -37,7 +37,7 @@ typedef std::shared_ptr<transform_audiomix> transform_audiomix_t;
 class stream_audiomix : public media_stream
 {
 public:
-    struct packet {request_packet rp; media_sample_view_t sample_view;};
+    struct packet {request_packet rp; media_sample_audio audio_sample;};
 private:
     transform_audiomix_t transform;
     packet pending_request, pending_request2;
@@ -53,5 +53,5 @@ public:
 
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

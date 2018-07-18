@@ -29,34 +29,9 @@ struct request_packet
 
 class media_stream;
 
-class request_queue
-{
-public:
-    struct request_t
-    {
-        media_stream* stream;
-        const media_stream* prev_stream;
-        request_packet rp;
-        media_sample_view_t sample_view;
-    };
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-private:
-    std::recursive_mutex requests_mutex;
-    std::deque<request_t> requests;
-    int first_packet_number, last_packet_number;
-
-    int get_index(int packet_number) const;
-public:
-    request_queue();
-
-    // rp needs to be valid
-    void push(const request_t&);
-    bool pop(request_t&);
-    bool get(request_t&);
-};
-
+// TODO: change the name in request_t from sample_view to sample
 template<class SampleView>
-class request_queue_
+class request_queue
 {
 public:
     typedef SampleView sample_view_t;
@@ -75,7 +50,7 @@ private:
 
     int get_index(int packet_number) const;
 public:
-    request_queue_();
+    request_queue();
 
     // rp needs to be valid
     void push(const request_t&);
@@ -86,19 +61,19 @@ public:
 
 
 template<class T>
-request_queue_<T>::request_queue_() : 
+request_queue<T>::request_queue() : 
     first_packet_number(INVALID_PACKET_NUMBER), last_packet_number(INVALID_PACKET_NUMBER)
 {
 }
 
 template<class T>
-int request_queue_<T>::get_index(int packet_number) const
+int request_queue<T>::get_index(int packet_number) const
 {
     return packet_number - this->first_packet_number;
 }
 
 template<class T>
-void request_queue_<T>::push(const request_t& request)
+void request_queue<T>::push(const request_t& request)
 {
     scoped_lock lock(this->requests_mutex);
     // starting packet number must be initialized lazily
@@ -124,7 +99,7 @@ void request_queue_<T>::push(const request_t& request)
 }
 
 template<class T>
-bool request_queue_<T>::pop(request_t& request)
+bool request_queue<T>::pop(request_t& request)
 {
     scoped_lock lock(this->requests_mutex);
     if(this->get(request))
@@ -138,7 +113,7 @@ bool request_queue_<T>::pop(request_t& request)
 }
 
 template<class T>
-bool request_queue_<T>::get(request_t& request)
+bool request_queue<T>::get(request_t& request)
 {
     scoped_lock lock(this->requests_mutex);
     if(!this->requests.empty())

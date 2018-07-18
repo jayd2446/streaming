@@ -120,7 +120,7 @@ void stream_color_converter::processing_cb(void*)
     {
         // lock the output sample
         /*media_sample_view_t sample_view;*/
-        media_sample_view_texture_ sample_view;
+        media_sample_view_texture sample_view;
 
         CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample_view.sample.buffer->texture;
 
@@ -185,7 +185,7 @@ void stream_color_converter::processing_cb(void*)
         }
         else
             // TODO: read lock buffers is just a workaround for a deadlock bug
-            sample_view.attach(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS);
+            sample_view.attach(this->output_buffer_null, view_lock_t::READ_LOCK_BUFFERS);
             /*sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));*/
 
         sample_view.sample.timestamp = this->pending_packet.sample_view.sample.timestamp;
@@ -198,8 +198,7 @@ void stream_color_converter::processing_cb(void*)
         this->pending_packet.rp = request_packet();
 
         // give the sample to downstream
-        this->transform->session->give_sample(
-            this, reinterpret_cast<media_sample_view_t&>(sample_view), rp, false);
+        this->transform->session->give_sample(this, sample_view, rp, false);
     }
 
 done:
@@ -215,10 +214,10 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_color_converter::process_sample(
-    const media_sample_view_t& sample_view_, request_packet& rp, const media_stream*)
+    const media_sample& sample_view_, request_packet& rp, const media_stream*)
 {
-    const media_sample_view_texture_& sample_view = 
-        reinterpret_cast<const media_sample_view_texture_&>(sample_view_);
+    const media_sample_view_texture& sample_view = 
+        reinterpret_cast<const media_sample_view_texture&>(sample_view_);
 
     /*CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;*/
 

@@ -6,6 +6,8 @@
 // null source is used to enable topologies that do nothing;
 // it simplifies the creation of topologies
 
+// TODO: source_null should be converted into an audio source that produces silence
+
 class source_null : public media_source
 {
 public:
@@ -26,5 +28,5 @@ public:
     bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
 
     result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

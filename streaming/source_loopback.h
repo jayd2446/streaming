@@ -17,7 +17,7 @@
 
 // requests are served roughly twice in a buffer duration
 
-#define BUFFER_DURATION (SECOND_IN_TIME_UNIT / 2)
+#define BUFFER_DURATION (SECOND_IN_TIME_UNIT / 10) // 100ms buffer
 #define MILLISECOND_IN_TIMEUNIT (SECOND_IN_TIME_UNIT / 1000)
 // wasapi is always 32 bit float in shared mode
 #define WASAPI_BITS_PER_SAMPLE 32
@@ -29,21 +29,28 @@ struct IMMDevice;
 
 // timestamps are aligned
 
+// TODO: non live sources will feed data to audio processor in
+// batches that cover the time between old and new request times
+// (silence source will be an example of that)
+
+// TODO: source_loopback isn't a pipeline component anymore;
+// TODO: if the source_loopback is reinitialized(user changes audio settings),
+// the old buffer will be dismissed so that the type info stays valid with the buffer data;
+// the buffed data dismissal is synced to the type information change
 class source_loopback : public media_source
 {
     friend class stream_loopback;
 public:
     typedef async_callback<source_loopback> async_callback_t;
     typedef async_callback<transform_audioprocessor> serve_async_callback_t;
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef request_queue::request_t request_t;
+    /*typedef std::lock_guard<std::recursive_mutex> scoped_lock;*/
 
     // the base of consecutive samples the relative sample refers to
     struct sample_base_t {LONGLONG time, sample;};
 
     // output bit depth
     typedef transform_aac_encoder::bit_depth_t bit_depth_t;
-    typedef std::deque<CComPtr<IMFSample>> sample_container;
+    /*typedef std::deque<CComPtr<IMFSample>> sample_container;*/
 private:
     CComPtr<IAudioClient> audio_client, audio_client_render;
     CComPtr<IAudioCaptureClient> audio_capture_client;
@@ -56,8 +63,8 @@ private:
     std::recursive_mutex process_mutex, serve_mutex;
     CComPtr<async_callback_t> process_callback;
 
-    std::recursive_mutex samples_mutex;
-    sample_container samples;
+    /*std::recursive_mutex buffer_mutex;*/
+    /*sample_container samples;*/
     sample_base_t stream_base;
     frame_unit consumed_samples_end;
     UINT64 device_time_position;
@@ -67,10 +74,9 @@ private:
 
     bool started, capture;
 
-    request_queue requests;
-
     // maximum number of audio frames(aka pcm samples) the allocated buffer can hold
     UINT32 block_align, samples_per_second, channels;
+    media_buffer_samples buffer;
 
     HRESULT add_event_to_wait_queue();
     HRESULT create_waveformat_type(WAVEFORMATEX*);
@@ -78,7 +84,6 @@ private:
     // https://blogs.msdn.microsoft.com/matthew_van_eerde/2008/12/10/sample-playing-silence-via-wasapi-event-driven-pull-mode/
     // https://github.com/mvaneerde/blog/blob/master/silence/silence/silence.cpp
     HRESULT play_silence();
-    void serve_cb(void*);
     void serve_requests();
 
     //  plays silence in loopback devices so that sample positions
@@ -99,7 +104,8 @@ public:
     void initialize(const std::wstring& device_id, bool capture);
     media_stream_t create_stream();
 
-    void swap_buffers(media_buffer_samples& samples);
+    // moves the audio buffer from this to sample
+    void move_buffer(media_sample_audio& sample);
 
     void convert_32bit_float_to_bitdepth_pcm(
         UINT32 frames, UINT32 channels,
@@ -112,7 +118,7 @@ public:
 class stream_loopback : public media_stream
 {
 public:
-    typedef source_loopback::scoped_lock scoped_lock;
+    /*typedef source_loopback::scoped_lock scoped_lock;*/
 private:
     source_loopback_t source;
 public:
@@ -121,7 +127,7 @@ public:
     bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
 
     result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_loopback> stream_loopback_t;

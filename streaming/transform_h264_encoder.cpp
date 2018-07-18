@@ -158,8 +158,7 @@ void transform_h264_encoder::processing_cb(void*)
             // null samples are generated only at the very startup of the session, though
             if(!request.sample_view.sample.buffer->texture)
             {
-                this->session->give_sample(request.stream, 
-                    reinterpret_cast<media_sample_view_t&>(request.sample_view), request.rp, false);
+                this->session->give_sample(request.stream, request.sample_view, request.rp, false);
                 continue;
             }
 
@@ -248,7 +247,7 @@ void transform_h264_encoder::process_output_cb(void*)
 
     sample_view.sample.timestamp = time;
     sample_view.sample.buffer->sample.Attach(output.pSample);
-    this->session->give_sample(stream, reinterpret_cast<media_sample_view_t&>(sample_view), rp, false);
+    this->session->give_sample(stream, sample_view, rp, false);
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -405,11 +404,11 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, c
 }
 
 media_stream::result_t stream_h264_encoder::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     transform_h264_encoder::request_t request;
     request.stream = this;
-    request.sample_view = reinterpret_cast<const media_sample_view_texture_&>(sample_view);
+    request.sample_view = reinterpret_cast<const media_sample_view_texture&>(sample_view);
     request.rp = rp;
 
     this->transform->requests.push(request);

@@ -1,6 +1,7 @@
 #include "control_scene.h"
 #include "control_pipeline.h"
 #include "source_null.h"
+#include "transform_h264_encoder.h"
 #include "assert.h"
 #include <functiondiscoverykeys_devpkey.h>
 #include <queue>
@@ -128,8 +129,6 @@ void control_scene::reset_topology(bool create_new)
     this->video_topology.reset(new media_topology(this->pipeline.time_source));
     this->audio_topology.reset(new media_topology(this->pipeline.time_source));
 
-    // TODO: fps num and den in pipeline
-
     // create streams
     stream_mpeg2_t mpeg_stream = 
         this->pipeline.mpeg_sink.second->create_stream(this->video_topology->get_clock());
@@ -137,7 +136,8 @@ void control_scene::reset_topology(bool create_new)
         this->pipeline.audio_sink.second->create_stream(this->audio_topology->get_clock());
 
     this->pipeline.mpeg_sink.second->set_new_audio_topology(audio_stream, this->audio_topology);
-    mpeg_stream->set_pull_rate(60, 1);
+    mpeg_stream->set_pull_rate(
+        transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
@@ -174,8 +174,8 @@ void control_scene::reset_topology(bool create_new)
                             videoprocessor_stream_controller(new stream_videoprocessor_controller);
                         stream_videoprocessor_controller::params_t params;
                         params.source_rect.top = params.source_rect.left = 0;
-                        params.source_rect.right = transform_h264_encoder::frame_width;
-                        params.source_rect.bottom = transform_h264_encoder::frame_height;
+                        params.source_rect.right = 1920;
+                        params.source_rect.bottom = 1080;
                         params.dest_rect = params.source_rect;
                         params.enable_alpha = true;
                         videoprocessor_stream_controller->set_params(params);

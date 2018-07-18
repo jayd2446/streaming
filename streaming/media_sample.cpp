@@ -57,8 +57,7 @@ void media_buffer::unlock()
 /////////////////////////////////////////////////////////////////
 
 
-media_sample::media_sample(const media_buffer_t& buffer, time_unit timestamp) :
-    buffer(buffer), timestamp(timestamp)
+media_sample::media_sample(time_unit timestamp) : timestamp(timestamp)
 {
 }
 
@@ -68,17 +67,7 @@ media_sample::media_sample(const media_buffer_t& buffer, time_unit timestamp) :
 /////////////////////////////////////////////////////////////////
 
 
-media_sample_::media_sample_(time_unit timestamp) : timestamp(timestamp)
-{
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
-media_sample_texture_::media_sample_texture_(const media_buffer_texture_t& texture_buffer) :
+media_sample_texture::media_sample_texture(const media_buffer_texture_t& texture_buffer) :
     buffer(texture_buffer)
 {
 }
@@ -100,33 +89,8 @@ media_sample_h264::media_sample_h264(const media_buffer_h264_t& buffer) :
 /////////////////////////////////////////////////////////////////
 
 
-media_sample_view::media_sample_view(const media_buffer_t& buffer, view_lock_t view_lock) :
-    sample(buffer)
-{
-    if(view_lock == view_lock_t::READ_LOCK_BUFFERS)
-        this->sample.buffer->lock_read();
-    else if(view_lock == view_lock_t::LOCK_BUFFERS)
-        this->sample.buffer->lock();
-    else
-        assert_(false);
-}
-
-media_sample_view::~media_sample_view()
-{
-    if(this->sample.buffer)
-        this->sample.buffer->unlock();
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
-media_sample_view_texture::media_sample_view_texture(
-    const media_buffer_texture_t& texture, view_lock_t view_lock) :
-    texture_buffer(texture),
-    media_sample_view(texture, view_lock)
+media_sample_audio::media_sample_audio(const media_buffer_samples_t& buffer) :
+    buffer(buffer)
 {
 }
 
@@ -136,35 +100,7 @@ media_sample_view_texture::media_sample_view_texture(
 /////////////////////////////////////////////////////////////////
 
 
-void media_sample_view_base::deleter(media_buffer* buffer)
+media_sample_aac::media_sample_aac(const media_buffer_samples_t& buffer) :
+    buffer(buffer)
 {
-    if(buffer)
-        buffer->unlock();
 }
-
-
-//media_sample_view_::~media_sample_view_()
-//{
-//    this->detach();
-//}
-//
-//void media_sample_view_::lock(view_lock_t view_lock)
-//{
-//     if(view_lock == READ_LOCK_BUFFERS)
-//        this->buffer_view->lock_read();
-//    else if(view_lock == LOCK_BUFFERS)
-//        this->buffer_view->lock();
-//    else
-//        assert_(false);
-//}
-//
-//void media_sample_view_::detach()
-//{
-//    this->buffer_view.reset();
-//    this->buffer.reset();
-//}
-//
-//void media_sample_view_::deleter(media_buffer* buffer)
-//{
-//    buffer->unlock();
-//}

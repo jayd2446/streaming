@@ -195,7 +195,7 @@ void stream_mpeg2::dispatch_request(request_packet& rp)
     // initiate the audio request
     // TODO: this if statement doesn't work for all pull rates
     request_packet rp2 = rp;
-    if((rp2.request_time % SECOND_IN_TIME_UNIT) == 0)
+    /*if((rp2.request_time % SECOND_IN_TIME_UNIT) == 0)*/
         this->sink->audio_sink_stream->request_sample(rp2);
 
     // initiate the video request
@@ -225,33 +225,29 @@ void stream_mpeg2::add_worker_stream(const stream_mpeg2_worker_t& worker_stream)
 }
 
 media_stream::result_t stream_mpeg2::process_sample(
-    const media_sample_view_t& sample_view_, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    if(!sample_view_)
-        return OK;
-
-    const media_sample_view_base& sample_view =
-        reinterpret_cast<const media_sample_view_texture_&>(sample_view_);
     const media_sample_view_h264* sample_view_h264 =
         dynamic_cast<const media_sample_view_h264*>(&sample_view);
 
+    // TODO: currently the write queue must be called every time
+    // so that it can be properly flushed when stopping recording
+
     // add h264 samples to write queue
+    sink_mpeg2::request_t request;
+    request.rp = rp;
     if(sample_view_h264)
-    {
-        sink_mpeg2::request_t request;
-        request.rp = rp;
         request.sample_view = *sample_view_h264;
-        request.stream = this;
-        this->sink->write_queue.push(request);
+    request.stream = this;
+    this->sink->write_queue.push(request);
 
-        // if the sample view is locking a resource,
-        // it must be ensured that the resource is unlocked in this call;
-        // currently though, the sample views won't lock at this point anymore
-        // (except when the sample is passed from video mixer)
-        // (it evidently causes a deadlock)
+    // if the sample view is locking a resource,
+    // it must be ensured that the resource is unlocked in this call;
+    // currently though, the sample views won't lock at this point anymore
+    // (except when the sample is passed from video mixer)
+    // (it evidently causes a deadlock)
 
-        this->sink->write_packets();
-    }
+    this->sink->write_packets();
 
     return OK;
 }

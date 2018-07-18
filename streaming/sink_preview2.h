@@ -36,7 +36,7 @@ private:
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
 
-    void draw_sample(const media_sample_view_t& sample_view, request_packet& rp);
+    void draw_sample(const media_sample& sample_view, request_packet& rp);
 public:
     sink_preview2(const media_session_t& session, context_mutex_t context_mutex);
 
@@ -58,7 +58,7 @@ public:
 
     result_t request_sample(request_packet&, const media_stream*);
     // called by media session
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_preview2> stream_preview2_t;

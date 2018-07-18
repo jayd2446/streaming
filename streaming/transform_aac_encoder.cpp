@@ -21,23 +21,29 @@ void transform_aac_encoder::processing_cb(void*)
 
     while(this->requests.pop(request))
     {
-        if(!request.sample_view)
+        if(request.sample_view.buffer->samples.empty())
         {
-            lock.unlock();
+            /*lock.unlock();*/
             this->session->give_sample(request.stream, request.sample_view, request.rp, false);
-            lock.lock();
+            /*lock.lock();*/
         }
         else
         {
             /*std::cout << "processing.." << std::endl;*/
-            media_buffer_samples_t samples_buffer = 
-                request.sample_view->get_buffer<media_buffer_samples>();
-            media_buffer_samples_t output_samples_buffer(new media_buffer_samples);
-            const double sample_duration = SECOND_IN_TIME_UNIT / (double)samples_buffer->sample_rate;
+            media_sample_audio& audio_sample = request.sample_view;
+            /*media_buffer_samples_t samples_buffer = 
+                request.sample_view->get_buffer<media_buffer_samples>();*/
+            /*media_buffer_samples_t output_samples_buffer(new media_buffer_samples);*/
+            media_sample_aac audio(media_buffer_samples_t(new media_buffer_samples));
+            audio.bit_depth = audio_sample.bit_depth;
+            audio.channels = audio_sample.channels;
+            audio.sample_rate = audio_sample.sample_rate;
 
-            assert_(samples_buffer->bit_depth == (sizeof(bit_depth_t) * 8) &&
-                samples_buffer->channels == channels &&
-                samples_buffer->sample_rate == sample_rate);
+            const double sample_duration = SECOND_IN_TIME_UNIT / (double)audio_sample.sample_rate;
+
+            assert_(audio_sample.bit_depth == (sizeof(bit_depth_t) * 8) &&
+                audio_sample.channels == channels &&
+                audio_sample.sample_rate == sample_rate);
 
             CComPtr<IMFSample> out_sample;
             CComPtr<IMFMediaBuffer> out_buffer;
@@ -55,7 +61,8 @@ void transform_aac_encoder::processing_cb(void*)
             };
 
             reset_sample();
-            for(auto it = samples_buffer->samples.begin(); it != samples_buffer->samples.end(); it++)
+            for(auto it = audio_sample.buffer->samples.begin(); 
+                it != audio_sample.buffer->samples.end(); it++)
             {
                 // convert the frame units to time units
                 frame_unit ts, dur;
@@ -83,7 +90,7 @@ void transform_aac_encoder::processing_cb(void*)
                     if(!this->process_output(out_sample))
                         goto back;
                     
-                    output_samples_buffer->samples.push_back(out_sample);
+                    audio.buffer->samples.push_back(out_sample);
 
                     // reset the out sample
                     out_sample = NULL;
@@ -95,7 +102,8 @@ void transform_aac_encoder::processing_cb(void*)
                     CHECK_HR(hr)
             }
 
-            if(output_samples_buffer->samples.empty())
+            this->session->give_sample(request.stream, audio, request.rp, false);
+            /*if(audio.buffer->samples.empty())
             {
                 lock.unlock();
                 media_sample_view_t sample_view;
@@ -106,7 +114,7 @@ void transform_aac_encoder::processing_cb(void*)
             {
                 media_sample_view_t sample_view(new media_sample_view(output_samples_buffer));
                 this->session->give_sample(request.stream, sample_view, request.rp, false);
-            }
+            }*/
         }
     }
 
@@ -239,11 +247,13 @@ media_stream::result_t stream_aac_encoder::request_sample(request_packet& rp, co
 }
 
 media_stream::result_t stream_aac_encoder::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
+    const media_sample_audio& audio_sample = reinterpret_cast<const media_sample_audio&>(sample_view);
+
     transform_aac_encoder::request_t request;
     request.rp = rp;
-    request.sample_view = sample_view;
+    request.sample_view = audio_sample;
     request.stream = this;
 
     this->transform->requests.push(request);

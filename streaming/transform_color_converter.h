@@ -37,7 +37,7 @@ class stream_color_converter : public media_stream
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<stream_color_converter> async_callback_t;
-    struct packet {request_packet rp; media_sample_view_texture_ sample_view;};
+    struct packet {request_packet rp; media_sample_view_texture sample_view;};
 private:
     transform_color_converter_t transform;
     CComPtr<async_callback_t> processing_callback;
@@ -54,5 +54,5 @@ public:
     // called by the downstream from media session
     result_t request_sample(request_packet&, const media_stream*);
     // called by the upstream from media session
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

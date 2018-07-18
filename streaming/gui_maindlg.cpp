@@ -1,6 +1,7 @@
 #include "gui_maindlg.h"
 #include "gui_newdlg.h"
 #include "gui_frame.h"
+#include "transform_videoprocessor.h"
 
 gui_maindlg::gui_maindlg(gui_frame& wnd_parent) : wnd_parent(wnd_parent)
 {
@@ -41,8 +42,10 @@ void gui_maindlg::add_new_item(new_item_t item)
 
             dlg.displaycaptures[dlg.cursel].video.dest_rect.left = i * 80;
             dlg.displaycaptures[dlg.cursel].video.dest_rect.top = i * 80;
-            dlg.displaycaptures[dlg.cursel].video.dest_rect.right = 1920 - i * 80;
-            dlg.displaycaptures[dlg.cursel].video.dest_rect.bottom = 1080 - i * 80;
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.right = 
+                transform_videoprocessor::canvas_width - i * 80;
+            dlg.displaycaptures[dlg.cursel].video.dest_rect.bottom = 
+                transform_videoprocessor::canvas_height - i * 80;
             i++;
 
             scene.add_displaycapture_item(dlg.displaycaptures[dlg.cursel]);

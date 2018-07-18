@@ -15,6 +15,7 @@ class transform_aac_encoder : public media_source
     friend class stream_aac_encoder;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef request_queue<media_sample_audio> request_queue;
     typedef request_queue::request_t request_t;
 
     static const UINT32 sample_rate = 44100;
@@ -64,7 +65,7 @@ public:
 
     bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
+    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_aac_encoder> stream_aac_encoder_t;
