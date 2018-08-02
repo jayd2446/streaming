@@ -117,9 +117,9 @@ bool control_scene::list_available_audio_items(std::vector<audio_item>& audios)
 //    return false;
 //}
 
-void control_scene::reset_topology(bool create_new)
+void control_scene::build_topology(bool reset)
 {
-    if(!create_new)
+    if(reset)
     {
         this->video_topology = NULL;
         this->audio_topology = NULL;
@@ -130,12 +130,12 @@ void control_scene::reset_topology(bool create_new)
     this->audio_topology.reset(new media_topology(this->pipeline.time_source));
 
     // create streams
-    stream_mpeg2_t mpeg_stream = 
-        this->pipeline.mpeg_sink.second->create_stream(this->video_topology->get_clock());
     stream_audio_t audio_stream = 
         this->pipeline.audio_sink.second->create_stream(this->audio_topology->get_clock());
+    stream_mpeg2_t mpeg_stream = 
+        this->pipeline.mpeg_sink.second->create_stream(this->video_topology->get_clock(), audio_stream);
 
-    this->pipeline.mpeg_sink.second->set_new_audio_topology(audio_stream, this->audio_topology);
+    /*this->pipeline.mpeg_sink.second->set_new_audio_topology(audio_stream, this->audio_topology);*/
     mpeg_stream->set_pull_rate(
         transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
 
@@ -192,8 +192,8 @@ void control_scene::reset_topology(bool create_new)
                         videoprocessor_stream->add_input_stream(
                             displaycapture_pointer_stream.get(), this->videoprocessor_stream_controllers[i]);
 
-                        this->video_topology->connect_streams(displaycapture_stream, videoprocessor_stream);
-                        this->video_topology->connect_streams(displaycapture_pointer_stream, videoprocessor_stream);
+                        videoprocessor_stream->connect_streams(displaycapture_stream, this->video_topology);
+                        videoprocessor_stream->connect_streams(displaycapture_pointer_stream, this->video_topology);
 
                         // add the created streams to displaycapture streams cache so that
                         // references can be resolved
@@ -220,10 +220,10 @@ void control_scene::reset_topology(bool create_new)
                             displaycapture_streams[reference].pointer_stream.get(),
                             this->videoprocessor_stream_controllers[i]);
 
-                        this->video_topology->connect_streams(
-                            displaycapture_streams[reference].stream, videoprocessor_stream);
-                        this->video_topology->connect_streams(
-                            displaycapture_streams[reference].pointer_stream, videoprocessor_stream);
+                        videoprocessor_stream->connect_streams(
+                            displaycapture_streams[reference].stream, this->video_topology);
+                        videoprocessor_stream->connect_streams(
+                            displaycapture_streams[reference].pointer_stream, this->video_topology);
                     }
 
                     displaycapture_index++;
@@ -238,59 +238,60 @@ void control_scene::reset_topology(bool create_new)
                 this->video_topology, videoprocessor_stream, mpeg_stream);
         }
 
-        // audio
-        if(!this->audio_sources.empty())
         {
-            // TODO: source loopback isn't a component anymore
+            std::vector<media_stream_t> audioprocessor_streams;
+            audioprocessor_streams.reserve(this->audio_items.size());
 
-            // chain first audio source to its audio processor
-            media_stream_t first_audio_stream = this->audio_sources[0].second.first->create_stream();
-            media_stream_t last_stream = this->audio_sources[0].second.second->create_stream();
-            this->audio_topology->connect_streams(first_audio_stream, last_stream);
+            // send the source input streams to audiomixer transform
+            media_stream_t audiomixer_stream = 
+                this->pipeline.audiomixer_transform->create_stream(this->audio_topology->get_clock());
 
-            // TODO: audio mixers should be chained parallel
-            // instead of serially
-
-            // chain audio mixers
-            for(size_t i = 1; i < this->audio_items.size(); i++)
+            // audio
+            for(size_t i = 0; i < this->audio_items.size(); i++)
             {
-                stream_audiomix_t audiomix_stream = this->audio_mixers[i - 1]->create_stream();
-                // no need for switch-case because currently all audio items are of loopback source type
-                media_stream_t audio_stream = this->audio_sources[i].second.first->create_stream();
-                media_stream_t audioprocessor_stream = 
-                    this->audio_sources[i].second.second->create_stream();
+                audioprocessor_streams.push_back(media_stream_t());
 
-                audiomix_stream->set_primary_stream(last_stream.get());
+                if(this->audio_sources[i].first.reference < 0)
+                {
+                    media_stream_t wasapi_stream = this->audio_sources[i].second.first->create_stream();
+                    media_stream_t audioprocessor_stream = 
+                        this->audio_sources[i].second.second->create_stream(
+                        this->audio_topology->get_clock());
 
-                this->audio_topology->connect_streams(last_stream, audiomix_stream);
-                this->audio_topology->connect_streams(audio_stream, audioprocessor_stream);
-                this->audio_topology->connect_streams(audioprocessor_stream, audiomix_stream);
+                    audioprocessor_stream->connect_streams(wasapi_stream, this->audio_topology);
+                    audiomixer_stream->connect_streams(audioprocessor_stream, this->audio_topology);
 
-                last_stream = audiomix_stream;
+                    // add the created streams to audioprocessor streams cache so that
+                    // references can be resolved
+                    audioprocessor_streams.back() = audioprocessor_stream;
+                }
+                else
+                {
+                    const int reference = this->audio_sources[i].first.reference;
+
+                    if(reference >= audioprocessor_streams.size())
+                        throw std::exception();
+
+                    audiomixer_stream->connect_streams(
+                        audioprocessor_streams[reference], this->audio_topology);
+                }
+            }
+            if(this->audio_items.empty())
+            {
+                source_null_t null_source(new source_null(this->pipeline.audio_session));
+                media_stream_t null_stream = null_source->create_stream();
+                audiomixer_stream->connect_streams(null_stream, this->audio_topology);
             }
 
             // set the pipeline specific part of the topology
             this->pipeline.build_audio_topology_branch(
-                this->audio_topology, last_stream, audio_stream);
-        }
-        else
-        {
-            source_null_t null_source(new source_null(this->pipeline.audio_session));
-            media_stream_t null_stream = null_source->create_stream();
-            this->pipeline.build_audio_topology_branch(
-                this->audio_topology, null_stream, audio_stream);
+                this->audio_topology, audiomixer_stream, audio_stream);
         }
     }
 }
 
 void control_scene::activate_scene()
 {
-    /*if(!reactivate)
-        assert_(this->displaycapture_sources.empty() && 
-            this->audio_sources.empty() &&
-            this->videoprocessor_stream_controllers.empty() &&
-            this->audio_mixers.empty());*/
-
     // activate scene cannot directly modify the containers because when updating a scene
     // the old container must be immutable so that the pipeline can properly share
     // the components
@@ -329,20 +330,20 @@ void control_scene::activate_scene()
     std::vector<std::pair<audio_item, source_audio_t>> audio_sources;
     for(auto it = this->audio_items.begin(); it != this->audio_items.end(); it++)
     {
-        source_audio_t audio_source = this->pipeline.create_audio_source(
-            it->device_id, it->capture);
-        audio_sources.push_back(std::make_pair(*it, audio_source));
+        if(it->reference < 0)
+        {
+            source_audio_t audio_source = this->pipeline.create_audio_source(
+                it->device_id, it->capture);
+            audio_sources.push_back(std::make_pair(*it, audio_source));
+        }
+        else
+            // null source denotes a duplicate
+            audio_sources.push_back(std::make_pair(*it, source_audio_t()));
     }
     this->audio_sources.swap(audio_sources);
 
-    // activate audio mixers
-    std::vector<transform_audiomix_t> audio_mixers;
-    for(int i = 0; i < (int)this->audio_items.size() - 1; i++)
-        audio_mixers.push_back(this->pipeline.create_audio_mixer());
-    this->audio_mixers.swap(audio_mixers);
-
     // reset the topologies
-    this->reset_topology(true);
+    this->build_topology(false);
 }
 
 void control_scene::deactivate_scene()
@@ -350,14 +351,12 @@ void control_scene::deactivate_scene()
     this->displaycapture_sources.clear();
     this->audio_sources.clear();
     this->videoprocessor_stream_controllers.clear();
-    this->audio_mixers.clear();
 
     // reset the topologies
-    this->reset_topology(false);
+    this->build_topology(true);
 }
 
-void control_scene::add_displaycapture_item(
-    const displaycapture_item& item, bool force_new_instance)
+void control_scene::add_displaycapture_item(const displaycapture_item& item, bool force_new_instance)
 {
     if(item.video.type != DISPLAYCAPTURE_ITEM)
         throw std::exception();
@@ -368,7 +367,7 @@ void control_scene::add_displaycapture_item(
     if(!force_new_instance)
     {
         // try to make the new item reference older item
-        int i = this->displaycapture_items.size() - 2;
+        int i = (int)this->displaycapture_items.size() - 2;
         for(auto it = this->displaycapture_items.rbegin() + 1; 
             it != this->displaycapture_items.rend(); it++, i--)
         {
@@ -382,7 +381,22 @@ void control_scene::add_displaycapture_item(
     }
 }
 
-void control_scene::add_audio_item(const audio_item& audio)
+void control_scene::add_audio_item(const audio_item& item, bool force_new_instance)
 {
-    this->audio_items.push_back(audio);
+    this->audio_items.push_back(item);
+
+    if(!force_new_instance)
+    {
+        // try to make the new item reference older item
+        int i = (int)this->audio_items.size() - 2;
+        for(auto it = this->audio_items.rbegin() + 1;
+            it != this->audio_items.rend(); it++, i--)
+        {
+            if(it->capture == item.capture && it->device_id == item.device_id && it->reference < 0)
+            {
+                this->audio_items.back().reference = i;
+                break;
+            }
+        }
+    }
 }

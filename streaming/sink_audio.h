@@ -4,7 +4,6 @@
 #include "stream_worker.h"
 #include "request_packet.h"
 #include "async_callback.h"
-#include "source_loopback.h"
 #include "output_file.h"
 #include "assert.h"
 #include <vector>
@@ -48,7 +47,7 @@ public:
     stream_audio_worker_t create_worker_stream();
 };
 
-class stream_audio : public media_stream, public presentation_clock_sink
+class stream_audio : public media_stream_clock_sink/*, public presentation_clock_sink*/
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
@@ -62,18 +61,24 @@ private:
     // for debug
     int unavailable;
 
-    // presentation_clock_sink
-    bool on_clock_start(time_unit);
-    void on_clock_stop(time_unit);
-    void scheduled_callback(time_unit) {assert_(false);}
+    // media_stream_clock_sink
+    void on_stream_start(time_unit);
+    void on_stream_stop(time_unit);
+    //// presentation_clock_sink
+    //void scheduled_callback(time_unit) {assert_(false);}
 
-    void dispatch_request(request_packet&);
+    void dispatch_request(request_packet&, bool no_drop = false);
 public:
     explicit stream_audio(const sink_audio_t& sink);
 
     void add_worker_stream(const stream_audio_worker_t& worker_stream);
 
-    bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}
+    // uses a special stream branch so that the request won't be dropped
+    result_t request_sample_last(time_unit);
+
+    // presentation_clock_sink
+    /*bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}*/
+    // media_stream
     result_t request_sample(request_packet&, const media_stream* = NULL);
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

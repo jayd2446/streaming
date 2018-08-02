@@ -7,11 +7,11 @@
 #include "transform_color_converter.h"
 #include "transform_videoprocessor.h"
 #include "transform_audioprocessor.h"
-#include "transform_audiomix.h"
+#include "transform_audiomixer.h"
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
 #include "sink_preview2.h"
-#include "source_loopback.h"
+#include "source_wasapi.h"
 #include "source_displaycapture5.h"
 #include <atlbase.h>
 #include <d3d11.h>
@@ -44,6 +44,8 @@ private:
     CHandle stopped_signal;
     HWND preview_wnd;
 
+    bool recording_state_change;
+
     presentation_time_source_t time_source;
     media_session_t session, audio_session;
     // these components are present in every scene
@@ -51,6 +53,7 @@ private:
     transform_h264_encoder_t h264_encoder_transform;
     transform_color_converter_t color_converter_transform;
     transform_aac_encoder_t aac_encoder_transform;
+    transform_audiomixer_t audiomixer_transform;
     sink_preview2_t preview_sink;
 
     mpeg_sink_item item_mpeg_sink;
@@ -76,6 +79,7 @@ private:
     transform_color_converter_t create_color_converter(bool null_file);
     sink_preview2_t create_preview_sink(HWND hwnd);
     transform_aac_encoder_t create_aac_encoder(bool null_file);
+    transform_audiomixer_t create_audio_mixer();
     sink_mpeg2_t create_mpeg_sink(
         bool null_file, const std::wstring& filename, 
         const CComPtr<IMFMediaType>& video_input_type,
@@ -87,14 +91,13 @@ private:
     // or returns the component from the current scene
     source_audio_t create_audio_source(const std::wstring& id, bool capture);
     source_displaycapture5_t create_displaycapture_source(UINT adapter_ordinal, UINT output_ordinal);
-    transform_audiomix_t create_audio_mixer();
 
     // builds the pipeline specific part of the video topology branch
     void build_video_topology_branch(const media_topology_t& video_topology, 
         const media_stream_t& videoprocessor_stream,
         const stream_mpeg2_t& mpeg_sink_stream);
     void build_audio_topology_branch(const media_topology_t& audio_topology,
-        const media_stream_t& last_stream,
+        const media_stream_t& audiomixer_stream,
         const stream_audio_t& audio_sink_stream);
 public:
     control_pipeline();
@@ -109,6 +112,7 @@ public:
 
     control_scene& create_scene(const std::wstring& name);
     control_scene& get_scene(int index);
+    control_scene* get_active_scene() const;
     bool is_active(const control_scene&);
     void set_active(control_scene&);
     // stops the pipeline

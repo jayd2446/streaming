@@ -1,10 +1,10 @@
 #pragma once
 #include "media_topology.h"
-#include "source_loopback.h"
+#include "source_wasapi.h"
 #include "source_displaycapture5.h"
 #include "transform_videoprocessor.h"
 #include "transform_audioprocessor.h"
-#include "transform_audiomix.h"
+#include "transform_audiomixer.h"
 #include <mmdeviceapi.h>
 #include <string>
 #include <vector>
@@ -16,7 +16,7 @@
 class control_pipeline;
 // each audio source must have an audio processor attached to it for audio buffering
 // and resampling to work
-typedef std::pair<source_loopback_t, transform_audioprocessor_t> source_audio_t;
+typedef std::pair<source_wasapi_t, transform_audioprocessor_t> source_audio_t;
 
 class control_scene
 {
@@ -55,10 +55,13 @@ public:
         std::wstring item_name;
         std::wstring device_id;
         std::wstring device_friendlyname;
+
+        int reference;
+
+        audio_item() : reference(-1) {}
     };
 private:
     control_pipeline& pipeline;
-    media_topology_t video_topology, audio_topology;
 
     // video items is a collection of different types of video items
     std::vector<video_item> video_items;
@@ -69,7 +72,6 @@ private:
     // each video_item will activate a videoprocessor stream controller
     std::vector<stream_videoprocessor_controller_t> videoprocessor_stream_controllers;
     std::vector<std::pair<audio_item, source_audio_t>> audio_sources;
-    std::vector<transform_audiomix_t> audio_mixers;
 
     // finds the non duplicate displaycapture source
     // TODO: obsolete
@@ -77,7 +79,7 @@ private:
 
     bool list_available_audio_items(std::vector<audio_item>& audios, EDataFlow);
 
-    void reset_topology(bool create_new);
+    void build_topology(bool reset);
     // called by pipeline
     void activate_scene();
     void deactivate_scene();
@@ -85,6 +87,7 @@ private:
     explicit control_scene(control_pipeline&);
 public:
     std::wstring scene_name;
+    media_topology_t video_topology, audio_topology;
 
     // returns false if nothing was found
     bool list_available_displaycapture_items(std::vector<displaycapture_item>& displaycaptures);
@@ -95,6 +98,6 @@ public:
     /*void remove_video(const std::wstring& item_name);*/
     /*void rename_video(const std::wstring& old_name, const std::wstring& new_name);*/
 
-    void add_audio_item(const audio_item&);
+    void add_audio_item(const audio_item&, bool force_new_instance = false);
     /*void remove_audio(const std::wstring& item_name);*/
 };

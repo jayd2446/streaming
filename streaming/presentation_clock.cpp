@@ -4,7 +4,6 @@
 #include <limits>
 
 extern LARGE_INTEGER pc_frequency;
-typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 
 #ifdef max
 #undef max
@@ -98,7 +97,7 @@ presentation_clock_sink::presentation_clock_sink() :
     wait_timer(CreateWaitableTimer(NULL, FALSE, NULL)),
     callback_key(0),
     scheduled_time(std::numeric_limits<time_unit>::max()),
-    unregistered(true),
+    /*unregistered(true),*/
     fps_num(0),
     fps_den(0)
 {
@@ -125,16 +124,16 @@ presentation_clock_sink::~presentation_clock_sink()
     /*MFUnlockWorkQueue(this->callback.work_queue);*/
 }
 
-bool presentation_clock_sink::register_sink(presentation_clock_t& clock)
-{
-    assert_(this->unregistered);
-
-    scoped_lock lock(clock->mutex_sinks);
-    clock->sinks.push_back(presentation_clock_sink_t(this->shared_from_this<presentation_clock_sink>()));
-
-    this->unregistered = false;
-    return true;
-}
+//bool presentation_clock_sink::register_sink(presentation_clock_t& clock)
+//{
+//    assert_(this->unregistered);
+//
+//    scoped_lock lock(clock->mutex_sinks);
+//    clock->sinks.push_back(presentation_clock_sink_t(this->shared_from_this<presentation_clock_sink>()));
+//
+//    this->unregistered = false;
+//    return true;
+//}
 
 //bool presentation_clock_sink::unregister_sink()
 //{
@@ -314,33 +313,83 @@ presentation_clock::~presentation_clock()
     /*assert_(this->sinks.empty());*/
 }
 
-bool presentation_clock::clock_start(time_unit time_point)
+void presentation_clock::clock_start(time_unit time_point, const presentation_clock_t& prev_clock)
 {
-    bool stop_all = false;
+    if(!prev_clock)
     {
-        scoped_lock lock(this->mutex_sinks);
-
-        for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
-        {
-            if(!(*it)->on_clock_start(time_point))
-            {
-                stop_all = true;
-                break;
-            }
-        }
+        this->clock_start(time_point);
+        return;
     }
 
-    if(stop_all)
-        this->clock_stop(time_point);
+    assert_(this->get_time_source().get() == prev_clock->get_time_source().get());
 
-    return !stop_all;
+    scoped_lock lock(this->mutex_sinks), lock2(prev_clock->mutex_sinks);
+    for(auto it = prev_clock->sinks.begin(); it != prev_clock->sinks.end(); it++)
+    {
+        for(auto jt = this->sinks.begin(); jt != this->sinks.end(); jt++)
+        {
+            const bool transferred = (it->first == jt->first);
+            it->second.second |= transferred;
+            jt->second.second |= transferred;
+        }
+
+        // fire the clock sink events
+        for(auto&& jt : it->second.first)
+        {
+            jt->on_stream_stop(time_point);
+            if(!it->second.second)
+                jt->on_component_stop(time_point);
+        }
+        it->second.second = false;
+    }
+
+    for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
+    {
+        for(auto&& jt : it->second.first)
+        {
+            if(!it->second.second)
+                jt->on_component_start(time_point);
+            jt->on_stream_start(time_point);
+        }
+        it->second.second = false;
+    }
+}
+
+void presentation_clock::register_sink(
+    const media_stream_clock_sink_t& clock_sink, const media_component* key)
+{
+    scoped_lock lock(this->mutex_sinks);
+    this->sinks[key].first.push_back(clock_sink);
+    this->sinks[key].second = false;
+    
+}
+
+void presentation_clock::clock_start(time_unit time_point)
+{
+    scoped_lock lock(this->mutex_sinks);
+    for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
+    {
+        for(auto&& jt : it->second.first)
+        {
+            jt->on_component_start(time_point);
+            jt->on_stream_start(time_point);
+        }
+        it->second.second = false;
+    }
 }
 
 void presentation_clock::clock_stop(time_unit time_point)
 {
     scoped_lock lock(this->mutex_sinks);
     for(auto it = this->sinks.begin(); it != this->sinks.end(); it++)
-        (*it)->on_clock_stop(time_point);
+    {
+        for(auto&& jt : it->second.first)
+        {
+            jt->on_stream_stop(time_point);
+            jt->on_component_stop(time_point);
+        }
+        it->second.second = false;
+    }
 }
 
 void presentation_clock::clear_clock_sinks()

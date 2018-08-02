@@ -1,4 +1,5 @@
 #include "sink_mpeg2.h"
+#include "control_pipeline.h"
 #include <iostream>
 #include <Mferror.h>
 
@@ -10,7 +11,6 @@
 sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& audio_session) : 
     media_sink(session),
     audio_session(audio_session),
-    /*audio_session(new media_session(session->get_time_source())),*/
     stopped_signal(NULL)
 {
     this->write_packets_callback.Attach(new async_callback_t(&sink_mpeg2::write_packets_cb));
@@ -18,8 +18,6 @@ sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& au
 
 sink_mpeg2::~sink_mpeg2()
 {
-    /*this->audio_session->stop_playback();
-    this->audio_session->shutdown();*/
 }
 
 void sink_mpeg2::write_packets()
@@ -62,16 +60,32 @@ void sink_mpeg2::initialize(
     this->file_output->initialize(null_file, stopped_signal, video_type, audio_type);
 }
 
-void sink_mpeg2::set_new_audio_topology(const stream_audio_t& audio_sink_stream,
+void sink_mpeg2::switch_topologies(
+    const media_topology_t& video_topology,
     const media_topology_t& audio_topology)
 {
-    std::atomic_exchange(&this->new_audio_sink_stream, audio_sink_stream);
-    std::atomic_exchange(&this->new_audio_topology, audio_topology);
+    scoped_lock lock(this->topology_switch_mutex);
+    this->session->switch_topology(video_topology);
+    this->audio_session->switch_topology(audio_topology);
 }
 
-stream_mpeg2_t sink_mpeg2::create_stream(presentation_clock_t& clock)
+void sink_mpeg2::start_topologies(
+    time_unit t,
+    const media_topology_t& video_topology,
+    const media_topology_t& audio_topology)
 {
-    stream_mpeg2_t stream(new stream_mpeg2(this->shared_from_this<sink_mpeg2>()));
+    scoped_lock lock(this->topology_switch_mutex);
+
+    assert_(!this->session->started());
+    assert_(!this->audio_session->started());
+
+    this->session->start_playback(video_topology, t);
+    this->audio_session->start_playback(audio_topology, t);
+}
+
+stream_mpeg2_t sink_mpeg2::create_stream(presentation_clock_t& clock, const stream_audio_t& audio_stream)
+{
+    stream_mpeg2_t stream(new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream));
     stream->register_sink(clock);
 
     return stream;
@@ -88,7 +102,10 @@ stream_mpeg2_worker_t sink_mpeg2::create_worker_stream()
 /////////////////////////////////////////////////////////////////
 
 
-stream_mpeg2::stream_mpeg2(const sink_mpeg2_t& sink) : sink(sink), unavailable(0), running(false)
+stream_mpeg2::stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream) : 
+    sink(sink), unavailable(0), running(false),
+    media_stream_clock_sink(sink.get()),
+    audio_sink_stream_weak(audio_sink_stream)
 {
     HRESULT hr = S_OK;
     DWORD task_id;
@@ -104,56 +121,65 @@ stream_mpeg2::~stream_mpeg2()
     MFUnlockWorkQueue(this->work_queue_id);
 }
 
-bool stream_mpeg2::on_clock_start(time_unit t)
+void stream_mpeg2::on_component_start(time_unit)
 {
-    this->set_schedule_cb_work_queue(this->work_queue_id);
+}
+
+void stream_mpeg2::on_component_stop(time_unit)
+{
+}
+
+void stream_mpeg2::on_stream_start(time_unit t)
+{
+    /*this->set_schedule_cb_work_queue(this->work_queue_id);*/
 
     // try to set the initial time for the output;
     // the output will modify the sample timestamps so that they start at 0
     this->sink->get_output()->set_initial_time(t);
 
-    // set the new audio topology for the audio session
-    media_topology_t new_audio_topology = std::atomic_load(&this->sink->new_audio_topology);
-    std::atomic_exchange(&this->sink->new_audio_topology, media_topology_t());
-    if(new_audio_topology)
-    {
-        // load the new audio sink stream aswell
-        std::atomic_exchange(&this->sink->audio_sink_stream, 
-            std::atomic_load(&this->sink->new_audio_sink_stream));
-        std::atomic_exchange(&this->sink->new_audio_sink_stream, stream_audio_t());
-
-        // this causes the audio session to fire on_clock_start events;
-        // the dispatch_request might cause audio sink to fetch samples with the same
-        // time point, which will return null sample since the same time point
-        // was used to discard all the samples
-        this->sink->audio_session->switch_topology_immediate(new_audio_topology, t);
-    }
+    this->audio_sink_stream = this->audio_sink_stream_weak.lock();
+    /*assert_(this->audio_sink_stream);*/
 
     this->running = true;
-    this->scheduled_callback(t);
-    return true;
+    this->schedule_new(t);
 }
 
-void stream_mpeg2::on_clock_stop(time_unit)
+void stream_mpeg2::on_stream_stop(time_unit t)
 {
-    // TODO: audio session should be stopped here aswell
     this->running = false;
     this->clear_queue();
+
+    // the audio topology will be switched in this call
+    if(this->audio_sink_stream)
+        this->audio_sink_stream->request_sample_last(t);
+
+    // the audio sink stream must be set to null so it won't keep sink and topology alive
+    this->audio_sink_stream = NULL;
 }
 
 void stream_mpeg2::scheduled_callback(time_unit due_time)
 {
+    // this lock makes sure that the video and audio topology are
+    // switched at the same time
+    scoped_lock lock(this->sink->topology_switch_mutex);
+
     if(!this->running)
         return;
 
-    // the call order must be this way so that consecutive packet numbers
-    // match consecutive request times
-    request_packet rp;
+    request_packet rp, rp2;
     rp.request_time = due_time;
     rp.timestamp = due_time;
+    rp2 = rp;
 
+    // the call order must be this way so that consecutive packet numbers
+    // match consecutive request times
     this->dispatch_request(rp);
-    this->schedule_new(due_time);
+    if(this->running)
+    {
+        if(this->audio_sink_stream)
+            this->audio_sink_stream->request_sample(rp2);
+        this->schedule_new(due_time);
+    }
 }
 
 void stream_mpeg2::schedule_new(time_unit due_time)
@@ -188,15 +214,15 @@ void stream_mpeg2::schedule_new(time_unit due_time)
     }
 }
 
-void stream_mpeg2::dispatch_request(request_packet& rp)
+void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
 {
     assert_(this->unavailable <= 240);
 
     // initiate the audio request
     // TODO: this if statement doesn't work for all pull rates
-    request_packet rp2 = rp;
+    /*request_packet rp2 = rp;*/
     /*if((rp2.request_time % SECOND_IN_TIME_UNIT) == 0)*/
-        this->sink->audio_sink_stream->request_sample(rp2);
+        /*this->sink->audio_sink_stream->request_sample(rp2);*/
 
     // initiate the video request
     scoped_lock lock(this->worker_streams_mutex);
@@ -209,11 +235,18 @@ void stream_mpeg2::dispatch_request(request_packet& rp)
 
             result_t res = (*it)->request_sample(rp, this);
             if(res == FATAL_ERROR)
-                std::cout << "topology switched" << std::endl;
+                std::cout << "couldn't dispatch request on stream mpeg" << std::endl;
             return;
         }
     }
 
+    // TODO: it must be ensured that the audio sink fetches the last sample on topology switch
+    // (it must use an extra set of streams for the topology switch call)
+
+    // TODO: remove no drop since clock start and clock stop requests cannot
+    // be dropped anymore
+    if(no_drop)
+        std::cout << "TODO: NO DROP REQUEST DROPPED ";
     std::cout << "--SAMPLE REQUEST DROPPED IN MPEG_SINK--" << std::endl;
     this->unavailable++;
 }

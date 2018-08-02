@@ -13,6 +13,7 @@ control_pipeline::control_pipeline() :
     scene_active(NULL),
     d3d11dev_adapter(0),
     stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL)),
+    recording_state_change(false),
     context_mutex(new std::recursive_mutex)
 {
     if(!this->stopped_signal)
@@ -67,6 +68,9 @@ void control_pipeline::activate_components()
     // activate aac encoder transform
     this->aac_encoder_transform = this->create_aac_encoder(this->item_mpeg_sink.null_file);
 
+    // activate audiomixer transform
+    this->audiomixer_transform = this->create_audio_mixer();
+
     // activate mpeg sink
     this->mpeg_sink.second = this->create_mpeg_sink(
         this->item_mpeg_sink.null_file, this->item_mpeg_sink.filename,
@@ -89,10 +93,11 @@ void control_pipeline::deactivate_components()
     this->preview_sink = NULL;
     this->mpeg_sink.second = NULL;
     this->aac_encoder_transform = NULL;
+    this->audiomixer_transform = NULL;
     this->audio_sink.second = NULL;
-    this->session = NULL;
+    /*this->session = NULL;
     this->audio_session = NULL;
-    this->time_source = NULL;
+    this->time_source = NULL;*/
 }
 
 transform_videoprocessor_t control_pipeline::create_videoprocessor()
@@ -154,6 +159,16 @@ transform_aac_encoder_t control_pipeline::create_aac_encoder(bool null_file)
     return aac_encoder_transform;
 }
 
+transform_audiomixer_t control_pipeline::create_audio_mixer()
+{
+    if(this->audiomixer_transform && !this->recording_state_change)
+        return this->audiomixer_transform;
+
+    transform_audiomixer_t transform_audio_mixer(new transform_audiomixer(this->audio_session));
+    transform_audio_mixer->initialize();
+    return transform_audio_mixer;
+}
+
 sink_mpeg2_t control_pipeline::create_mpeg_sink(
     bool null_file, const std::wstring& filename,
     const CComPtr<IMFMediaType>& video_input_type,
@@ -211,6 +226,11 @@ control_scene& control_pipeline::get_scene(int index)
     return *it;
 }
 
+control_scene* control_pipeline::get_active_scene() const
+{
+    return this->scene_active;
+}
+
 source_audio_t control_pipeline::create_audio_source(const std::wstring& id, bool capture)
 {
     if(this->scene_active)
@@ -219,17 +239,17 @@ source_audio_t control_pipeline::create_audio_source(const std::wstring& id, boo
             it != this->scene_active->audio_sources.end();
             it++)
         {
-            if(it->first.device_id == id && it->first.capture == capture)
+            if(it->first.device_id == id && it->first.capture == capture && !this->recording_state_change)
                 return it->second;
         }
     }
 
     source_audio_t audio_source;
-    audio_source.first.reset(new source_loopback(this->audio_session));
+    audio_source.first.reset(new source_wasapi(this->audio_session));
     audio_source.second.reset(new transform_audioprocessor(this->audio_session));
-    // audio processor must be initialized before starting/initializing the audio device
-    audio_source.second->initialize(audio_source.first.get());
+
     audio_source.first->initialize(id, capture);
+    audio_source.second->initialize();
     return audio_source;
 }
 
@@ -257,13 +277,6 @@ source_displaycapture5_t control_pipeline::create_displaycapture_source(
     return displaycapture_source;
 }
 
-transform_audiomix_t control_pipeline::create_audio_mixer()
-{
-    transform_audiomix_t transform_audio_mixer(new transform_audiomix(this->audio_session));
-    transform_audio_mixer->initialize();
-    return transform_audio_mixer;
-}
-
 void control_pipeline::build_video_topology_branch(const media_topology_t& video_topology,
     const media_stream_t& videoprocessor_stream,
     const stream_mpeg2_t& mpeg_sink_stream)
@@ -275,8 +288,8 @@ void control_pipeline::build_video_topology_branch(const media_topology_t& video
 
     if(this->item_mpeg_sink.null_file)
     {
-        video_topology->connect_streams(videoprocessor_stream, preview_stream);
-        video_topology->connect_streams(videoprocessor_stream, worker_stream);
+        preview_stream->connect_streams(videoprocessor_stream, video_topology);
+        worker_stream->connect_streams(videoprocessor_stream, video_topology);
     }
     else
     {
@@ -286,17 +299,17 @@ void control_pipeline::build_video_topology_branch(const media_topology_t& video
         // TODO: encoder stream is redundant
         mpeg_sink_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
 
-        video_topology->connect_streams(videoprocessor_stream, color_converter_stream);
-        video_topology->connect_streams(videoprocessor_stream, preview_stream);
-        video_topology->connect_streams(color_converter_stream, encoder_stream);
-        video_topology->connect_streams(encoder_stream, worker_stream);
+        color_converter_stream->connect_streams(videoprocessor_stream, video_topology);
+        preview_stream->connect_streams(videoprocessor_stream, video_topology);
+        encoder_stream->connect_streams(color_converter_stream, video_topology);
+        worker_stream->connect_streams(encoder_stream, video_topology);
     }
 
-    video_topology->connect_streams(worker_stream, mpeg_sink_stream);
+    mpeg_sink_stream->connect_streams(worker_stream, video_topology);
 }
 
 void control_pipeline::build_audio_topology_branch(const media_topology_t& audio_topology,
-    const media_stream_t& last_stream,
+    const media_stream_t& audiomixer_stream,
     const stream_audio_t& audio_sink_stream)
 {
     stream_audio_worker_t worker_stream = this->audio_sink.second->create_worker_stream();
@@ -305,22 +318,22 @@ void control_pipeline::build_audio_topology_branch(const media_topology_t& audio
 
     if(this->item_mpeg_sink.null_file)
     {
-        audio_topology->connect_streams(last_stream, worker_stream);
+        worker_stream->connect_streams(audiomixer_stream, audio_topology);
     }
     else
     {
         media_stream_t encoder_stream = this->aac_encoder_transform->create_stream();
 
-        audio_topology->connect_streams(last_stream, encoder_stream);
-        audio_topology->connect_streams(encoder_stream, worker_stream);
+        encoder_stream->connect_streams(audiomixer_stream, audio_topology);
+        worker_stream->connect_streams(encoder_stream, audio_topology);
     }
 
-    audio_topology->connect_streams(worker_stream, audio_sink_stream);
+    audio_sink_stream->connect_streams(worker_stream, audio_topology);
 }
 
 void control_pipeline::set_active(control_scene& scene)
 {
-    const bool first_start = !this->scene_active;
+    /*const bool first_start = !this->scene_active;*/
 
     this->activate_components();
 
@@ -329,23 +342,21 @@ void control_pipeline::set_active(control_scene& scene)
         this->scene_active->deactivate_scene();
     this->scene_active = &scene;
 
-    if(first_start)
+    // mpeg sink ensures atomic topology starting/switching for audio and video
+    if(!this->session->started())
     {
-#ifdef _DEBUG
-        static bool once_ = false;
-        if(!once_)
-            once_ = true;
-        else
-            assert_(false);
-#endif
         // start the media session with the topology
         // it's ok to start with time point of 0 because the starting happens only once
         // in the lifetime of pipeline;
-        this->session->start_playback(this->scene_active->video_topology, 0);
+        this->mpeg_sink.second->start_topologies(
+            0, this->scene_active->video_topology, this->scene_active->audio_topology);
+        /*this->session->start_playback(this->scene_active->video_topology, 0);*/
     }
     else
     {
-        this->session->switch_topology(this->scene_active->video_topology);
+        this->mpeg_sink.second->switch_topologies(
+            this->scene_active->video_topology, this->scene_active->audio_topology);
+        /*this->session->switch_topology(this->scene_active->video_topology);*/
     }
 }
 
@@ -355,11 +366,20 @@ void control_pipeline::set_inactive()
 
     this->scene_active->deactivate_scene();
     this->scene_active = NULL;
+    /*this->session->stop_playback();
+    this->session->shutdown();
+    this->audio_session->stop_playback();
+    this->audio_session->shutdown();*/
+    this->deactivate_components();
+
     this->session->stop_playback();
     this->session->shutdown();
     this->audio_session->stop_playback();
     this->audio_session->shutdown();
-    this->deactivate_components();
+
+    this->session = NULL;
+    this->audio_session = NULL;
+    this->time_source = NULL;
     
     // TODO: the pipeline might throw when the media foundation has already been
     // closed while the pipeline is still active;
@@ -373,7 +393,9 @@ void control_pipeline::start_recording(const std::wstring& filename, control_sce
     item.filename = filename;
     this->set_mpeg_sink_item(item);
 
+    this->recording_state_change = true;
     this->set_active(scene);
+    this->recording_state_change = false;
 }
 
 void control_pipeline::stop_recording()
@@ -385,7 +407,9 @@ void control_pipeline::stop_recording()
     item.null_file = true;
     this->set_mpeg_sink_item(item);
 
+    this->recording_state_change = true;
     this->set_active(*this->scene_active);
+    this->recording_state_change = false;
 
     WaitForSingleObject(this->stopped_signal, INFINITE);
     ResetEvent(this->stopped_signal);

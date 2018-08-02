@@ -65,6 +65,9 @@ void gui_maindlg::add_new_item(new_item_t item)
         const INT_PTR ret = dlg.DoModal(*this, item);
         if(ret == 0)
         {
+            static int j = 0;
+            for(int i = 0; i < (j ? 20 : 1); i++)
+            {
             scene.add_audio_item(dlg.audios[dlg.cursel]);
             this->wnd_audio_list.AddString(dlg.audios[dlg.cursel].device_friendlyname.c_str());
 
@@ -72,6 +75,8 @@ void gui_maindlg::add_new_item(new_item_t item)
 
             // update the selected scene in the pipeline
             this->wnd_parent.ctrl_pipeline.set_active(scene);
+            }
+            j = 1;
         }
     }
 }

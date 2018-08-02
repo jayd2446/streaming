@@ -63,9 +63,6 @@
     <ClCompile Include="source_displaycapture5.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source_loopback.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="transform_aac_encoder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -106,6 +103,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source_null.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source_wasapi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="transform_audiomixer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="media_stream.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -167,9 +173,6 @@
     <ClInclude Include="source_displaycapture5.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source_loopback.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="request_packet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -225,6 +228,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="source_null.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_wasapi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="transform_audiomixer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

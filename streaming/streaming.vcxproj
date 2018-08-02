@@ -123,6 +123,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WORKER_STREAMS=3;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -142,6 +143,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WORKER_STREAMS=3;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -163,6 +165,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="media_sample.cpp" />
     <ClCompile Include="media_session.cpp" />
+    <ClCompile Include="media_stream.cpp" />
     <ClCompile Include="media_topology.cpp" />
     <ClCompile Include="output_file.cpp" />
     <ClCompile Include="request_packet.cpp" />
@@ -176,10 +179,11 @@
     <ClCompile Include="sink_mpeg2.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture5.cpp" />
-    <ClCompile Include="source_loopback.cpp" />
+    <ClCompile Include="source_wasapi.cpp" />
     <ClCompile Include="source_null.cpp" />
     <ClCompile Include="transform_aac_encoder.cpp" />
     <ClCompile Include="transform_audiomix.cpp" />
+    <ClCompile Include="transform_audiomixer.cpp" />
     <ClCompile Include="transform_audioprocessor.cpp" />
     <ClCompile Include="transform_color_converter.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
@@ -235,11 +239,12 @@
     <ClInclude Include="sink_mpeg2.h" />
     <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="source_displaycapture5.h" />
-    <ClInclude Include="source_loopback.h" />
+    <ClInclude Include="source_wasapi.h" />
     <ClInclude Include="source_null.h" />
     <ClInclude Include="stream_worker.h" />
     <ClInclude Include="transform_aac_encoder.h" />
     <ClInclude Include="transform_audiomix.h" />
+    <ClInclude Include="transform_audiomixer.h" />
     <ClInclude Include="transform_audioprocessor.h" />
     <ClInclude Include="transform_color_converter.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>

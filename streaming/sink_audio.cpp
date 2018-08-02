@@ -67,45 +67,46 @@ stream_audio_worker_t sink_audio::create_worker_stream()
 
 
 stream_audio::stream_audio(const sink_audio_t& sink) : 
-    sink(sink), unavailable(0), running(false)
+    sink(sink), unavailable(0), running(false), media_stream_clock_sink(sink.get())
 {
 }
 
-bool stream_audio::on_clock_start(time_unit t)
+void stream_audio::on_stream_start(time_unit t)
 {
-    request_packet rp;
-    
-    // discard all the samples that are queued up to this point
-    rp.flags = AUDIO_DISCARD_PREVIOUS_SAMPLES;
-    rp.request_time = t;
-    rp.timestamp = t;
+    //request_packet rp;
+    //
+    //// discard all the samples that are queued up to this point
+    //rp.flags = AUDIO_DISCARD_PREVIOUS_SAMPLES;
+    //rp.request_time = t;
+    //rp.timestamp = t;
     
     this->running = true;
-    this->dispatch_request(rp);
-    return true;
+    /*this->dispatch_request(rp);*/
 }
 
-void stream_audio::on_clock_stop(time_unit t)
+void stream_audio::on_stream_stop(time_unit t)
 {
-    request_packet rp;
+    //request_packet rp;
 
-    // collect all the remaining samples that are queued up to this point
-    rp.flags = 0;
-    rp.request_time = t;
-    rp.timestamp = t;
+    //// collect all the remaining samples that are queued up to this point
+    //rp.flags = 0;
+    //rp.request_time = t;
+    //rp.timestamp = t;
 
-    this->dispatch_request(rp);
+    //this->dispatch_request(rp);
     this->running = false;
 }
 
-void stream_audio::dispatch_request(request_packet& rp)
+void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
 {
     assert_(this->unavailable <= 240);
     if(!this->running)
         return;
 
+    const int j = no_drop ? 0 : 1;
+
     scoped_lock lock(this->worker_streams_mutex);
-    for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
+    for(auto it = this->worker_streams.begin(); it != (this->worker_streams.end() - j); it++)
     {
         if((*it)->available)
         {
@@ -113,15 +114,15 @@ void stream_audio::dispatch_request(request_packet& rp)
             (*it)->available = false;
 
             result_t res = (*it)->request_sample(rp, this);
-            (res);
-            // serve the requests from the audio source queue
-            /*this->source->serve_requests();*/
+            if(res == FATAL_ERROR)
+                std::cout << "couldn't dispatch request on stream audio" << std::endl;
             return;
         }
     }
 
     // serve the requests from the audio source queue
     /*this->source->serve_requests();*/
+    assert_(!no_drop);
     std::cout << "--SAMPLE REQUEST DROPPED IN AUDIO_SINK--" << std::endl;
     this->unavailable++;
 }
@@ -132,10 +133,19 @@ void stream_audio::add_worker_stream(const stream_audio_worker_t& worker_stream)
     this->worker_streams.push_back(worker_stream);
 }
 
+media_stream::result_t stream_audio::request_sample_last(time_unit t)
+{
+    request_packet rp;
+    rp.request_time = t;
+    rp.timestamp = t;
+
+    this->dispatch_request(rp, true);
+    return OK;
+}
+
 media_stream::result_t stream_audio::request_sample(
     request_packet& rp, const media_stream*)
 {
-    rp.flags = 0;
     this->dispatch_request(rp);
     return OK;
 }

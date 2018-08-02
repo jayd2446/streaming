@@ -42,6 +42,7 @@ new request will be made)
 
 class media_stream;
 
+// TODO: use mutex instead of recursive mutex
 class media_session : public enable_shared_from_this
 {
 public:
@@ -64,12 +65,12 @@ public:
     //    request_packet rp;
     //};
 private:
-    std::atomic_bool is_shutdown;
+    volatile bool is_shutdown, is_started;
     presentation_time_source_t time_source;
 
-    media_topology_t current_topology;
-
     std::recursive_mutex topology_switch_mutex;
+
+    media_topology_t current_topology;
     media_topology_t new_topology;
 
     std::recursive_mutex request_sample_mutex;
@@ -79,6 +80,11 @@ private:
     std::recursive_mutex give_sample_mutex;
     CComPtr<async_callback_t> give_sample_callback;
     /*std::queue<give_sample_t> give_sample_requests;*/
+
+    // starts the new topology immediately;
+    // throws if the topology doesn't include a clock;
+    // throws also if the session has been shutdown
+    void switch_topology_immediate(const media_topology_t& new_topology, time_unit time_point);
 
     void request_sample_cb(void*);
     void give_sample_cb(void*);
@@ -92,24 +98,16 @@ public:
     // create a cyclic dependency between clock and components;
     // returns false if the clock is NULL
     bool get_current_clock(presentation_clock_t&) const;
+    bool started() const {return this->is_started;}
 
     const presentation_time_source_t& get_time_source() const {return this->time_source;}
 
     void switch_topology(const media_topology_t& new_topology);
-    // starts the new topology immediately;
-    // returns the clock_start return value
-    bool switch_topology_immediate(const media_topology_t& new_topology, time_unit time_point);
 
-    // returns false if any of the sinks couldn't be started or stopped;
-    // throws if there's no clock available
-    bool start_playback(const media_topology_t& topology, time_unit time_point);
-    // throws if there's no clock available
+    // throws if the topology doesn't include a clock
+    void start_playback(const media_topology_t& topology, time_unit time_point);
     void stop_playback();
-
-    // event firing functions will return true only if the media session isn't shutdown
-    // and the node is added to the media session's topology and the request sample doesn't
-    // return fatal_error;
-    // the events won't have any effect if those conditions don't apply
+    void stop_playback(time_unit);
 
     // TODO: make request_sample call that's coming from sink
     // its own function
@@ -134,9 +132,8 @@ public:
         bool is_source);
 
     // breaks the circular dependency between components and the session;
-    // make sure that the pipeline has finished processing all the request packets
-    // before calling this;
-    // the session is considered invalid after calling this
+    // the session is considered invalid after calling this;
+    // the components bound to this session must be reinitialized aswell
     void shutdown();
 };
 

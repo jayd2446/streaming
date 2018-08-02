@@ -1,6 +1,10 @@
 #include "media_sample.h"
 #include "assert.h"
 #include <atomic>
+#include <limits>
+
+#undef min
+#undef max
 
 media_buffer::media_buffer() : 
     read_lock(0),
@@ -10,8 +14,7 @@ media_buffer::media_buffer() :
 
 media_buffer::~media_buffer()
 {
-    assert_(!this->write_lock);
-    assert_(!this->read_lock);
+    assert_(!this->is_locked());
 }
 
 void media_buffer::lock()
@@ -49,6 +52,12 @@ void media_buffer::unlock()
     this->read_lock--;
     assert_(this->read_lock >= 0);
     this->cv.notify_all();
+}
+
+bool media_buffer::is_locked() const
+{
+    scoped_lock lock(this->mutex);
+    return (this->write_lock || this->read_lock);
 }
 
 

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <atomic>
 #include <deque>
+#include <list>
 #include <condition_variable>
 #include <stdint.h>
 #include <d3d11.h>
@@ -29,7 +30,7 @@ private:
     volatile int read_lock;
     volatile bool write_lock;
     std::condition_variable cv;
-    std::mutex mutex;
+    mutable std::mutex mutex;
 public:
     media_buffer();
     virtual ~media_buffer();
@@ -43,6 +44,8 @@ public:
     void unlock_write();
     // unlocks the write and read lock
     void unlock();
+
+    bool is_locked() const;
 };
 
 typedef std::shared_ptr<media_buffer> media_buffer_t;
@@ -65,10 +68,11 @@ public:
 
 typedef std::shared_ptr<media_buffer_aac> media_buffer_aac_t;
 
+// samples must be stored in a list so that mixing works
 class media_buffer_samples : public media_buffer
 {
 public:
-    std::deque<CComPtr<IMFSample>> samples;
+    std::list<CComPtr<IMFSample>> samples;
 };
 
 typedef std::shared_ptr<media_buffer_samples> media_buffer_samples_t;
@@ -117,12 +121,16 @@ class media_sample_audio : public media_sample
 public:
     typedef media_buffer_samples_t buffer_t;
 public:
+    // the (sample pos + sample dur) max of buffer
+    frame_unit frame_end;
     // bit depth is assumed to be 16 bits always
     UINT32 channels, bit_depth, sample_rate;
     media_buffer_samples_t buffer;
 
     media_sample_audio() {}
     explicit media_sample_audio(const media_buffer_samples_t& buffer);
+
+    UINT32 get_block_align() const {return this->bit_depth / 8 * this->channels;}
 };
 
 class media_sample_aac : public media_sample
@@ -169,7 +177,7 @@ public:
     explicit media_sample_view(const sample_t& sample, view_lock_t = view_lock_t::LOCK_BUFFERS);
     ~media_sample_view();
 
-    void attach(const sample_t& sample, view_lock_t = LOCK_BUFFERS);
+    void attach(const sample_t& sample, view_lock_t = view_lock_t::LOCK_BUFFERS);
     void attach(const typename sample_t::buffer_t& buffer, view_lock_t = view_lock_t::LOCK_BUFFERS);
     void detach();
 };

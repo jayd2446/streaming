@@ -1,4 +1,4 @@
-#include "source_loopback.h"
+#include "source_wasapi.h"
 #include "assert.h"
 #include <initguid.h>
 #include <mmdeviceapi.h>
@@ -20,7 +20,7 @@
 //        throw std::exception();
 //}
 
-void source_loopback::convert_32bit_float_to_bitdepth_pcm(
+void source_wasapi::convert_32bit_float_to_bitdepth_pcm(
     UINT32 frames, UINT32 channels,
     const float* in, bit_depth_t* out, bool silent)
 {
@@ -56,27 +56,30 @@ void source_loopback::convert_32bit_float_to_bitdepth_pcm(
     }
 }
 
-source_loopback::source_loopback(const media_session_t& session) : 
-    media_source(session), device_time_position(0), started(false), 
+source_wasapi::source_wasapi(const media_session_t& session) : 
+    media_source(session), started(false), 
     generate_sine(false), sine_var(0),
     consumed_samples_end(std::numeric_limits<frame_unit>::min()),
-    next_frame_position(0),
-    capture(false)
+    next_frame_position(std::numeric_limits<frame_unit>::min()),
+    capture(false),
+    frame_base(std::numeric_limits<frame_unit>::min()),
+    devposition_base(std::numeric_limits<frame_unit>::min())
 {
     HRESULT hr = S_OK;
     DWORD task_id;
     CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &this->work_queue_id));
 
-    this->process_callback.Attach(new async_callback_t(&source_loopback::process_cb, this->work_queue_id));
+    this->process_callback.Attach(new async_callback_t(&source_wasapi::process_cb, this->work_queue_id));
+    this->serve_callback.Attach(new async_callback_t(&source_wasapi::serve_cb));
 
-    this->stream_base.time = this->stream_base.sample = -1;
+    /*this->stream_base.time = this->stream_base.sample = -1;*/
 
 done:
     if(FAILED(hr))
         throw std::exception();
 }
 
-source_loopback::~source_loopback()
+source_wasapi::~source_wasapi()
 {
     if(this->started)
     {
@@ -87,7 +90,7 @@ source_loopback::~source_loopback()
     MFUnlockWorkQueue(this->work_queue_id);
 }
 
-HRESULT source_loopback::add_event_to_wait_queue()
+HRESULT source_wasapi::add_event_to_wait_queue()
 {
     HRESULT hr = S_OK;
 
@@ -95,19 +98,14 @@ HRESULT source_loopback::add_event_to_wait_queue()
     CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->process_callback->native, NULL, &asyncresult));
     // use the priority of 1 for audio
     CHECK_HR(hr = this->process_callback->mf_put_waiting_work_item(
-        this->shared_from_this<source_loopback>(),
+        this->shared_from_this<source_wasapi>(),
         this->process_event, 1, asyncresult, &this->callback_key));
-
-    //// schedule a work item for a half of the buffer duration
-    //CHECK_HR(hr = this->process_callback->mf_schedule_work_item(
-    //    this->shared_from_this<source_loopback>(),
-    //    -this->buffer_actual_duration / MILLISECOND_IN_TIMEUNIT / 2, &this->callback_key));
 
 done:
     return hr;
 }
 
-HRESULT source_loopback::create_waveformat_type(WAVEFORMATEX* format)
+HRESULT source_wasapi::create_waveformat_type(WAVEFORMATEX* format)
 {
     HRESULT hr = S_OK;
 
@@ -122,7 +120,151 @@ done:
     return hr;
 }
 
-void source_loopback::process_cb(void*)
+void source_wasapi::serve_cb(void*)
+{
+    std::unique_lock<std::recursive_mutex> lock(this->serve_mutex, std::try_to_lock);
+    if(!lock.owns_lock())
+        return;
+
+    // splice the raw buffer to the cached buffer(O(1) operation);
+    // raw buffer becomes empty
+    {
+        scoped_lock lock(this->raw_buffer_mutex), lock2(this->buffer_mutex);
+        this->buffer.splice(this->buffer.end(), this->raw_buffer);
+    }
+
+    // try to serve
+    HRESULT hr = S_OK;
+    request_t request;
+    while(this->requests.get(request))
+    {
+        // samples are collected up to the request time;
+        // sample that goes over the request time will not be collected
+
+        bool dispatch = false;
+        // unfortunately to be able to share a sample between multiple inputs, the buffer
+        // must be wrapped into shared ptr and dynamically allocated
+        media_sample_audio audio(media_buffer_samples_t(new media_buffer_samples));
+        audio.bit_depth = sizeof(bit_depth_t) * 8;
+        audio.channels = this->channels;
+        audio.sample_rate = this->samples_per_second;
+
+        const double sample_duration = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
+        const frame_unit request_end = (frame_unit)(request.rp.request_time / sample_duration);
+
+        std::unique_lock<std::recursive_mutex> lock2(this->buffer_mutex);
+        size_t consumed_samples = 0;
+        frame_unit consumed_samples_end = this->consumed_samples_end;
+        for(auto it = this->buffer.begin(); it != this->buffer.end() && !dispatch; it++)
+        {
+            CComPtr<IMFSample> sample;
+            CComPtr<IMFMediaBuffer> buffer, oldbuffer;
+            DWORD buflen;
+
+            LONGLONG sample_pos, sample_dur;
+            CHECK_HR(hr = (*it)->GetSampleTime(&sample_pos));
+            CHECK_HR(hr = (*it)->GetSampleDuration(&sample_dur));
+
+            const frame_unit frame_pos = sample_pos;
+            const frame_unit frame_end = frame_pos + sample_dur;
+
+            // too new sample for the request
+            if(frame_pos >= request_end)
+            {
+                dispatch = true;
+                break;
+            }
+            // request can be dispatched
+            if(frame_end >= request_end)
+                dispatch = true;
+
+            CHECK_HR(hr = (*it)->GetBufferByIndex(0, &oldbuffer));
+            CHECK_HR(hr = oldbuffer->GetCurrentLength(&buflen));
+
+            const frame_unit frame_diff_end = std::max(frame_end - request_end, 0LL);
+            const DWORD offset_end  = (DWORD)frame_diff_end * this->get_block_align();
+            const frame_unit new_sample_time = sample_pos;
+            const frame_unit new_sample_dur = sample_dur - frame_diff_end;
+
+            // discard frames that have older time stamp than the last consumed one
+            /*if(new_sample_time >= consumed_samples_end)
+            {*/
+                if(new_sample_time < consumed_samples_end)
+                    std::cout << "wrong timestamp in source_wasapi" << std::endl;
+
+                assert_(((int)buflen - (int)offset_end) > 0);
+                CHECK_HR(hr = MFCreateMediaBufferWrapper(oldbuffer, 0, buflen - offset_end, &buffer));
+                CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+                if(offset_end > 0)
+                {
+                    // remove the consumed part of the old buffer
+                    CComPtr<IMFMediaBuffer> new_buffer;
+                    CHECK_HR(hr = MFCreateMediaBufferWrapper(
+                        oldbuffer, buflen - offset_end, offset_end, &new_buffer));
+                    CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+                    CHECK_HR(hr = (*it)->RemoveAllBuffers());
+                    CHECK_HR(hr = (*it)->AddBuffer(new_buffer));
+                    const LONGLONG new_sample_dur = offset_end / this->get_block_align();
+                    const LONGLONG new_sample_time = sample_pos + sample_dur - new_sample_dur;
+                    CHECK_HR(hr = (*it)->SetSampleTime(new_sample_time));
+                    CHECK_HR(hr = (*it)->SetSampleDuration(new_sample_dur));
+                }
+                else
+                    consumed_samples++;
+                CHECK_HR(hr = MFCreateSample(&sample));
+                CHECK_HR(hr = sample->AddBuffer(buffer));
+                CHECK_HR(hr = sample->SetSampleTime(new_sample_time));
+                CHECK_HR(hr = sample->SetSampleDuration(new_sample_dur));
+
+                // TODO: define this flag in audio processor
+                // because of data discontinuity the new sample base might yield sample times
+                // that 'travel back in time', so keep track of last consumed sample and discard
+                // samples that are older than that;
+                // the audio might become out of sync by the amount of discarded frames
+                // (actually it won't)
+                /*if(!(request.rp.flags & AUDIO_DISCARD_PREVIOUS_SAMPLES))*/
+                    // TODO: pushing samples to a container could be deferred to
+                    // dispatching block
+                    audio.buffer->samples.push_back(sample);
+            /*}
+            else
+            {
+                std::cout << "discarded" << std::endl;
+                consumed_samples++;
+            }*/
+
+            consumed_samples_end = std::max(new_sample_time + new_sample_dur, consumed_samples_end);
+        }
+
+        if(dispatch)
+        {
+            // update the consumed samples position
+            this->consumed_samples_end = consumed_samples_end;
+
+            // erase all consumed samples
+            for(size_t i = 0; i < consumed_samples; i++)
+                this->buffer.pop_front();
+
+            // pop the request from the queue
+            this->requests.pop(request);
+
+            lock2.unlock();
+            /*lock.unlock();*/
+            // dispatch the request
+            request.stream->process_sample(audio, request.rp, NULL);
+            /*this->session->give_sample(request.stream, audio, request.rp, false);*/
+            /*lock.lock();*/
+        }
+        else
+            break;
+    }
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
+}
+
+void source_wasapi::process_cb(void*)
 {
     ResetEvent(this->process_event);
 
@@ -173,28 +315,52 @@ void source_loopback::process_cb(void*)
 
         bool silent = false;
         // set the stream time and sample base
-        if(this->stream_base.sample < 0)
+        //if(this->stream_base.sample < 0)
+        //{
+        //    // set the base
+        //    this->stream_base.sample = devposition;
+        //    this->stream_base.time = first_sample_timestamp;
+        //}
+
+        if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY || 
+            this->frame_base == std::numeric_limits<frame_unit>::min())
         {
-            // set the base
-            this->stream_base.sample = devposition;
-            this->stream_base.time = first_sample_timestamp;
-        }
-        /*sample_base_t base = {(LONGLONG)first_sample_timestamp, (LONGLONG)devposition};*/
-        sample_base_t base = {-1, -1};
-        if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
-        {
-            // TODO: to combat against a possible drift in the timestamps
-            // because of slightly inaccurate sample rate in a device,
-            // set a new base periodically,
-            // e.g once every second
-            // (actually, this shouldn't be done because it can cause the
-            // the audio buffer cutting operation to fail)
             std::cout << "DATA DISCONTINUITY, " << devposition << ", " << devposition + frames << std::endl;
-            base.time = (LONGLONG)first_sample_timestamp;
-            base.sample = (LONGLONG)devposition;
-            if(this->generate_sine)
-                base.time += SECOND_IN_TIME_UNIT / 200;
+
+            presentation_time_source_t time_source = this->session->get_time_source();
+            if(!time_source)
+            {
+                this->frame_base = std::numeric_limits<frame_unit>::min();
+                goto done;
+            }
+
+            // calculate the new sample base from the timestamp
+            const double frame_duration = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
+            this->devposition_base = (frame_unit)devposition;
+            this->frame_base = (frame_unit)
+                (time_source->system_time_to_time_source((time_unit)first_sample_timestamp) /
+                frame_duration);
         }
+
+        /*sample_base_t base = {(LONGLONG)first_sample_timestamp, (LONGLONG)devposition};*/
+        /*sample_base_t base = {-1, -1};*/
+        //if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
+        //{
+        //    // on data discontinuity, calculate the new sample position from the sample timestamp
+        //    // instead of relying on devposition
+
+        //    // TODO: to combat against a possible drift in the timestamps
+        //    // because of slightly inaccurate sample rate in a device,
+        //    // set a new base periodically,
+        //    // e.g once every second
+        //    // (actually, this shouldn't be done because it can cause the
+        //    // the audio buffer cutting operation to fail)
+        //    std::cout << "DATA DISCONTINUITY, " << devposition << ", " << devposition + frames << std::endl;
+        //    base.time = (LONGLONG)first_sample_timestamp;
+        //    base.sample = (LONGLONG)devposition;
+        //    if(this->generate_sine)
+        //        base.time += SECOND_IN_TIME_UNIT / 200;
+        //}
         if(flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR)
         {
             std::cout << "TIMESTAMP ERROR" << std::endl;
@@ -223,8 +389,11 @@ void source_loopback::process_cb(void*)
         CHECK_HR(hr = sample->AddBuffer(buffer));
 
         // set the time and duration in frames
-        CHECK_HR(hr = sample->SetSampleTime(devposition));
+        const frame_unit sample_time = this->frame_base + 
+            ((frame_unit)devposition - this->devposition_base);
+        CHECK_HR(hr = sample->SetSampleTime(sample_time));
         CHECK_HR(hr = sample->SetSampleDuration(frames));
+        this->next_frame_position = sample_time + (frame_unit)frames;
 
         /*static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min();
         LONGLONG ts;
@@ -235,15 +404,13 @@ void source_loopback::process_cb(void*)
         ts_ = ts;*/
 
         // add the base info
-        CHECK_HR(hr = sample->SetBlob(MF_MT_USER_DATA, (UINT8*)&base, sizeof(sample_base_t)));
+        /*CHECK_HR(hr = sample->SetBlob(MF_MT_USER_DATA, (UINT8*)&base, sizeof(sample_base_t)));*/
 
         // add sample
         {
-            /*scoped_lock lock(this->buffer_mutex);*/
-            this->buffer.lock();
-            this->buffer.samples.push_back(sample);
-            this->next_frame_position = devposition + frames;
-            this->buffer.unlock();
+            scoped_lock lock(this->raw_buffer_mutex);
+            this->raw_buffer.push_back(sample);
+            /*this->next_frame_position = devposition + frames;*/
         }
 
         getbuffer = false;
@@ -267,7 +434,7 @@ done:
     this->serve_requests();
 }
 
-HRESULT source_loopback::play_silence()
+HRESULT source_wasapi::play_silence()
 {
     HRESULT hr = S_OK;
     UINT32 frames_padding;
@@ -283,14 +450,14 @@ done:
     return hr;
 }
 
-void source_loopback::serve_requests()
+void source_wasapi::serve_requests()
 {
-    const HRESULT hr = this->serve_callback->mf_put_work_item();
+    const HRESULT hr = this->serve_callback->mf_put_work_item(this->shared_from_this<source_wasapi>());
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
 }
 
-HRESULT source_loopback::initialize_render(IMMDevice* device, WAVEFORMATEX* engine_format)
+HRESULT source_wasapi::initialize_render(IMMDevice* device, WAVEFORMATEX* engine_format)
 {
     HRESULT hr = S_OK;
     LPBYTE data;
@@ -311,7 +478,7 @@ done:
     return hr;
 }
 
-void source_loopback::initialize(const std::wstring& device_id, bool capture)
+void source_wasapi::initialize(const std::wstring& device_id, bool capture)
 {
     HRESULT hr = S_OK;
 
@@ -409,26 +576,26 @@ done:
         throw std::exception();
 }
 
-media_stream_t source_loopback::create_stream()
+media_stream_t source_wasapi::create_stream()
 {
-    return media_stream_t(new stream_loopback(this->shared_from_this<source_loopback>()));
+    return media_stream_t(new stream_wasapi(this->shared_from_this<source_wasapi>()));
 }
 
-void source_loopback::move_buffer(media_sample_audio& sample)
-{
-    this->buffer.lock();
-    sample.buffer->lock();
-
-    sample.buffer->samples.swap(this->buffer.samples);
-    this->buffer.samples.clear();
-
-    sample.bit_depth = sizeof(bit_depth_t) * 8;
-    sample.sample_rate = this->samples_per_second;
-    sample.channels = this->channels;
-
-    sample.buffer->unlock();
-    this->buffer.unlock();
-}
+//void source_wasapi::move_buffer(media_sample_audio& sample)
+//{
+//    this->buffer.lock();
+//    sample.buffer->lock();
+//
+//    sample.buffer->samples.swap(this->buffer.samples);
+//    this->buffer.samples.clear();
+//
+//    sample.bit_depth = sizeof(bit_depth_t) * 8;
+//    sample.sample_rate = this->samples_per_second;
+//    sample.channels = this->channels;
+//
+//    sample.buffer->unlock();
+//    this->buffer.unlock();
+//}
 
 
 /////////////////////////////////////////////////////////////////
@@ -436,18 +603,27 @@ void source_loopback::move_buffer(media_sample_audio& sample)
 /////////////////////////////////////////////////////////////////
 
 
-stream_loopback::stream_loopback(const source_loopback_t& source) : 
-    source(source)
+stream_wasapi::stream_wasapi(const source_wasapi_t& source) : 
+    source(source), last_packet_number(INVALID_PACKET_NUMBER)
 {
 }
 
-media_stream::result_t stream_loopback::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_wasapi::request_sample(request_packet& rp, const media_stream*)
 {
-    assert_(false);
+    if(rp.packet_number == this->last_packet_number)
+        return OK;
+
+    this->last_packet_number = rp.packet_number;
+
+    source_wasapi::request_t request;
+    request.stream = this;
+    request.rp = rp;
+    this->source->requests.push(request);
+
     return OK;
 }
 
-media_stream::result_t stream_loopback::process_sample(
+media_stream::result_t stream_wasapi::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     return this->source->session->give_sample(this, sample_view, rp, true) ? OK : FATAL_ERROR;

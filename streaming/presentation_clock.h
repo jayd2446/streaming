@@ -1,6 +1,7 @@
 #pragma once
 #include "async_callback.h"
 #include "media_sample.h"
+#include "media_stream.h"
 #include "enable_shared_from_this.h"
 #include <map>
 #include <set>
@@ -42,7 +43,7 @@ typedef std::shared_ptr<presentation_clock> presentation_clock_t;
 
 // TODO: scheduling assumes clock increments based on real time(the time source should 
 // implement scheduling)
-// TODO: decouple this class to sink and scheduling
+// TODO: rename to scheduling
 class presentation_clock_sink : public virtual enable_shared_from_this
 {
     friend class presentation_clock;
@@ -51,7 +52,7 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<presentation_clock_sink> async_callback_t;
 private:
-    bool unregistered;
+    /*bool unregistered;*/
     CComPtr<async_callback_t> callback;
     sorted_set_t callbacks;
     std::recursive_mutex mutex_callbacks;
@@ -75,10 +76,6 @@ protected:
     // adds a new callback time to the list
     bool schedule_new_callback(time_unit due_time);
 
-    // called from media session's start and stop functions
-    virtual bool on_clock_start(time_unit) = 0;
-    virtual void on_clock_stop(time_unit) = 0;
-
     // a new callback shouldn't be scheduled if the topology isn't active anymore
     virtual void scheduled_callback(time_unit due_time);
 public:
@@ -89,14 +86,6 @@ public:
     time_unit get_pull_interval() const {return this->pull_interval;}
     time_unit get_next_due_time(time_unit) const;
 
-    // adds this sink to the list of sinks in the presentation clock
-    bool register_sink(presentation_clock_t&);
-    // (not needed when using shared ptrs instead of weak ptrs)
-    //// returns false if clock wasn't found or sink wasn't found in clock;
-    //// this actually removes one invalid pointer from the sink list
-    //// TODO: rename this to something more fitting
-    //bool unregister_sink();
-
     void set_schedule_cb_work_queue(DWORD w) {this->callback->native.work_queue = w;}
 
     // can be NULL;
@@ -106,15 +95,21 @@ public:
 
 typedef std::shared_ptr<presentation_clock_sink> presentation_clock_sink_t;
 
+class media_component;
+
 class presentation_clock
 {
     friend class presentation_clock_sink;
 public:
-    typedef std::vector<presentation_clock_sink_t> vector_t;
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef std::map<const media_component*, std::pair<std::vector<media_stream_clock_sink_t>, bool>> 
+        sinks_t;
 private:
-    vector_t sinks;
+    sinks_t sinks;
     std::recursive_mutex mutex_sinks;
     presentation_time_source_t time_source;
+
+    void clock_start(time_unit time_point);
 public:
     explicit presentation_clock(const presentation_time_source_t&);
     ~presentation_clock();
@@ -122,12 +117,13 @@ public:
     const presentation_time_source_t& get_time_source() const {return this->time_source;}
     time_unit get_current_time() const {return this->time_source->get_current_time();}
 
-    // calls clock_stop if one of the sinks returned false
-    // and returns false;
-    // calls sink with the time point parameter
-    bool clock_start(time_unit time_point);
-    // returns false if any of the sinks returns false;
-    // calls sink with the time point parameter
+    void register_sink(const media_stream_clock_sink_t&, const media_component*);
+
+    // stops the old clock and starts this clock;
+    // notifies streams whether the component is stopped or started;
+    // it is assumed that both clocks use the same time source
+    void clock_start(time_unit time_point, const presentation_clock_t& prev_clock);
+    // notifies all sinks
     void clock_stop(time_unit time_point);
     // calls sinks with the current time source's time as the time point parameter
     void clock_stop() {this->clock_stop(this->get_current_time());}
