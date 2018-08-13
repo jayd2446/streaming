@@ -68,11 +68,10 @@ public:
 
 typedef std::shared_ptr<media_buffer_aac> media_buffer_aac_t;
 
-// samples must be stored in a list so that mixing works
 class media_buffer_samples : public media_buffer
 {
 public:
-    std::list<CComPtr<IMFSample>> samples;
+    std::deque<CComPtr<IMFSample>> samples;
 };
 
 typedef std::shared_ptr<media_buffer_samples> media_buffer_samples_t;
@@ -80,8 +79,11 @@ typedef std::shared_ptr<media_buffer_samples> media_buffer_samples_t;
 class media_buffer_texture : public media_buffer
 {
 public:
+    // intermediate texture stores the real texture
+    // and texture is just a shared handle when using
+    // multiple devices
+    CComPtr<ID3D11Texture2D> intermediate_texture;
     CComPtr<ID3D11Texture2D> texture;
-    CComPtr<IDXGIResource> resource;
 };
 
 typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;

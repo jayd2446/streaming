@@ -139,12 +139,16 @@ void source_wasapi::serve_cb(void*)
     while(this->requests.get(request))
     {
         // samples are collected up to the request time;
-        // sample that goes over the request time will not be collected
+        // sample that goes over the request time will not be collected;
+        // cutting operation is preferred so that when changing scene the audio plays
+        // up to the switch point
 
         bool dispatch = false;
-        // unfortunately to be able to share a sample between multiple inputs, the buffer
-        // must be wrapped into shared ptr and dynamically allocated
-        media_sample_audio audio(media_buffer_samples_t(new media_buffer_samples));
+        // use the buffer allocated in request stream for the audio sample
+        stream_wasapi* stream = reinterpret_cast<stream_wasapi*>(request.stream);
+        /*media_sample_audio audio(media_buffer_samples_t(new media_buffer_samples));*/
+        stream->audio_buffer->samples.clear();
+        media_sample_audio audio(stream->audio_buffer);
         audio.bit_depth = sizeof(bit_depth_t) * 8;
         audio.channels = this->channels;
         audio.sample_rate = this->samples_per_second;
@@ -297,30 +301,19 @@ void source_wasapi::process_cb(void*)
         getbuffer = true;
         // try fetch a next packet if no frames were returned
         // or if the frames were already returned
-        if(returned_frames == 0/* || (returned_devposition + returned_frames) <= this->next_frame_position*/)
+        if(returned_frames == 0)
         {
             getbuffer = false;
             CHECK_HR(hr = this->audio_capture_client->ReleaseBuffer(returned_frames));
             continue;
         }
-        /*frames = returned_frames - 
-            (UINT32)std::max(0LL, (LONGLONG)this->next_frame_position - (LONGLONG)returned_devposition);
-        devposition = std::max(this->next_frame_position, returned_devposition);
-        assert_(devposition + frames == returned_devposition + returned_frames);
-        data += (devposition - returned_devposition) * this->get_block_align();*/
+
         frames = returned_frames;
         devposition = returned_devposition;
 
         CHECK_HR(hr = MFCreateSample(&sample));
 
         bool silent = false;
-        // set the stream time and sample base
-        //if(this->stream_base.sample < 0)
-        //{
-        //    // set the base
-        //    this->stream_base.sample = devposition;
-        //    this->stream_base.time = first_sample_timestamp;
-        //}
 
         if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY || 
             this->frame_base == std::numeric_limits<frame_unit>::min())
@@ -341,26 +334,6 @@ void source_wasapi::process_cb(void*)
                 (time_source->system_time_to_time_source((time_unit)first_sample_timestamp) /
                 frame_duration);
         }
-
-        /*sample_base_t base = {(LONGLONG)first_sample_timestamp, (LONGLONG)devposition};*/
-        /*sample_base_t base = {-1, -1};*/
-        //if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
-        //{
-        //    // on data discontinuity, calculate the new sample position from the sample timestamp
-        //    // instead of relying on devposition
-
-        //    // TODO: to combat against a possible drift in the timestamps
-        //    // because of slightly inaccurate sample rate in a device,
-        //    // set a new base periodically,
-        //    // e.g once every second
-        //    // (actually, this shouldn't be done because it can cause the
-        //    // the audio buffer cutting operation to fail)
-        //    std::cout << "DATA DISCONTINUITY, " << devposition << ", " << devposition + frames << std::endl;
-        //    base.time = (LONGLONG)first_sample_timestamp;
-        //    base.sample = (LONGLONG)devposition;
-        //    if(this->generate_sine)
-        //        base.time += SECOND_IN_TIME_UNIT / 200;
-        //}
         if(flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR)
         {
             std::cout << "TIMESTAMP ERROR" << std::endl;
@@ -395,22 +368,10 @@ void source_wasapi::process_cb(void*)
         CHECK_HR(hr = sample->SetSampleDuration(frames));
         this->next_frame_position = sample_time + (frame_unit)frames;
 
-        /*static LONGLONG ts_ = std::numeric_limits<LONGLONG>::min();
-        LONGLONG ts;
-
-        ts = devposition;
-        if(ts <= ts_)
-            DebugBreak();
-        ts_ = ts;*/
-
-        // add the base info
-        /*CHECK_HR(hr = sample->SetBlob(MF_MT_USER_DATA, (UINT8*)&base, sizeof(sample_base_t)));*/
-
         // add sample
         {
             scoped_lock lock(this->raw_buffer_mutex);
             this->raw_buffer.push_back(sample);
-            /*this->next_frame_position = devposition + frames;*/
         }
 
         getbuffer = false;
@@ -604,17 +565,13 @@ media_stream_t source_wasapi::create_stream()
 
 
 stream_wasapi::stream_wasapi(const source_wasapi_t& source) : 
-    source(source), last_packet_number(INVALID_PACKET_NUMBER)
+    source(source),
+    audio_buffer(new media_buffer_samples)
 {
 }
 
 media_stream::result_t stream_wasapi::request_sample(request_packet& rp, const media_stream*)
 {
-    if(rp.packet_number == this->last_packet_number)
-        return OK;
-
-    this->last_packet_number = rp.packet_number;
-
     source_wasapi::request_t request;
     request.stream = this;
     request.rp = rp;

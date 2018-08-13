@@ -60,6 +60,7 @@ private:
 
     // for debug
     int unavailable;
+    bool ran_once, stopped;
 
     // media_stream_clock_sink
     void on_stream_start(time_unit);

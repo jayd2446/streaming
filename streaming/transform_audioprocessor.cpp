@@ -201,13 +201,13 @@ void transform_audioprocessor::resample(
         HRESULT hr = S_OK;
         CHECK_HR(hr = this->processor->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
         while(this->resampler_process_output(out_sample)) 
-            process_sample();
+            CHECK_HR(hr = process_sample());
 
     done:
         return hr;
     };
 
-    reset_sample();
+    CHECK_HR(hr = reset_sample());
     for(auto it = audio.buffer->samples.begin(); it != audio.buffer->samples.end(); it++)
     {
         // create a sample that has time and duration converted from frame unit to time unit
@@ -500,7 +500,8 @@ media_stream_t transform_audioprocessor::create_stream(presentation_clock_t& clo
 stream_audioprocessor::stream_audioprocessor(const transform_audioprocessor_t& transform) :
     media_stream_clock_sink(transform.get()),
     transform(transform),
-    drain_point(std::numeric_limits<time_unit>::min())
+    drain_point(std::numeric_limits<time_unit>::min()),
+    audio_buffer(new media_buffer_samples)
 {
     /*this->process_callback.Attach(new async_callback_t(&stream_audioprocessor::processing_cb));*/
 }
@@ -527,24 +528,11 @@ media_stream::result_t stream_audioprocessor::request_sample(request_packet& rp,
 media_stream::result_t stream_audioprocessor::process_sample(
     const media_sample& sample_, request_packet& rp, const media_stream*)
 {
+    this->audio_buffer->samples.clear();
+
     const media_sample_audio& sample = reinterpret_cast<const media_sample_audio&>(sample_);
-    media_sample_audio audio(media_buffer_samples_t(new media_buffer_samples));
+    media_sample_audio audio(this->audio_buffer);
 
     this->transform->resample(audio, sample, this->drain_point == rp.request_time);
     return this->transform->session->give_sample(this, audio, rp, false) ? OK : FATAL_ERROR;
-
-    /*HRESULT hr = S_OK;
-    transform_audioprocessor::request_t request;
-    request.stream = this;
-    request.rp = rp;
-
-    this->transform->requests.push(request);
-    request.sample_view = sample_view;
-    this->transform->requests_resample.push(request);
-    CHECK_HR(hr = 
-        this->process_callback->mf_put_work_item(this->shared_from_this<stream_audioprocessor>()));
-
-done:
-    if(FAILED(hr))
-        throw std::exception();*/
 }

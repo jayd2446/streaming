@@ -35,8 +35,8 @@ void gui_maindlg::add_new_item(new_item_t item)
             static int i = 0;
             dlg.displaycaptures[dlg.cursel].video.source_rect = {0};
             dlg.displaycaptures[dlg.cursel].video.dest_rect = {0};
-            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1920 - i * 50;
-            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1080 - i * 50;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1280 - i * 50;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1024 - i * 50;
             dlg.displaycaptures[dlg.cursel].video.source_rect.left = i * 20;
             dlg.displaycaptures[dlg.cursel].video.source_rect.top = i * 4;
 
@@ -65,9 +65,9 @@ void gui_maindlg::add_new_item(new_item_t item)
         const INT_PTR ret = dlg.DoModal(*this, item);
         if(ret == 0)
         {
-            static int j = 0;
+            /*static int j = 0;
             for(int i = 0; i < (j ? 20 : 1); i++)
-            {
+            {*/
             scene.add_audio_item(dlg.audios[dlg.cursel]);
             this->wnd_audio_list.AddString(dlg.audios[dlg.cursel].device_friendlyname.c_str());
 
@@ -75,8 +75,8 @@ void gui_maindlg::add_new_item(new_item_t item)
 
             // update the selected scene in the pipeline
             this->wnd_parent.ctrl_pipeline.set_active(scene);
-            }
-            j = 1;
+            /*}
+            j = 1;*/
         }
     }
 }

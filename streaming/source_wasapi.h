@@ -127,13 +127,12 @@ public:
 
 class stream_wasapi : public media_stream
 {
+    friend class source_wasapi;
 public:
     /*typedef source_wasapi::scoped_lock scoped_lock;*/
 private:
     source_wasapi_t source;
-
-    // TODO: figure out this design error
-    int last_packet_number;
+    media_buffer_samples_t audio_buffer;
 public:
     explicit stream_wasapi(const source_wasapi_t& source);
 

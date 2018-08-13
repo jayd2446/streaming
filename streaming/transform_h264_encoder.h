@@ -32,7 +32,7 @@ public:
     typedef request_queue<media_sample_view_texture> request_queue;
     typedef request_queue::request_t request_t;
 
-    static const UINT32 frame_width = 1280, frame_height = 720;
+    static const UINT32 frame_width = 1280, frame_height = 1024;
     static const UINT32 frame_rate_num = 60;
     static const UINT32 frame_rate_den = 1;
     static const UINT32 avg_bitrate = 4500 * 1000;

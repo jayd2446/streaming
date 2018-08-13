@@ -59,8 +59,8 @@ HRESULT source_displaycapture5::reinitialize(UINT output_index)
     // get dxgi adapter
     CHECK_HR(hr = dxgidev->GetParent(__uuidof(IDXGIAdapter1), (void**)&dxgiadapter));
 
-    // get the primary output
-    CHECK_HR(hr = dxgiadapter->EnumOutputs(this->output_index, &output));
+    // get the output
+    CHECK_HR(hr = dxgiadapter->EnumOutputs(output_index, &output));
     DXGI_OUTPUT_DESC desc;
     CHECK_HR(hr = output->GetDesc(&desc));
 
@@ -81,8 +81,8 @@ HRESULT source_displaycapture5::initialize(
 {
     HRESULT hr = S_OK;
 
-    this->d3d11dev = d3d11dev;
-    this->d3d11devctx = devctx;
+    this->d3d11dev2 = this->d3d11dev = d3d11dev;
+    this->d3d11devctx2 = this->d3d11devctx = devctx;
     this->output_index = output_index;
 
     CHECK_HR(hr = this->reinitialize(output_index));
@@ -106,20 +106,32 @@ HRESULT source_displaycapture5::initialize(
     const CComPtr<ID3D11Device>& d3d11dev,
     const CComPtr<ID3D11DeviceContext>& devctx)
 {
-    throw std::exception(); // this function is not yet updated
-
     HRESULT hr = S_OK;
     CComPtr<IDXGIAdapter1> dxgiadapter;
+    D3D_FEATURE_LEVEL feature_level;
+    D3D_FEATURE_LEVEL feature_levels[] =
+    {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+        D3D_FEATURE_LEVEL_9_3,
+        D3D_FEATURE_LEVEL_9_2,
+        D3D_FEATURE_LEVEL_9_1,
+    };
 
     CHECK_HR(hr = factory->EnumAdapters1(adapter_index, &dxgiadapter));
     CHECK_HR(hr = D3D11CreateDevice(
         dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
-        NULL, 0, D3D11_SDK_VERSION, &this->d3d11dev2, NULL, &this->d3d11devctx2));
+        feature_levels, ARRAYSIZE(feature_levels), 
+        D3D11_SDK_VERSION, &this->d3d11dev, &feature_level, &this->d3d11devctx));
 
-    this->initialize(output_index, this->d3d11dev2, this->d3d11devctx2);
-    this->d3d11dev = d3d11dev;
-    this->d3d11devctx = devctx;
+    // currently initialization never fails
+    CHECK_HR(hr = this->initialize(output_index, this->d3d11dev, this->d3d11devctx));
+
+    this->d3d11dev2 = d3d11dev;
+    this->d3d11devctx2 = devctx;
 
 done:
     if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
@@ -130,7 +142,7 @@ done:
     else if(FAILED(hr))
         throw std::exception();
 
-    return hr;
+    return S_OK;
 }
 HRESULT source_displaycapture5::setup_initial_data(const media_buffer_texture_t& pointer)
 {
@@ -158,7 +170,7 @@ HRESULT source_displaycapture5::setup_initial_data(const media_buffer_texture_t&
         desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
         desc.CPUAccessFlags = 0;
         desc.MiscFlags = 0;
-        CHECK_HR(hr = this->d3d11dev->CreateTexture2D(&desc, &init_data, &pointer->texture));
+        CHECK_HR(hr = this->d3d11dev2->CreateTexture2D(&desc, &init_data, &pointer->texture));
         break;
     case DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME:
         pointer->texture = NULL;
@@ -238,15 +250,26 @@ capture:
     if(!buffer->texture)
     {
         D3D11_TEXTURE2D_DESC screen_frame_desc;
+        CComPtr<IDXGIResource> idxgiresource;
+        HANDLE handle;
+        const bool same_device = this->d3d11dev2.IsEqualObject(this->d3d11dev);
 
         screen_frame->GetDesc(&screen_frame_desc);
-        if(!this->d3d11dev2)
-            screen_frame_desc.MiscFlags = 0;
-        else
-            screen_frame_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+        screen_frame_desc.MiscFlags = same_device ? 0 : D3D11_RESOURCE_MISC_SHARED;
         screen_frame_desc.Usage = D3D11_USAGE_DEFAULT;
 
-        CHECK_HR(hr = this->d3d11dev->CreateTexture2D(&screen_frame_desc, NULL, &buffer->texture));
+        CHECK_HR(hr = this->d3d11dev->CreateTexture2D(
+            &screen_frame_desc, NULL, &buffer->intermediate_texture));
+        
+        if(!same_device)
+        {
+            CHECK_HR(hr = buffer->intermediate_texture->QueryInterface(&idxgiresource));
+            CHECK_HR(hr = idxgiresource->GetSharedHandle(&handle));
+            CHECK_HR(hr = this->d3d11dev2->OpenSharedResource(
+                handle,  __uuidof(ID3D11Texture2D), (void**)&buffer->texture));
+        }
+        else
+            buffer->texture = buffer->intermediate_texture;
     }
 
     // pointer position update
@@ -269,21 +292,7 @@ capture:
     // copy
     if(frame_info.LastPresentTime.QuadPart != 0)
     {
-        if(!this->d3d11dev2)
-            this->d3d11devctx->CopyResource(buffer->texture, screen_frame);
-        else
-        {
-            CComPtr<ID3D11Texture2D> texture_shared;
-            CComPtr<IDXGIResource> idxgiresource;
-            HANDLE handle;
-
-            // TODO: the texture probably should be opened in d3d10 device
-            CHECK_HR(hr = buffer->texture->QueryInterface(&idxgiresource));
-            CHECK_HR(hr = idxgiresource->GetSharedHandle(&handle));
-            CHECK_HR(hr = this->d3d11dev2->OpenSharedResource(
-                handle, __uuidof(ID3D11Texture2D), (void**)&texture_shared));
-            this->d3d11devctx2->CopyResource(texture_shared, screen_frame);
-        }
+        this->d3d11devctx->CopyResource(buffer->intermediate_texture, screen_frame);
 
         // TODO: the timestamp might not be consecutive
         /*timestamp = clock->performance_counter_to_time_unit(frame_info.LastPresentTime);*/
@@ -328,8 +337,7 @@ stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& s
     const stream_videoprocessor_controller_t& videoprocessor_controller) : 
     source(source),
     buffer(new media_buffer_texture),
-    videoprocessor_controller(videoprocessor_controller),
-    last_packet_number(INVALID_PACKET_NUMBER)
+    videoprocessor_controller(videoprocessor_controller)
 {
     this->capture_frame_callback.Attach(new async_callback_t(&stream_displaycapture5::capture_frame_cb));
 }
@@ -408,11 +416,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
 
 media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp, const media_stream*)
 {
-    if(rp.packet_number == this->last_packet_number)
-        return OK;
-
     this->rp = rp;
-    this->last_packet_number = rp.packet_number;
 
     // dispatch the capture request
     const HRESULT hr = this->capture_frame_callback->mf_put_work_item(

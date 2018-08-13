@@ -29,6 +29,8 @@ public:
 private:
     CComPtr<IDXGIOutput1> output;
     CComPtr<IDXGIOutputDuplication> output_duplication;
+    // first devs are for the output duplicator,
+    // second devs for the rendering operations in the pipeline;
     CComPtr<ID3D11Device> d3d11dev, d3d11dev2;
     CComPtr<ID3D11DeviceContext> d3d11devctx, d3d11devctx2;
     UINT output_index;
@@ -90,8 +92,6 @@ private:
 
     stream_displaycapture5_pointer_t pointer_stream;
     request_packet rp;
-    // TODO: figure out this design error
-    int last_packet_number;
 
     void capture_frame_cb(void*);
 public:

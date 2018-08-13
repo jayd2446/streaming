@@ -178,7 +178,8 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-stream_preview2::stream_preview2(const sink_preview2_t& sink) : sink(sink)
+stream_preview2::stream_preview2(const sink_preview2_t& sink) : 
+    sink(sink), media_stream(media_stream::PROCESS)
 {
 }
 

@@ -67,7 +67,8 @@ stream_audio_worker_t sink_audio::create_worker_stream()
 
 
 stream_audio::stream_audio(const sink_audio_t& sink) : 
-    sink(sink), unavailable(0), running(false), media_stream_clock_sink(sink.get())
+    sink(sink), unavailable(0), running(false), media_stream_clock_sink(sink.get()), ran_once(false),
+    stopped(false)
 {
 }
 
@@ -81,6 +82,7 @@ void stream_audio::on_stream_start(time_unit t)
     //rp.timestamp = t;
     
     this->running = true;
+    this->ran_once = true;
     /*this->dispatch_request(rp);*/
 }
 
@@ -95,13 +97,16 @@ void stream_audio::on_stream_stop(time_unit t)
 
     //this->dispatch_request(rp);
     this->running = false;
+    this->stopped = true;
 }
 
 void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
 {
     assert_(this->unavailable <= 240);
-    if(!this->running)
-        return;
+    /*if(!this->running)
+        return;*/
+
+    assert_(this->running);
 
     const int j = no_drop ? 0 : 1;
 
@@ -116,6 +121,9 @@ void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
             result_t res = (*it)->request_sample(rp, this);
             if(res == FATAL_ERROR)
                 std::cout << "couldn't dispatch request on stream audio" << std::endl;
+
+            /*assert_(!no_drop || this->stopped);*/
+
             return;
         }
     }

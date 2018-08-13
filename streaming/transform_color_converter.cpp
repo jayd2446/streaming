@@ -97,7 +97,7 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
         desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
         CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
             &desc, NULL, &this->output_buffer->texture));
-        CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));
+        /*CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));*/
 
         // create output view
         D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;

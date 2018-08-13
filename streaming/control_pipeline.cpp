@@ -11,7 +11,7 @@
 control_pipeline::control_pipeline() : 
     preview_wnd(NULL),
     scene_active(NULL),
-    d3d11dev_adapter(0),
+    d3d11dev_adapter(1),
     stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL)),
     recording_state_change(false),
     context_mutex(new std::recursive_mutex)
@@ -21,14 +21,25 @@ control_pipeline::control_pipeline() :
 
     HRESULT hr = S_OK;
     CComPtr<IDXGIAdapter1> dxgiadapter;
+    D3D_FEATURE_LEVEL feature_levels[] =
+    {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+        D3D_FEATURE_LEVEL_9_3,
+        D3D_FEATURE_LEVEL_9_2,
+        D3D_FEATURE_LEVEL_9_1,
+    };
+    D3D_FEATURE_LEVEL feature_level;
 
     CHECK_HR(hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&this->dxgifactory));
-    CHECK_HR(hr = this->dxgifactory->EnumAdapters1(0, &dxgiadapter));
+    CHECK_HR(hr = this->dxgifactory->EnumAdapters1(this->d3d11dev_adapter, &dxgiadapter));
     CHECK_HR(hr = D3D11CreateDevice(
         dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
-        NULL, 0, D3D11_SDK_VERSION, &this->d3d11dev, 
-        NULL, &this->devctx));
+        feature_levels, ARRAYSIZE(feature_levels), D3D11_SDK_VERSION, &this->d3d11dev, 
+        &feature_level, &this->devctx));
 
     this->item_mpeg_sink.null_file = true;
 
@@ -179,12 +190,19 @@ sink_mpeg2_t control_pipeline::create_mpeg_sink(
         if(this->mpeg_sink.first.null_file == null_file)
             return this->mpeg_sink.second;
     }
+    else
+    {
+        sink_mpeg2_t mpeg_sink(new sink_mpeg2(this->session, this->audio_session));
+        mpeg_sink->initialize(null_file, this->stopped_signal, video_input_type, audio_input_type);
+        return mpeg_sink;
+    }
 
-    sink_mpeg2_t mpeg_sink(new sink_mpeg2(this->session, this->audio_session));
-    mpeg_sink->initialize(
+    // mpeg sink is simply reinitialized with the new output
+    this->mpeg_sink.second->initialize(
         null_file, this->stopped_signal,
         video_input_type, audio_input_type);
-    return mpeg_sink;
+
+    return this->mpeg_sink.second;
 }
 
 sink_audio_t control_pipeline::create_audio_sink(bool null_file, const output_file_t& output)
@@ -322,7 +340,8 @@ void control_pipeline::build_audio_topology_branch(const media_topology_t& audio
     }
     else
     {
-        media_stream_t encoder_stream = this->aac_encoder_transform->create_stream();
+        media_stream_t encoder_stream = 
+            this->aac_encoder_transform->create_stream(audio_topology->get_clock());
 
         encoder_stream->connect_streams(audiomixer_stream, audio_topology);
         worker_stream->connect_streams(encoder_stream, audio_topology);

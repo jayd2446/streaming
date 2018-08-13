@@ -21,105 +21,98 @@ void transform_aac_encoder::processing_cb(void*)
 
     while(this->requests.pop(request))
     {
-        if(request.sample_view.buffer->samples.empty())
+        media_sample_audio& audio = request.sample_view.audio;
+        media_sample_aac out_audio(media_buffer_samples_t(new media_buffer_samples));
+        out_audio.bit_depth = audio.bit_depth;
+        out_audio.channels = audio.channels;
+        out_audio.sample_rate = audio.sample_rate;
+
+        const double sample_duration = SECOND_IN_TIME_UNIT / (double)audio.sample_rate;
+
+        assert_(audio.bit_depth == (sizeof(bit_depth_t) * 8) &&
+            audio.channels == channels &&
+            audio.sample_rate == sample_rate);
+
+        CComPtr<IMFSample> out_sample;
+        CComPtr<IMFMediaBuffer> out_buffer;
+        auto reset_sample = [&out_sample, &out_buffer, this]()
         {
-            /*lock.unlock();*/
-            this->session->give_sample(request.stream, request.sample_view, request.rp, false);
-            /*lock.lock();*/
-        }
-        else
+            HRESULT hr = S_OK;
+            CHECK_HR(hr = MFCreateSample(&out_sample));
+            CHECK_HR(hr = MFCreateMemoryBuffer(
+                this->output_stream_info.cbSize, &out_buffer));
+            CHECK_HR(hr = out_sample->AddBuffer(out_buffer));
+
+        done:
+            return hr;
+        };
+        auto process_sample = [&out_sample, &out_buffer, &reset_sample, &out_audio, this]()
         {
-            /*std::cout << "processing.." << std::endl;*/
-            media_sample_audio& audio_sample = request.sample_view;
-            /*media_buffer_samples_t samples_buffer = 
-                request.sample_view->get_buffer<media_buffer_samples>();*/
-            /*media_buffer_samples_t output_samples_buffer(new media_buffer_samples);*/
-            media_sample_aac audio(media_buffer_samples_t(new media_buffer_samples));
-            audio.bit_depth = audio_sample.bit_depth;
-            audio.channels = audio_sample.channels;
-            audio.sample_rate = audio_sample.sample_rate;
+            HRESULT hr = S_OK;
 
-            const double sample_duration = SECOND_IN_TIME_UNIT / (double)audio_sample.sample_rate;
+            out_audio.buffer->samples.push_back(out_sample);
+            out_sample = NULL;
+            out_buffer = NULL;
 
-            assert_(audio_sample.bit_depth == (sizeof(bit_depth_t) * 8) &&
-                audio_sample.channels == channels &&
-                audio_sample.sample_rate == sample_rate);
+            CHECK_HR(hr = reset_sample());
+        done:
+            return hr;
+        };
+        auto drain_all = [&, this]()
+        {
+            std::cout << "drain on aac encoder" << std::endl;
 
-            CComPtr<IMFSample> out_sample;
-            CComPtr<IMFMediaBuffer> out_buffer;
-            auto reset_sample = [&out_sample, &out_buffer, this]()
-            {
-                HRESULT hr = S_OK;
-                CHECK_HR(hr = MFCreateSample(&out_sample));
-                CHECK_HR(hr = MFCreateMemoryBuffer(
-                    this->output_stream_info.cbSize, &out_buffer));
-                CHECK_HR(hr = out_sample->AddBuffer(out_buffer));
+            HRESULT hr = S_OK;
+            CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
+            while(this->process_output(out_sample))
+                CHECK_HR(hr = process_sample());
 
-            done:
-                if(FAILED(hr))
-                    throw std::exception();
-            };
+        done:
+            return hr;
+        };
 
-            reset_sample();
-            for(auto it = audio_sample.buffer->samples.begin(); 
-                it != audio_sample.buffer->samples.end(); it++)
-            {
-                // convert the frame units to time units
-                frame_unit ts, dur;
-                CHECK_HR(hr = (*it)->GetSampleTime(&ts));
-                CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
+        CHECK_HR(hr = reset_sample());
+        for(auto it = audio.buffer->samples.begin(); it != audio.buffer->samples.end(); it++)
+        {
+            // convert the frame units to time units
+            frame_unit ts, dur;
+            CHECK_HR(hr = (*it)->GetSampleTime(&ts));
+            CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
 
 #ifdef _DEBUG
-                // TODO: this might trigger if the ending request times differ for the mixer streams
-                if(ts < this->last_time_stamp)
-                    DebugBreak();
-                this->last_time_stamp = ts + dur;
+            if(ts < this->last_time_stamp)
+                DebugBreak();
+            this->last_time_stamp = ts + dur;
 #endif
 
-                ts = (time_unit)(ts * sample_duration);
-                dur = (time_unit)(dur * sample_duration);
-                CHECK_HR(hr = (*it)->SetSampleTime(ts));
-                CHECK_HR(hr = (*it)->SetSampleDuration(dur));
+            ts = (time_unit)(ts * sample_duration);
+            dur = (time_unit)(dur * sample_duration);
+            CHECK_HR(hr = (*it)->SetSampleTime(ts));
+            CHECK_HR(hr = (*it)->SetSampleDuration(dur));
                
-                /*std::cout << "ts: " << ts << ", dur+ts: " << ts + dur << std::endl;*/
+            /*std::cout << "ts: " << ts << ", dur+ts: " << ts + dur << std::endl;*/
 
-            back:
-                hr = this->encoder->ProcessInput(this->input_id, *it, 0);
-                if(hr == MF_E_NOTACCEPTING)
-                {
-                    if(!this->process_output(out_sample))
-                        goto back;
-                    
-                    audio.buffer->samples.push_back(out_sample);
-
-                    // reset the out sample
-                    out_sample = NULL;
-                    out_buffer = NULL;
-                    reset_sample();
-                    goto back;
-                }
-                else
-                    CHECK_HR(hr)
-            }
-
-            this->session->give_sample(request.stream, audio, request.rp, false);
-            /*if(audio.buffer->samples.empty())
+        back:
+            hr = this->encoder->ProcessInput(this->input_id, *it, 0);
+            if(hr == MF_E_NOTACCEPTING)
             {
-                lock.unlock();
-                media_sample_view_t sample_view;
-                this->session->give_sample(request.stream, sample_view, request.rp, false);
-                lock.lock();
+                if(this->process_output(out_sample))
+                    CHECK_HR(hr = process_sample());
+
+                goto back;
             }
             else
-            {
-                media_sample_view_t sample_view(new media_sample_view(output_samples_buffer));
-                this->session->give_sample(request.stream, sample_view, request.rp, false);
-            }*/
+                CHECK_HR(hr)
         }
+
+        if(request.sample_view.drain)
+            CHECK_HR(hr = drain_all());
+
+        this->session->give_sample(request.stream, out_audio, request.rp, false);
     }
 
 done:
-    if(FAILED(hr) && hr != MF_E_NOTACCEPTING)
+    if(FAILED(hr))
         throw std::exception();
 }
 
@@ -226,9 +219,13 @@ done:
         throw std::exception();
 }
 
-media_stream_t transform_aac_encoder::create_stream()
+media_stream_t transform_aac_encoder::create_stream(presentation_clock_t& clock)
 {
-    return media_stream_t(new stream_aac_encoder(this->shared_from_this<transform_aac_encoder>()));
+    media_stream_clock_sink_t stream(
+        new stream_aac_encoder(this->shared_from_this<transform_aac_encoder>()));
+    stream->register_sink(clock);
+
+    return stream;
 }
 
 
@@ -237,8 +234,20 @@ media_stream_t transform_aac_encoder::create_stream()
 /////////////////////////////////////////////////////////////////
 
 
-stream_aac_encoder::stream_aac_encoder(const transform_aac_encoder_t& transform) : transform(transform)
+stream_aac_encoder::stream_aac_encoder(const transform_aac_encoder_t& transform) : 
+    media_stream_clock_sink(transform.get()),
+    transform(transform),
+    drain_point(std::numeric_limits<time_unit>::min())
 {
+}
+
+void stream_aac_encoder::on_component_start(time_unit)
+{
+}
+
+void stream_aac_encoder::on_component_stop(time_unit t)
+{
+    this->drain_point = t;
 }
 
 media_stream::result_t stream_aac_encoder::request_sample(request_packet& rp, const media_stream*)
@@ -253,7 +262,8 @@ media_stream::result_t stream_aac_encoder::process_sample(
 
     transform_aac_encoder::request_t request;
     request.rp = rp;
-    request.sample_view = audio_sample;
+    request.sample_view.audio = audio_sample;
+    request.sample_view.drain = (this->drain_point == rp.request_time);
     request.stream = this;
 
     this->transform->requests.push(request);

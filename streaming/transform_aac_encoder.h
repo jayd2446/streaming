@@ -14,8 +14,14 @@ class transform_aac_encoder : public media_source
 {
     friend class stream_aac_encoder;
 public:
+    struct packet
+    {
+        media_sample_audio audio;
+        bool drain;
+    };
+
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef request_queue<media_sample_audio> request_queue;
+    typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;
 
     static const UINT32 sample_rate = 44100;
@@ -51,15 +57,20 @@ public:
     explicit transform_aac_encoder(const media_session_t& session);
 
     void initialize(bitrate_t bitrate = rate_128);
-    media_stream_t create_stream();
+    media_stream_t create_stream(presentation_clock_t&);
 };
 
 typedef std::shared_ptr<transform_aac_encoder> transform_aac_encoder_t;
 
-class stream_aac_encoder : public media_stream
+class stream_aac_encoder : public media_stream_clock_sink
 {
 private:
     transform_aac_encoder_t transform;
+
+    time_unit drain_point;
+
+    void on_component_start(time_unit);
+    void on_component_stop(time_unit);
 public:
     explicit stream_aac_encoder(const transform_aac_encoder_t& transform);
 

@@ -133,7 +133,8 @@ void control_scene::build_topology(bool reset)
     stream_audio_t audio_stream = 
         this->pipeline.audio_sink.second->create_stream(this->audio_topology->get_clock());
     stream_mpeg2_t mpeg_stream = 
-        this->pipeline.mpeg_sink.second->create_stream(this->video_topology->get_clock(), audio_stream);
+        this->pipeline.mpeg_sink.second->create_stream(
+        this->video_topology->get_clock(), audio_stream);
 
     /*this->pipeline.mpeg_sink.second->set_new_audio_topology(audio_stream, this->audio_topology);*/
     mpeg_stream->set_pull_rate(
@@ -174,8 +175,8 @@ void control_scene::build_topology(bool reset)
                             videoprocessor_stream_controller(new stream_videoprocessor_controller);
                         stream_videoprocessor_controller::params_t params;
                         params.source_rect.top = params.source_rect.left = 0;
-                        params.source_rect.right = 1920;
-                        params.source_rect.bottom = 1080;
+                        params.source_rect.right = 1280;//1920;
+                        params.source_rect.bottom = 1024;//1080;
                         params.dest_rect = params.source_rect;
                         params.enable_alpha = true;
                         videoprocessor_stream_controller->set_params(params);

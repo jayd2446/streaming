@@ -28,8 +28,20 @@ public:
         // the topology encountered an unrecoverable error
         FATAL_ERROR
     };
+    // stream type is used to enable multiple outputs from a node while
+    // maintaining single request guarantee in the topology
+    enum stream_t
+    {
+        PROCESS_REQUEST,
+        PROCESS
+    };
+private:
+    const stream_t stream_type;
 public:
+    explicit media_stream(stream_t = PROCESS_REQUEST);
     virtual ~media_stream() {}
+
+    stream_t get_stream_type() const {return this->stream_type;}
 
     // throws on error
     virtual void connect_streams(const media_stream_t& from, const media_topology_t&);

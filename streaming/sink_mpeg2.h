@@ -23,15 +23,18 @@ typedef std::shared_ptr<stream_mpeg2> stream_mpeg2_t;
 typedef stream_worker<sink_mpeg2_t> stream_mpeg2_worker;
 typedef std::shared_ptr<stream_mpeg2_worker> stream_mpeg2_worker_t;
 
-class control_pipeline;
-
 class sink_mpeg2 : public media_sink
 {
     friend class stream_mpeg2;
 public:
+    struct packet
+    {
+        output_file_t output;
+        media_sample_view_h264 sample;
+    };
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<sink_mpeg2> async_callback_t;
-    typedef request_queue<media_sample_view_h264> request_queue;
+    typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;
 private:
     HANDLE stopped_signal;
@@ -41,9 +44,10 @@ private:
     std::recursive_mutex topology_switch_mutex;
 
     media_session_t audio_session;
+    media_topology_t pending_audio_topology;
 
     output_file_t file_output;
-    std::recursive_mutex writing_mutex;
+    std::mutex writing_mutex;
 
     void write_packets();
     void write_packets_cb(void*);
@@ -53,6 +57,7 @@ public:
 
     const output_file_t& get_output() const {return this->file_output;}
 
+    // TODO: initialize fps
     void initialize(
         bool null_file,
         HANDLE stopped_signal,
@@ -82,10 +87,8 @@ private:
 
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_mpeg2_worker_t> worker_streams;
-
-    // use weak ptr because there might be a chance where on stream start/stop won't be called
     stream_audio_t audio_sink_stream;
-    std::weak_ptr<stream_audio> audio_sink_stream_weak;
+    output_file_t output;
 
     // for debug
     int unavailable;
@@ -105,7 +108,7 @@ private:
 public:
     stream_h264_encoder_t encoder_stream;
 
-    stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&);
+    stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&, const output_file_t&);
     ~stream_mpeg2();
 
     void add_worker_stream(const stream_mpeg2_worker_t& worker_stream);

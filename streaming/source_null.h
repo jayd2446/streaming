@@ -22,6 +22,7 @@ class stream_null : public media_stream
 {
 private:
     source_null_t source;
+    media_buffer_samples_t audio_buffer;
 public:
     explicit stream_null(const source_null_t& source);
 

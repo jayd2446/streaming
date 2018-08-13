@@ -1,5 +1,4 @@
 #include "sink_mpeg2.h"
-#include "control_pipeline.h"
 #include <iostream>
 #include <Mferror.h>
 
@@ -32,7 +31,7 @@ void sink_mpeg2::write_packets()
 
 void sink_mpeg2::write_packets_cb(void*)
 {
-    std::unique_lock<std::recursive_mutex> lock(this->writing_mutex, std::try_to_lock);
+    std::unique_lock<std::mutex> lock(this->writing_mutex, std::try_to_lock);
     if(!lock.owns_lock())
         return;
 
@@ -43,11 +42,12 @@ void sink_mpeg2::write_packets_cb(void*)
         /*if(!request.sample_view)
             continue;*/
 
-        media_buffer_h264_t buffer = request.sample_view.sample.buffer;
+        media_buffer_h264_t buffer = request.sample_view.sample.sample.buffer;
         if(!buffer)
             continue;
         
-        this->file_output->write_sample(true, buffer->sample);
+        request.sample_view.output->write_sample(true, buffer->sample);
+        /*this->file_output->write_sample(true, buffer->sample);*/
     }
 }
 
@@ -66,7 +66,8 @@ void sink_mpeg2::switch_topologies(
 {
     scoped_lock lock(this->topology_switch_mutex);
     this->session->switch_topology(video_topology);
-    this->audio_session->switch_topology(audio_topology);
+    this->pending_audio_topology = audio_topology;
+    /*this->audio_session->switch_topology(audio_topology);*/
 }
 
 void sink_mpeg2::start_topologies(
@@ -83,9 +84,11 @@ void sink_mpeg2::start_topologies(
     this->audio_session->start_playback(audio_topology, t);
 }
 
-stream_mpeg2_t sink_mpeg2::create_stream(presentation_clock_t& clock, const stream_audio_t& audio_stream)
+stream_mpeg2_t sink_mpeg2::create_stream(
+    presentation_clock_t& clock, const stream_audio_t& audio_stream)
 {
-    stream_mpeg2_t stream(new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream));
+    stream_mpeg2_t stream(
+        new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream, this->file_output));
     stream->register_sink(clock);
 
     return stream;
@@ -102,10 +105,11 @@ stream_mpeg2_worker_t sink_mpeg2::create_worker_stream()
 /////////////////////////////////////////////////////////////////
 
 
-stream_mpeg2::stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream) : 
-    sink(sink), unavailable(0), running(false),
+stream_mpeg2::stream_mpeg2(
+    const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream, const output_file_t& output) : 
+    output(output), sink(sink), unavailable(0), running(false),
     media_stream_clock_sink(sink.get()),
-    audio_sink_stream_weak(audio_sink_stream)
+    audio_sink_stream(audio_sink_stream)
 {
     HRESULT hr = S_OK;
     DWORD task_id;
@@ -137,9 +141,6 @@ void stream_mpeg2::on_stream_start(time_unit t)
     // the output will modify the sample timestamps so that they start at 0
     this->sink->get_output()->set_initial_time(t);
 
-    this->audio_sink_stream = this->audio_sink_stream_weak.lock();
-    /*assert_(this->audio_sink_stream);*/
-
     this->running = true;
     this->schedule_new(t);
 }
@@ -150,11 +151,11 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     this->clear_queue();
 
     // the audio topology will be switched in this call
-    if(this->audio_sink_stream)
-        this->audio_sink_stream->request_sample_last(t);
+    assert_(this->sink->pending_audio_topology || !this->sink->session->started());
+    this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
+    this->sink->pending_audio_topology = NULL;
 
-    // the audio sink stream must be set to null so it won't keep sink and topology alive
-    this->audio_sink_stream = NULL;
+    this->audio_sink_stream->request_sample_last(t);
 }
 
 void stream_mpeg2::scheduled_callback(time_unit due_time)
@@ -176,8 +177,7 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     this->dispatch_request(rp);
     if(this->running)
     {
-        if(this->audio_sink_stream)
-            this->audio_sink_stream->request_sample(rp2);
+        this->audio_sink_stream->request_sample(rp2);
         this->schedule_new(due_time);
     }
 }
@@ -240,9 +240,6 @@ void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
         }
     }
 
-    // TODO: it must be ensured that the audio sink fetches the last sample on topology switch
-    // (it must use an extra set of streams for the topology switch call)
-
     // TODO: remove no drop since clock start and clock stop requests cannot
     // be dropped anymore
     if(no_drop)
@@ -269,8 +266,9 @@ media_stream::result_t stream_mpeg2::process_sample(
     // add h264 samples to write queue
     sink_mpeg2::request_t request;
     request.rp = rp;
+    request.sample_view.output = this->output;
     if(sample_view_h264)
-        request.sample_view = *sample_view_h264;
+        request.sample_view.sample = *sample_view_h264;
     request.stream = this;
     this->sink->write_queue.push(request);
 

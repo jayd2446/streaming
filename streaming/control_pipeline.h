@@ -13,6 +13,7 @@
 #include "sink_preview2.h"
 #include "source_wasapi.h"
 #include "source_displaycapture5.h"
+#include "output_file.h"
 #include <atlbase.h>
 #include <d3d11.h>
 #include <dxgi.h>

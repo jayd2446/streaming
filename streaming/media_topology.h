@@ -34,7 +34,9 @@ public:
     // requires streams to clone themselves to a new stream
     explicit media_topology(const presentation_time_source_t&);
 
-    bool connect_streams(const media_stream_t& stream, const media_stream_t& stream2);
+    // only one request stream connection is added for a node;
+    // subsequent connections are discarded
+    void connect_streams(const media_stream_t& stream, const media_stream_t& stream2);
     presentation_clock_t get_clock() const {return this->clock;}
     int get_first_packet_number() const {return this->first_packet_number;}
 };

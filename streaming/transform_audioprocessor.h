@@ -62,6 +62,7 @@ public:
 private:
     transform_audioprocessor_t transform;
     /*CComPtr<async_callback_t> process_callback;*/
+    media_buffer_samples_t audio_buffer;
 
     time_unit drain_point;
 

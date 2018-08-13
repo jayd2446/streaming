@@ -6,12 +6,12 @@
 #include <algorithm>
 #include <iostream>
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
-//void CHECK_HR(HRESULT hr)
-//{
-//    if(FAILED(hr))
-//        throw std::exception();
-//}
+//#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+void CHECK_HR(HRESULT hr)
+{
+    if(FAILED(hr))
+        throw std::exception();
+}
 #ifdef min
 #undef min
 #endif
@@ -121,11 +121,11 @@ stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& t
         desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
         CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
             &desc, NULL, &this->output_buffer[0]->texture));
-        CHECK_HR(hr = this->output_buffer[0]->texture->QueryInterface(&this->output_buffer[0]->resource));
+        /*CHECK_HR(hr = this->output_buffer[0]->texture->QueryInterface(&this->output_buffer[0]->resource));*/
 
         CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
             &desc, NULL, &this->output_buffer[1]->texture));
-        CHECK_HR(hr = this->output_buffer[1]->texture->QueryInterface(&this->output_buffer[1]->resource));
+        /*CHECK_HR(hr = this->output_buffer[1]->texture->QueryInterface(&this->output_buffer[1]->resource));*/
 
         // create output view
         D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;

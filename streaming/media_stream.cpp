@@ -3,6 +3,10 @@
 #include "presentation_clock.h"
 #include "assert.h"
 
+media_stream::media_stream(stream_t stream_type) : stream_type(stream_type)
+{
+}
+
 void media_stream::connect_streams(const media_stream_t& from, const media_topology_t& topology)
 {
     topology->connect_streams(from, this->shared_from_this<media_stream>());
