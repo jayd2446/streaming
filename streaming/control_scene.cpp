@@ -1,6 +1,6 @@
 #include "control_scene.h"
 #include "control_pipeline.h"
-#include "source_null.h"
+#include "source_empty.h"
 #include "transform_h264_encoder.h"
 #include "assert.h"
 #include <functiondiscoverykeys_devpkey.h>
@@ -175,8 +175,8 @@ void control_scene::build_topology(bool reset)
                             videoprocessor_stream_controller(new stream_videoprocessor_controller);
                         stream_videoprocessor_controller::params_t params;
                         params.source_rect.top = params.source_rect.left = 0;
-                        params.source_rect.right = 1280;//1920;
-                        params.source_rect.bottom = 1024;//1080;
+                        params.source_rect.right = 1920;
+                        params.source_rect.bottom = 1080;
                         params.dest_rect = params.source_rect;
                         params.enable_alpha = true;
                         videoprocessor_stream_controller->set_params(params);
@@ -233,6 +233,13 @@ void control_scene::build_topology(bool reset)
                     throw std::exception();
                 }
             }
+            if(this->video_items.empty())
+            {
+                source_empty_video_t empty_source(new source_empty_video(this->pipeline.audio_session));
+                media_stream_t empty_stream = empty_source->create_stream();
+                videoprocessor_stream->add_input_stream(empty_stream.get(), NULL);
+                videoprocessor_stream->connect_streams(empty_stream, this->video_topology);
+            }
 
             // set the pipeline specific part of the topology
             this->pipeline.build_video_topology_branch(
@@ -279,9 +286,9 @@ void control_scene::build_topology(bool reset)
             }
             if(this->audio_items.empty())
             {
-                source_null_t null_source(new source_null(this->pipeline.audio_session));
-                media_stream_t null_stream = null_source->create_stream();
-                audiomixer_stream->connect_streams(null_stream, this->audio_topology);
+                source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
+                media_stream_t empty_stream = empty_source->create_stream();
+                audiomixer_stream->connect_streams(empty_stream, this->audio_topology);
             }
 
             // set the pipeline specific part of the topology

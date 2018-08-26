@@ -37,11 +37,10 @@ class stream_color_converter : public media_stream
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<stream_color_converter> async_callback_t;
-    struct packet {request_packet rp; media_sample_view_texture sample_view;};
+    struct packet {request_packet rp; media_sample_texture sample_view;};
 private:
     transform_color_converter_t transform;
-    CComPtr<async_callback_t> processing_callback;
-    media_buffer_texture_t output_buffer, output_buffer_null;
+    media_buffer_texture_t output_buffer;
     CComPtr<ID3D11VideoProcessorOutputView> output_view;
     CComPtr<ID3D11VideoProcessor> videoprocessor;
     packet pending_packet;

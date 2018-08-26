@@ -57,22 +57,22 @@ stream_mpeg_t sink_mpeg::create_worker_stream()
     return stream_mpeg_t(new stream_mpeg(this->shared_from_this<sink_mpeg>()));
 }
 
-void sink_mpeg::new_packet()
+void sink_mpeg::new_packet(int audio)
 {
     std::unique_lock<std::recursive_mutex> lock(this->writing_mutex, std::try_to_lock);
     if(!lock.owns_lock())
         return;
 
-    std::unique_lock<std::recursive_mutex> packets_lock(this->packets_mutex);
-    while(!this->packets.empty())
+    std::unique_lock<std::recursive_mutex> packets_lock(this->packets_mutex[audio]);
+    while(!this->packets[audio].empty())
     {
         packet p;
-        auto first_item = this->packets.begin();
+        auto first_item = this->packets[audio].begin();
         if(!first_item->second.sample_view)
             return;
 
         p = first_item->second;
-        this->packets.erase(first_item);
+        this->packets[audio].erase(first_item);
 
         packets_lock.unlock();
 
@@ -167,40 +167,11 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-stream_mpeg::stream_mpeg(const sink_mpeg_t& sink) : sink(sink), available(true)
-{
-}
-
-media_stream::result_t stream_mpeg::request_sample(request_packet& rp, const media_stream*)
-{
-    if(!this->sink->session->request_sample(this, rp, true))
-    {
-        this->available = true;
-        return FATAL_ERROR;
-    }
-    return OK;
-}
-
-media_stream::result_t stream_mpeg::process_sample(
-    const media_sample_view_t& sample_view, request_packet& rp, const media_stream*)
-{
-    this->available = true;
-
-    if(!this->sink->session->give_sample(this, sample_view, rp, false))
-        return FATAL_ERROR;
-    return OK;
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
 stream_mpeg_host::stream_mpeg_host(const sink_mpeg_t& sink) : 
     sink(sink), 
     running(false),
-    unavailable(0)
+    unavailable(0),
+    discard(false)
 {
 }
 
@@ -211,21 +182,21 @@ void stream_mpeg_host::set_audio_session(time_unit time_point)
         throw std::exception();
 
     media_topology_t topology(new media_topology(clock->get_time_source()));
-    stream_mpeg_host_t mpeg_stream_audio = this->sink->mpeg_sink->create_host_stream(topology->get_clock());
-    mpeg_stream_audio->set_pull_rate(48000*1000/1024, 1000*2);
+    this->mpeg_stream_audio = this->sink->mpeg_sink->create_host_stream(topology->get_clock());
+    /*this->mpeg_stream_audio->set_pull_rate(48000*1000/1024, 1000*2);*/
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
         stream_mpeg_t worker_stream_audio = this->sink->mpeg_sink->create_worker_stream();
         media_stream_t aac_encoder_stream = this->sink->aac_encoder_transform->create_stream();
-        media_stream_t audio_source_stream = this->sink->loopback_source->create_stream(topology->get_clock());
+        media_stream_t audio_source_stream = this->sink->loopback_source->create_stream();
 
-        mpeg_stream_audio->set_encoder_stream(std::dynamic_pointer_cast<stream_aac_encoder>(aac_encoder_stream));
-        mpeg_stream_audio->add_worker_stream(worker_stream_audio);
+       this-> mpeg_stream_audio->set_encoder_stream(std::dynamic_pointer_cast<stream_aac_encoder>(aac_encoder_stream));
+       this->mpeg_stream_audio->add_worker_stream(worker_stream_audio);
 
         topology->connect_streams(audio_source_stream, aac_encoder_stream);
         topology->connect_streams(aac_encoder_stream, worker_stream_audio);
-        topology->connect_streams(worker_stream_audio, mpeg_stream_audio);
+        topology->connect_streams(worker_stream_audio, this->mpeg_stream_audio);
     }
 
     if(!this->sink->audio_session->switch_topology_immediate(topology, time_point))
@@ -238,8 +209,12 @@ bool stream_mpeg_host::on_clock_start(time_unit t)
 
     if(!this->encoder_aac_stream)
         this->set_audio_session(t); // switch the topology in the audio session
+    if(this->encoder_aac_stream)
+        // discard all the previous samples up to this point
+        this->discard = true;
     this->running = true;
-    this->scheduled_callback(t);
+    if(!this->encoder_aac_stream)
+        this->scheduled_callback(t);
     return true;
 }
 
@@ -248,10 +223,8 @@ void stream_mpeg_host::on_clock_stop(time_unit t)
     /*std::cout << "playback stopped" << ", " << (ptrdiff_t)this << std::endl;*/
     if(this->encoder_aac_stream)
     {
-        // TODO: add preroll clock sink notification
-
-        // TODO: set the audio cut off point for the incoming packets
-        /*DebugBreak();*/
+        // collect the remaining samples up to clock stop point
+        this->scheduled_callback(t);
     }
 
     this->running = false;
@@ -268,10 +241,13 @@ void stream_mpeg_host::scheduled_callback(time_unit due_time)
 
     // initiate the request
     // (the initial request call from sink must be synchronized)
+    if(!this->encoder_aac_stream)
+        this->mpeg_stream_audio->scheduled_callback(due_time);
     this->dispatch_request(due_time);
 
     // schedule a new time
-    this->schedule_new(due_time);
+    if(!this->encoder_aac_stream)
+        this->schedule_new(due_time);
 }
 
 bool bb = true;
@@ -337,6 +313,16 @@ void stream_mpeg_host::dispatch_request(time_unit request_time)
     request_packet rp;
     rp.request_time = request_time;
     rp.timestamp = request_time;
+    if(this->discard)
+    {
+        this->discard = false;
+        rp.flags = AUDIO_DISCARD_PREVIOUS_SAMPLES;
+    }
+
+    /*if(!this->encoder_aac_stream)
+        return;*/
+
+    int audio = this->encoder_aac_stream ? 1 : 0;
 
     /*if(request_time >= (SECOND_IN_TIME_UNIT / 2))
     {*/
@@ -352,10 +338,10 @@ void stream_mpeg_host::dispatch_request(time_unit request_time)
 
                 // add a packet to the packets queue
                 {
-                    scoped_lock lock(this->sink->packets_mutex);
+                    scoped_lock lock(this->sink->packets_mutex[audio]);
                     sink_mpeg::packet p;
                     p.rp = rp;
-                    this->sink->packets[rp.request_time] = p;
+                    this->sink->packets[audio][rp.request_time] = p;
                 }
 
                 // TODO: change fatal error to topology switch;
@@ -368,7 +354,7 @@ void stream_mpeg_host::dispatch_request(time_unit request_time)
             }
         }
 
-        std::cout << "--SAMPLE REQUEST DROPPED IN SINK_MPEG--" << std::endl;
+        /*std::cout << "--SAMPLE REQUEST DROPPED IN SINK_MPEG--" << std::endl;*/
         this->unavailable++;
     /*}*/
 }
@@ -379,9 +365,9 @@ void stream_mpeg_host::add_worker_stream(const stream_mpeg_t& worker_stream)
     this->worker_streams.push_back(worker_stream);
 }
 
-media_stream::result_t stream_mpeg_host::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_mpeg_host::request_sample(request_packet&, const media_stream*)
 {
-    assert(false);
+    assert_(false);
     return OK;
 }
 
@@ -390,9 +376,15 @@ media_stream::result_t stream_mpeg_host::process_sample(
 {
     HRESULT hr = S_OK;
 
-    std::unique_lock<std::recursive_mutex> lock(this->sink->packets_mutex);
-    auto it = this->sink->packets.find(rp.request_time);
-    assert(it != this->sink->packets.end());
+    int audio = 0;
+    if(!sample_view || sample_view->get_buffer<media_buffer_samples>())
+        audio = 1;
+
+    std::unique_lock<std::recursive_mutex> lock(this->sink->packets_mutex[audio]);
+    auto it = this->sink->packets[audio].find(rp.request_time);
+    /*if(it == this->sink->packets[audio].end())
+        DebugBreak();*/
+    /*assert_(it != this->sink->packets.end());*/
 
     // TODO: the source should just stall if all the input samples are occupied
     // (or maybe not, because it seems that the mpeg file sink takes the input sample 
@@ -403,19 +395,24 @@ media_stream::result_t stream_mpeg_host::process_sample(
     // the encoder will just give an empty texture sample if the input sample was empty
     if(!sample_view || sample_view->get_buffer<media_buffer_texture>())
     {
-        this->sink->packets.erase(it);
+        if(it != this->sink->packets[audio].end())
+            this->sink->packets[audio].erase(it);
         /*CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(0, rp.request_time));*/
     }
     else if(sample_view->get_buffer<media_buffer_samples>() || 
         sample_view->get_buffer<media_buffer_memorybuffer>())
     {
-        it->second.sample_view = sample_view;
-        lock.unlock();
-        this->sink->new_packet();
+        if(it != this->sink->packets[audio].end())
+        {
+            it->second.sample_view = sample_view;
+            lock.unlock();
+            this->sink->new_packet(audio);
+        }
     }
     else
     {
-        this->sink->packets.erase(it);
+        if(it != this->sink->packets[audio].end())
+            this->sink->packets[audio].erase(it);
         /*CHECK_HR(hr = this->sink->sink_writer->SendStreamTick(0, rp.request_time));*/
     }
 

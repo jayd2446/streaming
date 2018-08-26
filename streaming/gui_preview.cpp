@@ -10,7 +10,7 @@ LRESULT gui_preview::OnSize(UINT /*nType*/, CSize /*Extent*/)
     if(this->wnd_parent.ctrl_pipeline.is_running())
     {
         this->wnd_parent.ctrl_pipeline.update_preview_size();
-        this->wnd_parent.wnd_maindlg.RedrawWindow();
+        /*this->wnd_parent.wnd_maindlg.RedrawWindow();*/
     }
     return 0;
 }

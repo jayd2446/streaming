@@ -5,9 +5,11 @@
 #include "request_packet.h"
 #include "async_callback.h"
 #include "output_file.h"
+#include "transform_aac_encoder.h"
 #include "assert.h"
 #include <vector>
 #include <mutex>
+#include <chrono>
 
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -28,6 +30,9 @@ public:
     typedef async_callback<sink_audio> async_callback_t;
     typedef request_queue<media_sample_aac> request_queue;
     typedef request_queue::request_t request_t;
+    typedef std::chrono::duration<time_unit, 
+        std::ratio<transform_aac_encoder::input_frames, transform_aac_encoder::sample_rate>>
+        periodicity_t;
 private:
     request_queue write_queue;
     output_file_t file_output;

@@ -1,5 +1,4 @@
 #include "gui_maindlg.h"
-#include "gui_newdlg.h"
 #include "gui_frame.h"
 #include "transform_videoprocessor.h"
 
@@ -7,11 +6,11 @@ gui_maindlg::gui_maindlg(gui_frame& wnd_parent) : wnd_parent(wnd_parent)
 {
 }
 
-void gui_maindlg::add_new_item(new_item_t item)
+void gui_maindlg::add_new_item(gui_newdlg::new_item_t item)
 {
-    if(item == NEW_SCENE)
+    if(item == gui_newdlg::NEW_SCENE)
     {
-        gui_newdlg dlg(*this, NULL);
+        gui_newdlg dlg(NULL);
         const INT_PTR ret = dlg.DoModal(*this, item);
         if(ret == 0)
         {
@@ -24,19 +23,19 @@ void gui_maindlg::add_new_item(new_item_t item)
             scene;
         }
     }
-    else if(item == NEW_VIDEO)
+    else if(item == gui_newdlg::NEW_VIDEO)
     {
         const int index = this->wnd_scene_list.GetCurSel();
         control_scene& scene = this->wnd_parent.ctrl_pipeline.get_scene(index);
-        gui_newdlg dlg(*this, &scene);
+        gui_newdlg dlg(&scene);
         const INT_PTR ret = dlg.DoModal(*this, item);
         if(ret == 0)
         {
             static int i = 0;
             dlg.displaycaptures[dlg.cursel].video.source_rect = {0};
             dlg.displaycaptures[dlg.cursel].video.dest_rect = {0};
-            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1280 - i * 50;
-            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1024 - i * 50;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1920 - i * 50;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1080 - i * 50;
             dlg.displaycaptures[dlg.cursel].video.source_rect.left = i * 20;
             dlg.displaycaptures[dlg.cursel].video.source_rect.top = i * 4;
 
@@ -57,11 +56,11 @@ void gui_maindlg::add_new_item(new_item_t item)
             this->wnd_parent.ctrl_pipeline.set_active(scene);
         }
     }
-    else if(item == NEW_AUDIO)
+    else if(item == gui_newdlg::NEW_AUDIO)
     {
         const int index = this->wnd_scene_list.GetCurSel();
         control_scene& scene = this->wnd_parent.ctrl_pipeline.get_scene(index);
-        gui_newdlg dlg(*this, &scene);
+        gui_newdlg dlg(&scene);
         const INT_PTR ret = dlg.DoModal(*this, item);
         if(ret == 0)
         {
@@ -88,6 +87,8 @@ BOOL gui_maindlg::PreTranslateMessage(MSG* pMsg)
 
 LRESULT gui_maindlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
 {
+    this->DlgResize_Init(false);
+
     this->wnd_newscene.Attach(this->GetDlgItem(IDC_NEWSCENE));
     this->wnd_newvideo.Attach(this->GetDlgItem(IDC_NEWVIDEO));
     this->wnd_newaudio.Attach(this->GetDlgItem(IDC_NEWAUDIO));
@@ -101,19 +102,19 @@ LRESULT gui_maindlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lPa
 
 LRESULT gui_maindlg::OnBnClickedNewscene(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    this->add_new_item(NEW_SCENE);
+    this->add_new_item(gui_newdlg::NEW_SCENE);
     return 0;
 }
 
 LRESULT gui_maindlg::OnBnClickedNewvideo(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    this->add_new_item(NEW_VIDEO);
+    this->add_new_item(gui_newdlg::NEW_VIDEO);
     return 0;
 }
 
 LRESULT gui_maindlg::OnBnClickedNewaudio(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    this->add_new_item(NEW_AUDIO);
+    this->add_new_item(gui_newdlg::NEW_AUDIO);
     return 0;
 }
 

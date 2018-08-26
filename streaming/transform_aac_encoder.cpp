@@ -108,7 +108,9 @@ void transform_aac_encoder::processing_cb(void*)
         if(request.sample_view.drain)
             CHECK_HR(hr = drain_all());
 
+        lock.unlock();
         this->session->give_sample(request.stream, out_audio, request.rp, false);
+        lock.lock();
     }
 
 done:

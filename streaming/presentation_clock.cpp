@@ -3,8 +3,6 @@
 #include "assert.h"
 #include <limits>
 
-extern LARGE_INTEGER pc_frequency;
-
 #ifdef max
 #undef max
 #endif
@@ -15,73 +13,65 @@ extern LARGE_INTEGER pc_frequency;
 /////////////////////////////////////////////////////////////////
 
 
-presentation_time_source::presentation_time_source() : running(false), current_time(0), time_off(0)
+presentation_time_source::presentation_time_source() : 
+    running(false), elapsed(time_unit_t::zero()), offset(time_unit_t::zero())
 {
-    this->start_time.QuadPart = 0;
-}
-
-time_unit presentation_time_source::performance_counter_to_time_unit(LARGE_INTEGER t2) const
-{
-    /*t2.QuadPart -= this->start_time.QuadPart;
-    t2.QuadPart *= 1000000;
-    t2.QuadPart /= pc_frequency.QuadPart;
-    return t2.QuadPart * 10 + this->time_off;*/
-    double t = (double)t2.QuadPart;
-    t -= this->start_time.QuadPart;
-    t *= 1000000;
-    t /= pc_frequency.QuadPart;
-    return (time_unit)(t* 10 + this->time_off);
 }
 
 time_unit presentation_time_source::system_time_to_time_source(time_unit t) const
 {
-    //LARGE_INTEGER t2 = this->start_time;
-    //t2.QuadPart *= 1000000 * 10;
-    //t2.QuadPart /= pc_frequency.QuadPart;
-    ///*t2.QuadPart *= 10;*/
+    using namespace std::chrono;
+    typedef duration<double, time_unit_t::period> time_unit_conversion_t;
+    typedef time_point<clock_t, time_unit_conversion_t> sys_time_point_t;
+    scoped_lock lock(this->mutex);
 
-    //return (t - t2.QuadPart) + this->time_off;
-    double t2 = (double)this->start_time.QuadPart;
-    t2 *= 1000000 * 10;
-    t2 /= pc_frequency.QuadPart;
-    return (time_unit)((t - t2) + this->time_off);
+    const sys_time_point_t sys_time = sys_time_point_t(time_unit_t(t));
+    time_unit_conversion_t elapsed = 
+        duration_cast<time_unit_conversion_t>(sys_time - this->start_time);
+    elapsed += this->offset;
+
+    return duration_cast<time_unit_t>(duration_cast<microseconds>(elapsed)).count();
 }
 
 time_unit presentation_time_source::get_current_time() const
 {
-    if(!this->running)
-        return this->current_time;
+    using namespace std::chrono;
+    scoped_lock lock(this->mutex);
 
-    // calculate the new current time
-    LARGE_INTEGER current_time;
-    QueryPerformanceCounter(&current_time);
-    // this function automatically truncates
-    this->current_time = this->performance_counter_to_time_unit(current_time);
+    if(this->running)
+    {
+        this->elapsed = duration_cast<time_unit_t>(this->clock.now() - this->start_time);
+        this->elapsed += this->offset;
+    }
 
-    return this->current_time;
+    return duration_cast<time_unit_t>(duration_cast<microseconds>(this->elapsed)).count();
 }
 
 void presentation_time_source::set_current_time(time_unit t)
 {
-    this->current_time = t;
+    using namespace std::chrono;
+    scoped_lock lock(this->mutex);
 
-    // truncate to microsecond resolution
-    this->current_time /= 10;
-    this->time_off = (this->current_time *= 10);
-
-    QueryPerformanceCounter(&this->start_time);
+    this->offset = time_unit_t(t);
+    this->start_time = this->clock.now();
 }
 
 void presentation_time_source::start()
 {
     assert_(!this->running);
-    this->set_current_time(this->get_current_time());
+    using namespace std::chrono;
+    scoped_lock lock(this->mutex);
+
+    this->start_time = this->clock.now();
     this->running = true;
 }
 
 void presentation_time_source::stop()
 {
     assert_(this->running);
+    scoped_lock lock(this->mutex);
+
+    this->get_current_time();
     this->running = false;
 }
 
@@ -123,39 +113,6 @@ presentation_clock_sink::~presentation_clock_sink()
     /*assert_(this->unregistered);*/
     /*MFUnlockWorkQueue(this->callback.work_queue);*/
 }
-
-//bool presentation_clock_sink::register_sink(presentation_clock_t& clock)
-//{
-//    assert_(this->unregistered);
-//
-//    scoped_lock lock(clock->mutex_sinks);
-//    clock->sinks.push_back(presentation_clock_sink_t(this->shared_from_this<presentation_clock_sink>()));
-//
-//    this->unregistered = false;
-//    return true;
-//}
-
-//bool presentation_clock_sink::unregister_sink()
-//{
-//    assert_(!this->unregistered);
-//
-//    presentation_clock_t clock;
-//    if(!this->get_clock(clock))
-//        return false;
-//
-//    ::scoped_lock lock(clock->mutex_sinks);
-//    for(auto it = clock->sinks.begin(); it != clock->sinks.end(); it++)
-//    {
-//        presentation_clock_sink_t sink((*it).lock());
-//        if(!sink)
-//        {
-//            this->unregistered = true;
-//            clock->sinks.erase(it);
-//            return true;
-//        }
-//    }
-//    return false;
-//}
 
 bool presentation_clock_sink::schedule_callback(time_unit due_time)
 {
@@ -264,7 +221,6 @@ bool presentation_clock_sink::clear_queue()
 
 bool presentation_clock_sink::schedule_new_callback(time_unit t)
 {
-    // TODO: maybe move this to a worker thread
     scoped_lock lock(this->mutex_callbacks);
     this->callbacks.insert(t);
 

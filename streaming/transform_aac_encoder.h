@@ -24,6 +24,9 @@ public:
     typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;
 
+    static const UINT32 input_frames = 1024;
+    // sample rate must be a predefined value;
+    // the possible values are assumed to be known at compile time
     static const UINT32 sample_rate = 44100;
     static const UINT32 channels = 2;
     enum bitrate_t

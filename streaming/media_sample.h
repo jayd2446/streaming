@@ -6,11 +6,13 @@
 #include <deque>
 #include <list>
 #include <condition_variable>
+#include <functional>
 #include <stdint.h>
 #include <d3d11.h>
 #include <atlbase.h>
 #include <mfidl.h>
 #include "assert.h"
+#include "enable_shared_from_this.h"
 
 #define SECOND_IN_TIME_UNIT 10000000
 
@@ -20,10 +22,27 @@ typedef int64_t time_unit;
 // relative to the time source
 typedef int64_t frame_unit;
 
-// TODO: locking should not be included in every type
 class media_buffer
 {
 public:
+    virtual ~media_buffer() {}
+};
+
+typedef std::shared_ptr<media_buffer> media_buffer_t;
+
+enum class buffer_lock_t
+{
+    READ_LOCK,
+    LOCK
+};
+
+// TODO: lockable buffer should probably encapsulate the real buffer
+template<typename Buffer>
+class media_buffer_lockable : public Buffer, public enable_shared_from_this
+{
+public:
+    typedef Buffer buffer_raw_t;
+    typedef std::shared_ptr<Buffer> buffer_t;
     // unique lock is the same as scoped lock
     typedef std::unique_lock<std::mutex> scoped_lock;
 private:
@@ -31,30 +50,120 @@ private:
     volatile bool write_lock;
     std::condition_variable cv;
     mutable std::mutex mutex;
-public:
-    media_buffer();
-    virtual ~media_buffer();
 
     // waits for write and read to complete
     void lock();
     // waits only for the write to complete
     void lock_read();
+    // unlocks the write and read lock
+    void unlock();
+
+    // the deleter unlocks the Buffer
+    void deleter(buffer_raw_t*);
+public:
+    media_buffer_lockable();
+    virtual ~media_buffer_lockable();
+
+    buffer_t lock_buffer(buffer_lock_t = buffer_lock_t::LOCK);
 
     // unlocks the write lock
     void unlock_write();
-    // unlocks the write and read lock
-    void unlock();
 
     bool is_locked() const;
 };
 
-typedef std::shared_ptr<media_buffer> media_buffer_t;
+template<typename T>
+media_buffer_lockable<T>::media_buffer_lockable() :
+    read_lock(0),
+    write_lock(false)
+{
+}
+
+template<typename T>
+media_buffer_lockable<T>::~media_buffer_lockable()
+{
+    assert_(!this->is_locked());
+}
+
+template<typename T>
+void media_buffer_lockable<T>::deleter(buffer_raw_t* buffer)
+{
+    assert_(buffer == this);
+    this->unlock();
+}
+
+template<typename T>
+typename media_buffer_lockable<T>::buffer_t 
+media_buffer_lockable<T>::lock_buffer(buffer_lock_t lock_t)
+{
+    if(lock_t == buffer_lock_t::LOCK)
+        this->lock();
+    else
+        this->lock_read();
+
+    // the lock buffer will stay alive at least as long as the wrapped buffer is alive
+    using std::placeholders::_1;
+    auto deleter_f = std::bind(&media_buffer_lockable::deleter, 
+        this->shared_from_this<media_buffer_lockable>(), _1);
+    return buffer_t(this, deleter_f);
+}
+
+template<typename T>
+void media_buffer_lockable<T>::lock()
+{
+    scoped_lock lock(this->mutex);
+    while(this->read_lock > 0 || this->write_lock)
+        // wait unlocks the mutex and reacquires the lock when it is notified
+        this->cv.wait(lock);
+    this->read_lock = 1;
+    this->write_lock = true;
+}
+
+template<typename T>
+void media_buffer_lockable<T>::lock_read()
+{
+    scoped_lock lock(this->mutex);
+    while(this->write_lock)
+        this->cv.wait(lock);
+    this->read_lock++;
+}
+
+template<typename T>
+void media_buffer_lockable<T>::unlock_write()
+{
+    scoped_lock lock(this->mutex);
+    assert_(this->write_lock);
+    assert_(this->read_lock > 0);
+    this->write_lock = false;
+    this->cv.notify_all();
+}
+
+template<typename T>
+void media_buffer_lockable<T>::unlock()
+{
+    scoped_lock lock(this->mutex);
+    this->write_lock = false;
+    this->read_lock--;
+    assert_(this->read_lock >= 0);
+    this->cv.notify_all();
+}
+
+template<typename T>
+bool media_buffer_lockable<T>::is_locked() const
+{
+    scoped_lock lock(this->mutex);
+    return (this->write_lock || this->read_lock);
+}
+
+
+
 
 // h264 memory buffer
 class media_buffer_h264 : public media_buffer
 {
 public:
     CComPtr<IMFSample> sample;
+    virtual ~media_buffer_h264() {}
 };
 
 typedef std::shared_ptr<media_buffer_h264> media_buffer_h264_t;
@@ -64,6 +173,7 @@ class media_buffer_aac : public media_buffer
 {
 public:
     CComPtr<IMFSample> sample;
+    virtual ~media_buffer_aac() {}
 };
 
 typedef std::shared_ptr<media_buffer_aac> media_buffer_aac_t;
@@ -72,6 +182,7 @@ class media_buffer_samples : public media_buffer
 {
 public:
     std::deque<CComPtr<IMFSample>> samples;
+    virtual ~media_buffer_samples() {}
 };
 
 typedef std::shared_ptr<media_buffer_samples> media_buffer_samples_t;
@@ -84,9 +195,13 @@ public:
     // multiple devices
     CComPtr<ID3D11Texture2D> intermediate_texture;
     CComPtr<ID3D11Texture2D> texture;
+    virtual ~media_buffer_texture() {}
 };
 
 typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;
+
+typedef media_buffer_lockable<media_buffer_texture> media_buffer_lockable_texture;
+typedef std::shared_ptr<media_buffer_lockable_texture> media_buffer_lockable_texture_t;
 
 // TODO: maybe change media samples to struct to indicate
 // that they must be copy constructable
@@ -105,7 +220,8 @@ public:
 public:
     media_buffer_texture_t buffer;
     media_sample_texture() {}
-    explicit media_sample_texture(const media_buffer_texture_t& texture_buffer);
+    explicit media_sample_texture(const media_buffer_texture_t& buffer);
+    virtual ~media_sample_texture() {}
 };
 
 class media_sample_h264 : public media_sample
@@ -116,6 +232,7 @@ public:
     media_buffer_h264_t buffer;
     media_sample_h264() {}
     explicit media_sample_h264(const media_buffer_h264_t& buffer);
+    virtual ~media_sample_h264() {}
 };
 
 class media_sample_audio : public media_sample
@@ -131,6 +248,7 @@ public:
 
     media_sample_audio() {}
     explicit media_sample_audio(const media_buffer_samples_t& buffer);
+    virtual ~media_sample_audio() {}
 
     UINT32 get_block_align() const {return this->bit_depth / 8 * this->channels;}
 };
@@ -146,104 +264,5 @@ public:
 
     media_sample_aac() {}
     explicit media_sample_aac(const media_buffer_samples_t& buffer);
+    virtual ~media_sample_aac() {}
 };
-
-enum class view_lock_t
-{
-    READ_LOCK_BUFFERS,
-    LOCK_BUFFERS
-};
-
-// TODO: media_sample_view_ objects should be dynamic castable to
-// their underlying types(inherit from Sample);
-// also, rename sample_view from request_queue to sample
-template<typename Sample>
-class media_sample_view : public media_sample
-{
-private:
-    static void deleter(media_buffer*);
-public:
-    typedef Sample sample_t;
-private:
-    // this could be replaced with a reference counter in media_buffer,
-    // but this works fine aswell
-    std::shared_ptr<media_buffer> buffer_view;
-
-    void lock(view_lock_t);
-public:
-    // this also ensures that the buffer which is referenced by
-    // buffer_view won't be deleted prematurely
-    sample_t sample;
-
-    media_sample_view() {}
-    explicit media_sample_view(const sample_t& sample, view_lock_t = view_lock_t::LOCK_BUFFERS);
-    ~media_sample_view();
-
-    void attach(const sample_t& sample, view_lock_t = view_lock_t::LOCK_BUFFERS);
-    void attach(const typename sample_t::buffer_t& buffer, view_lock_t = view_lock_t::LOCK_BUFFERS);
-    void detach();
-};
-
-typedef media_sample_view<media_sample_texture> media_sample_view_texture;
-typedef media_sample_view<media_sample_h264> media_sample_view_h264;
-
-template<typename T>
-media_sample_view<T>::media_sample_view(const sample_t& sample, view_lock_t view_lock) :
-    sample(sample),
-    buffer_view(sample.buffer.get(), deleter)
-{
-    this->lock(view_lock);
-}
-
-template<typename T>
-media_sample_view<T>::~media_sample_view()
-{
-    this->detach();
-}
-
-template<typename T>
-void media_sample_view<T>::lock(view_lock_t view_lock)
-{
-    if(view_lock == view_lock_t::READ_LOCK_BUFFERS)
-        this->buffer_view->lock_read();
-    else if(view_lock == view_lock_t::LOCK_BUFFERS)
-        this->buffer_view->lock();
-    else
-        assert_(false);
-}
-
-template<typename T>
-void media_sample_view<T>::attach(const sample_t& sample, view_lock_t view_lock)
-{
-    this->detach();
-
-    this->sample = sample;
-    this->buffer_view.reset(sample.buffer.get(), deleter);
-
-    this->lock(view_lock);
-}
-
-template<typename T>
-void media_sample_view<T>::attach(const typename sample_t::buffer_t& buffer, view_lock_t view_lock)
-{
-    this->detach();
-
-    this->sample.buffer = buffer;
-    this->buffer_view.reset(buffer.get(), deleter);
-
-    this->lock(view_lock);
-}
-
-template<typename T>
-void media_sample_view<T>::detach()
-{
-    this->buffer_view.reset((media_buffer*)NULL, deleter);
-    this->sample.buffer.reset();
-}
-
-template<typename T>
-void media_sample_view<T>::deleter(media_buffer* buffer)
-{
-    if(buffer)
-        buffer->unlock();
-}

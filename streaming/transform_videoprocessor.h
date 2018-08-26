@@ -11,6 +11,8 @@
 #include <mutex>
 #include <vector>
 
+#undef min
+
 // source blender
 
 // TODO: cache the input views
@@ -46,16 +48,16 @@ class media_sample_videoprocessor : public media_sample_texture
 {
 public:
     typedef stream_videoprocessor_controller::params_t params_t;
-private:
 public:
     params_t params;
 
     media_sample_videoprocessor() {}
     explicit media_sample_videoprocessor(const media_buffer_texture_t& texture_buffer);
     media_sample_videoprocessor(const params_t&, const media_buffer_texture_t& texture_buffer);
+    virtual ~media_sample_videoprocessor() {}
 };
 
-typedef media_sample_view<media_sample_videoprocessor> media_sample_view_videoprocessor;
+//typedef media_sample_view<media_sample_videoprocessor> media_sample_view_videoprocessor;
 
 class transform_videoprocessor : public media_source
 {
@@ -70,16 +72,17 @@ private:
     CComPtr<ID3D11VideoDevice> videodevice;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
     CComPtr<ID3D11VideoContext> videocontext;
+    CComPtr< ID3D11DeviceContext> devctx;
     D3D11_VIDEO_PROCESSOR_CAPS videoprocessor_caps;
 
     context_mutex_t context_mutex;
 public:
     transform_videoprocessor(const media_session_t& session, context_mutex_t context_mutex);
 
-    void initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext*);
+    void initialize(const CComPtr<ID3D11Device>&, const CComPtr<ID3D11DeviceContext>&);
     stream_videoprocessor_t create_stream();
 
-    UINT max_input_streams() const {return /*this->videoprocessor_caps.MaxInputStreams*/10;}
+    UINT max_input_streams() const;
 };
 
 typedef std::shared_ptr<transform_videoprocessor> transform_videoprocessor_t;
@@ -93,18 +96,17 @@ public:
     struct packet 
     {
         request_packet rp; 
-        media_sample_view_videoprocessor sample_view;
+        media_sample_videoprocessor sample_view;
         stream_videoprocessor_controller_t user_params;
     };
 private:
     transform_videoprocessor_t transform;
     CComPtr<ID3D11VideoProcessor> videoprocessor;
-    CComPtr<async_callback_t> processing_callback;
     media_buffer_texture_t output_buffer[2];
-    media_buffer_texture_t output_buffer_null;
     CComPtr<ID3D11VideoProcessorOutputView> output_view[2];
     RECT output_target_rect;
     std::recursive_mutex mutex;
+    std::vector<D3D11_VIDEO_PROCESSOR_STREAM> streams;
 
     typedef std::pair<packet, const media_stream*> input_streams_t;
     std::vector<input_streams_t> input_streams;
@@ -131,7 +133,8 @@ private:
 public:
     explicit stream_videoprocessor(const transform_videoprocessor_t& transform);
 
-    // last input stream appears topmost
+    // last input stream appears topmost;
+    // user_params can be NULL
     void add_input_stream(
         const media_stream* stream,
         const stream_videoprocessor_controller_t& user_params);

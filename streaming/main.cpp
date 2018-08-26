@@ -2,30 +2,11 @@
 #include <Windows.h>
 #include <mfapi.h>
 #include <d3d11.h>
-//#include "source_displaycapture.h"
-//#include "source_displaycapture2.h"
-//#include "source_displaycapture3.h"
-//#include "source_displaycapture4.h"
-//#include "source_displaycapture5.h"
-//#include "sink_preview.h"
-//#include "media_session.h"
-//#include "media_topology.h"
-//#include "transform_videoprocessor.h"
-//#include "transform_h264_encoder.h"
-//#include "transform_color_converter.h"
-//#include "sink_mpeg2.h"
-//#include "sink_preview2.h"
-//#include "source_loopback.h"
-//#include "transform_aac_encoder.h"
-//#include "transform_audiomix.h"
-//#include "transform_audioprocessor.h"
-#include "gui_frame.h"
+#include "gui_mainwnd.h"
 #include <mutex>
 
 #pragma comment(lib, "Mfplat.lib")
 #pragma comment(lib, "D3D11.lib")
-
-LARGE_INTEGER pc_frequency;
 
 #define WINDOW_WIDTH 750
 #define WINDOW_HEIGHT 700
@@ -77,6 +58,8 @@ also some components should also be shared between topologies
 
 */
 
+CAppModule module_;
+
 #ifdef _DEBUG
 int YourReportHook( int reportType, char *message, int *returnValue )
 {
@@ -90,14 +73,11 @@ int YourReportHook( int reportType, char *message, int *returnValue )
 
 int main()
 {
-    QueryPerformanceFrequency(&pc_frequency);
-
-    CAppModule module;
-
     HRESULT hr = S_OK;
     CHECK_HR(hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY | COINIT_MULTITHREADED));
+    AtlInitCommonControls(ICC_COOL_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES);
     CHECK_HR(hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET));
-    CHECK_HR(hr = module.Init(NULL, NULL));
+    CHECK_HR(hr = module_.Init(NULL, NULL));
 
     //// register all media foundation standard work queues as playback
     /*DWORD taskgroup_id = 0;
@@ -111,9 +91,10 @@ int main()
 
     {
         CMessageLoop msgloop;
-        module.AddMessageLoop(&msgloop);
+        module_.AddMessageLoop(&msgloop);
         {
-            gui_frame wnd(module);
+            /*gui_frame wnd(module_);*/
+            gui_mainwnd wnd;
             RECT r = {CW_USEDEFAULT, CW_USEDEFAULT, 
                 CW_USEDEFAULT + WINDOW_WIDTH, CW_USEDEFAULT + WINDOW_HEIGHT};
             if(wnd.CreateEx(NULL, &r) == NULL)
@@ -121,7 +102,7 @@ int main()
             wnd.ShowWindow(SW_SHOW);
             wnd.UpdateWindow();
             int ret = msgloop.Run();
-            module.RemoveMessageLoop();
+            module_.RemoveMessageLoop();
             ret;
         }
     }
@@ -129,7 +110,7 @@ int main()
 done:
     if(FAILED(hr))
         throw std::exception();
-    module.Term();
+    module_.Term();
     hr = MFShutdown();
     CoUninitialize();
 

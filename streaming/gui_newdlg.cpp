@@ -1,17 +1,14 @@
 #include "gui_newdlg.h"
-#include "gui_maindlg.h"
-#include "gui_frame.h"
 #include "control_scene.h"
 #include <sstream>
 
-gui_newdlg::gui_newdlg(gui_maindlg& wnd_parent, control_scene* scene) : 
-    wnd_parent(wnd_parent), scene(scene)
+gui_newdlg::gui_newdlg(control_scene* scene) : scene(scene)
 {
 }
 
 LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL& /*bHandled*/)
 {
-    this->new_item = (gui_maindlg::new_item_t)lParam;
+    this->new_item = (new_item_t)lParam;
     this->combobox.Attach(this->GetDlgItem(IDC_COMBO_NEW));
     this->editbox.Attach(this->GetDlgItem(IDC_EDIT_NEW));
 
@@ -19,14 +16,16 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
     switch(new_item)
     {
-    case gui_maindlg::NEW_SCENE:
-        this->SetWindowTextW(L"Create New Scene");
+    case NEW_SCENE:
+        this->SetWindowTextW(L"Add New Scene");
         this->editbox.SetWindowTextW(L"New Scene");
         this->combobox.ShowWindow(SW_HIDE);
         break;
-    case gui_maindlg::NEW_VIDEO:
-        this->SetWindowTextW(L"Select Displaycapture Source");
+    default:
+        this->SetWindowTextW(L"Add New Source");
         this->editbox.ShowWindow(SW_HIDE);
+
+        // video
         {
             this->scene->list_available_displaycapture_items(this->displaycaptures);
 
@@ -38,27 +37,30 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
                     std::abs(it->output.DesktopCoordinates.bottom - it->output.DesktopCoordinates.top);
 
                 std::wstringstream sts;
+                sts << L"Video Source: ";
                 sts << it->adapter.Description << L": Monitor ";
-                sts << it->output_ordinal << L": " << w << L"x" << h << " @ ";
-                sts << it->output.DesktopCoordinates.left << "," << it->output.DesktopCoordinates.bottom;
+                sts << it->output_ordinal << L": " << w << L"x" << h << L" @ ";
+                sts << it->output.DesktopCoordinates.left << L"," 
+                    << it->output.DesktopCoordinates.bottom;
 
                 this->combobox.AddString(sts.str().c_str());
             }
+
+            this->audio_sel_offset = (int)this->displaycaptures.size();
         }
-        break;
-    case gui_maindlg::NEW_AUDIO:
-        this->SetWindowTextW(L"Select Audio Source");
-        this->editbox.ShowWindow(SW_HIDE);
+
+        // audio
         {
             this->scene->list_available_audio_items(this->audios);
 
             for(auto it = this->audios.begin(); it != this->audios.end(); it++)
             {
                 std::wstringstream sts;
+                sts << L"Audio Source: ";
                 if(it->capture)
-                    sts << "Capture Device: ";
+                    sts << L"Capture Device: ";
                 else
-                    sts << "Render Device: ";
+                    sts << L"Render Device: ";
                 sts << it->device_friendlyname;
 
                 this->combobox.AddString(sts.str().c_str());
@@ -69,12 +71,14 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
     this->combobox.SetCurSel(0);
 
+    /*this->CenterWindow(this->GetParent());*/
+
     return TRUE;
 }
 
 LRESULT gui_newdlg::OnBnClickedOk(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    if(this->new_item == gui_maindlg::NEW_SCENE)
+    if(this->new_item == NEW_SCENE)
     {
         ATL::CString str;
         this->editbox.GetWindowTextW(str);

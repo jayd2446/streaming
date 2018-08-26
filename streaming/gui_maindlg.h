@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wtl.h"
+#include "gui_newdlg.h"
 
 /*
 The ATL Object Wizard does not provide wizard support to use CWindowImpl (but it
@@ -12,18 +13,15 @@ ProcessWindowMessage.
 
 class gui_frame;
 
-class gui_maindlg : public CDialogImpl<gui_maindlg>
+class gui_maindlg : 
+    public CDialogImpl<gui_maindlg>,
+    public CDialogResize<gui_maindlg>
 {
-public:
-    enum new_item_t
-    {
-        NEW_SCENE, NEW_VIDEO, NEW_AUDIO
-    };
 private:
     CButton wnd_newscene, wnd_newvideo, wnd_newaudio, wnd_record;
     CListBox wnd_scene_list, wnd_video_list, wnd_audio_list;
 
-    void add_new_item(new_item_t);
+    void add_new_item(gui_newdlg::new_item_t);
 public:
     enum {IDD = IDD_FORMVIEW};
 
@@ -41,7 +39,17 @@ public:
         COMMAND_HANDLER(IDC_BUTTON_RECORD, BN_CLICKED, OnBnClickedButtonRecord)
         COMMAND_HANDLER(IDC_LIST_SCENES, LBN_SELCHANGE, OnLbnSelchangeListScenes)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+        CHAIN_MSG_MAP(CDialogResize<gui_maindlg>)
     END_MSG_MAP()
+
+    BEGIN_DLGRESIZE_MAP(gui_maindlg)
+        /*BEGIN_DLGRESIZE_GROUP()*/
+            DLGRESIZE_CONTROL(IDC_NEWSCENE, DLSZ_SIZE_X)
+            DLGRESIZE_CONTROL(IDC_NEWVIDEO, DLSZ_SIZE_X)
+            DLGRESIZE_CONTROL(IDC_NEWAUDIO, DLSZ_SIZE_X)
+            DLGRESIZE_CONTROL(IDC_BUTTON_RECORD, DLSZ_SIZE_X)
+        /*END_DLGRESIZE_GROUP()*/
+    END_DLGRESIZE_MAP()
 
     LRESULT OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
     LRESULT OnBnClickedNewscene(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);

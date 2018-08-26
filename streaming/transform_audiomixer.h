@@ -29,14 +29,12 @@ public:
         bool drain;
         time_unit drain_point;
 
-        // move must be explicitly defined for this plain struct
-        // because vs 2013 is out dated
         packet() {}
-        packet(packet&& other) : 
-            audios(std::move(other.audios)), drain(other.drain), drain_point(other.drain_point) {}
-        packet& operator=(packet&& other) 
-        {this->audios = std::move(other.audios); this->drain = other.drain; 
-        this->drain_point = other.drain_point; return *this;}
+        // TODO: decide if just remove the explicit defaults
+        packet(const packet&) = default;
+        packet& operator=(const packet&) = default;
+        packet(packet&&) = default;
+        packet& operator=(packet&&) = default;
     };
     typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;

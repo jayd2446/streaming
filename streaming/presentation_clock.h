@@ -7,21 +7,23 @@
 #include <set>
 #include <vector>
 #include <mutex>
+#include <chrono>
 #include <mfapi.h>
-#include <atlbase.h>
 
-// implements time that is based on high frequency clock;
-// source times must be restricted to microsecond resolution
-// TODO: multithreading safety needs to be ensured;
+// times are truncated to microsecond resolution
 class presentation_time_source
 {
+public:
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef std::chrono::high_resolution_clock clock_t;
+    typedef std::chrono::duration<time_unit, std::ratio<100, 1000000000>> time_unit_t;
 private:
-    time_unit time_off;
-    LARGE_INTEGER start_time;
-    mutable time_unit current_time;
     bool running;
+    mutable std::recursive_mutex mutex;
 
-    time_unit performance_counter_to_time_unit(LARGE_INTEGER) const;
+    clock_t clock;
+    mutable clock_t::time_point start_time;
+    mutable time_unit_t elapsed, offset;
 public:
     presentation_time_source();
 

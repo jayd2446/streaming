@@ -1,27 +1,13 @@
 #include "gui_frame.h"
 
-// windows 10 specific
-DECLARE_HANDLE(DPI_AWARENESS_CONTEXT);
-typedef BOOL (WINAPI *PFNSETPROCESSDPIAWARENESSCONTEXT)(DPI_AWARENESS_CONTEXT value);
-#define DPI_AWARENESS_CONTEXT_UNAWARE              ((DPI_AWARENESS_CONTEXT)-1)
-#define DPI_AWARENESS_CONTEXT_SYSTEM_AWARE         ((DPI_AWARENESS_CONTEXT)-2)
-#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE    ((DPI_AWARENESS_CONTEXT)-3)
-#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
-
 gui_frame::gui_frame(CAppModule& module) : module(module), wnd_maindlg(*this), wnd_preview(*this)
 {
-    PFNSETPROCESSDPIAWARENESSCONTEXT SetProcessDpiAwarenessContext  = (PFNSETPROCESSDPIAWARENESSCONTEXT)
-        GetProcAddress(GetModuleHandle(L"user32.dll"), "SetProcessDpiAwarenessContext");
-    
-    if(SetProcessDpiAwarenessContext)
-    {
-        // this failed previously because for some reason
-        // the debug version of this exe had the dpi setting overridden in the
-        // compatibility section of the exe;
-        // https://stackoverflow.com/questions/46651074/wm-dpichanged-not-received-when-scaling-performed-by-application
-        BOOL success = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        assert_(success);
-    }
+    // this failed previously because for some reason
+    // the debug version of this exe had the dpi setting overridden in the
+    // compatibility section of the exe;
+    // https://stackoverflow.com/questions/46651074/wm-dpichanged-not-received-when-scaling-performed-by-application
+    BOOL success = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    assert_(success);
 }
 
 BOOL gui_frame::PreTranslateMessage(MSG* pMsg)
@@ -50,17 +36,34 @@ int gui_frame::OnCreate(LPCREATESTRUCT)
     loop->AddMessageFilter(this);
     loop->AddIdleHandler(this);
 
-    this->wnd_splitter.Create(*this, rcDefault, NULL, 0, WS_EX_CLIENTEDGE);
+    // use WS_EX_CLIENTEDGE for a splitter bar;
+    // using clip children causes the splitter window not being drawn when entering fullscreen;
+    // also omitting ws_child and ws_visible flags has the same effect
+    this->wnd_splitter.Create(
+        *this, rcDefault, NULL, 
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+        WS_EX_CLIENTEDGE);
     this->m_hWndClient = this->wnd_splitter;
     this->UpdateLayout();
 
     this->wnd_splitter.SetOrientation(false);
-    this->wnd_splitter.SetSplitterPos(480);
+    this->wnd_splitter.SetSplitterPos(480 - 100);
 
     this->wnd_preview.Create(this->wnd_splitter);
 
-    this->wnd_maindlg.Create(this->wnd_splitter);
-    this->wnd_splitter.SetSplitterPanes(this->wnd_preview, this->wnd_maindlg);
+    this->wnd_panecontainer.m_tb;
+    this->wnd_panecontainer.Create(
+        this->wnd_splitter, 
+        L"Controls", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN);
+
+    this->wnd_maindlg.Create(this->wnd_panecontainer);
+    this->wnd_splitter.SetSplitterPanes(this->wnd_preview, this->wnd_panecontainer);
+
+    /*this->wnd_panecontainer.SetTitle(L"Controls");*/
+    /*this->wnd_panecontainer.SetPaneContainerExtendedStyle(PANECNT_NOCLOSEBUTTON);*/
+    this->wnd_panecontainer.SetClient(this->wnd_maindlg);
+
+    this->wnd_panecontainer.ShowWindow(SW_SHOW);
     this->wnd_maindlg.ShowWindow(SW_SHOW);
     this->wnd_preview.ShowWindow(SW_SHOW);
 

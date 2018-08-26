@@ -42,28 +42,10 @@ new request will be made)
 
 class media_stream;
 
-// TODO: use mutex instead of recursive mutex
 class media_session : public enable_shared_from_this
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef async_callback<media_session> async_callback_t;
-
-    //struct give_sample_t
-    //{
-    //    media_stream* down_stream;
-    //    // the stream stays alive as long as the rp is alive
-    //    const media_stream* stream;
-    //    media_sample_view_t sample_view;
-    //    request_packet rp;
-    //    bool is_source;
-    //};
-    //struct request_sample_t
-    //{
-    //    // the stream stays alive as long as the rp is alive
-    //    const media_stream* stream;
-    //    request_packet rp;
-    //};
 private:
     volatile bool is_shutdown, is_started;
     presentation_time_source_t time_source;
@@ -73,21 +55,10 @@ private:
     media_topology_t current_topology;
     media_topology_t new_topology;
 
-    std::recursive_mutex request_sample_mutex;
-    CComPtr<async_callback_t> request_sample_callback;
-    /*std::queue<request_sample_t> request_sample_requests;*/
-
-    std::recursive_mutex give_sample_mutex;
-    CComPtr<async_callback_t> give_sample_callback;
-    /*std::queue<give_sample_t> give_sample_requests;*/
-
     // starts the new topology immediately;
     // throws if the topology doesn't include a clock;
     // throws also if the session has been shutdown
     void switch_topology_immediate(const media_topology_t& new_topology, time_unit time_point);
-
-    void request_sample_cb(void*);
-    void give_sample_cb(void*);
 public:
     explicit media_session(const presentation_time_source_t&);
     ~media_session();

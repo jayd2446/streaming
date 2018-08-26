@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
@@ -21,32 +21,33 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{C1C35477-E5D3-424B-8669-FB3ED8367688}</ProjectGuid>
     <RootNamespace>streaming</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v120</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v120</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WindowsAppContainer>false</WindowsAppContainer>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v120</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v120</PlatformToolset>
+    <PlatformToolset>v141</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -86,6 +87,8 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WORKER_STREAMS=3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <DisableSpecificWarnings>4458;4456</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -103,6 +106,8 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WORKER_STREAMS=3;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <DisableSpecificWarnings>4458;4456</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -124,6 +129,9 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WORKER_STREAMS=3;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <DisableSpecificWarnings>4458;4456</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -144,6 +152,9 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WORKER_STREAMS=3;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <DisableSpecificWarnings>4458;4456</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>false</GenerateDebugInformation>
@@ -158,10 +169,10 @@
   <ItemGroup>
     <ClCompile Include="control_pipeline.cpp" />
     <ClCompile Include="control_scene.cpp" />
-    <ClCompile Include="gui_frame.cpp" />
-    <ClCompile Include="gui_maindlg.cpp" />
+    <ClCompile Include="gui_mainwnd.cpp" />
     <ClCompile Include="gui_newdlg.cpp" />
-    <ClCompile Include="gui_preview.cpp" />
+    <ClCompile Include="gui_previewwnd.cpp" />
+    <ClCompile Include="gui_dlgs.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="media_sample.cpp" />
     <ClCompile Include="media_session.cpp" />
@@ -180,7 +191,7 @@
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture5.cpp" />
     <ClCompile Include="source_wasapi.cpp" />
-    <ClCompile Include="source_null.cpp" />
+    <ClCompile Include="source_empty.cpp" />
     <ClCompile Include="transform_aac_encoder.cpp" />
     <ClCompile Include="transform_audiomix.cpp" />
     <ClCompile Include="transform_audiomixer.cpp" />
@@ -213,10 +224,10 @@
     <ClInclude Include="async_callback.h" />
     <ClInclude Include="control_pipeline.h" />
     <ClInclude Include="control_scene.h" />
-    <ClInclude Include="gui_frame.h" />
-    <ClInclude Include="gui_maindlg.h" />
+    <ClInclude Include="gui_mainwnd.h" />
     <ClInclude Include="gui_newdlg.h" />
-    <ClInclude Include="gui_preview.h" />
+    <ClInclude Include="gui_previewwnd.h" />
+    <ClInclude Include="gui_dlgs.h" />
     <ClInclude Include="IUnknownImpl.h" />
     <ClInclude Include="media_component.h" />
     <ClInclude Include="media_sample.h" />
@@ -240,7 +251,7 @@
     <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="source_displaycapture5.h" />
     <ClInclude Include="source_wasapi.h" />
-    <ClInclude Include="source_null.h" />
+    <ClInclude Include="source_empty.h" />
     <ClInclude Include="stream_worker.h" />
     <ClInclude Include="transform_aac_encoder.h" />
     <ClInclude Include="transform_audiomix.h" />

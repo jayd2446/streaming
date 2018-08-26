@@ -29,10 +29,10 @@ class transform_h264_encoder : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
-    typedef request_queue<media_sample_view_texture> request_queue;
+    typedef request_queue<media_sample_texture> request_queue;
     typedef request_queue::request_t request_t;
 
-    static const UINT32 frame_width = 1280, frame_height = 1024;
+    static const UINT32 frame_width = 1280, frame_height = 720;
     static const UINT32 frame_rate_num = 60;
     static const UINT32 frame_rate_den = 1;
     static const UINT32 avg_bitrate = 4500 * 1000;
@@ -43,18 +43,16 @@ private:
     CComPtr<IMFTransform> encoder;
     CComPtr<IMFMediaEventGenerator> event_generator;
     CComPtr<IMFDXGIDeviceManager> devmngr;
-    CComPtr<ID3D11Device> d3d11dev;
-    CComPtr<async_callback_t> 
-        events_callback, process_input_callback, process_output_callback;
+    CComPtr<async_callback_t> events_callback, process_input_callback, process_output_callback;
     UINT reset_token;
 
-    std::recursive_mutex encoder_mutex, events_mutex;
+    std::recursive_mutex process_mutex, process_output_mutex;
     std::atomic_int32_t encoder_requests;
 
     request_queue requests;
 
     std::recursive_mutex processed_samples_mutex;
-    std::unordered_map<time_unit /*request time*/, request_t> processed_samples;
+    std::queue<request_t> processed_samples;
 
     context_mutex_t context_mutex;
 

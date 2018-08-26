@@ -13,7 +13,7 @@
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
 
-// sink preview must be multithread aware
+
 
 class sink_preview2 : public media_sink
 {

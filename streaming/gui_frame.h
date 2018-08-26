@@ -6,6 +6,7 @@
 #include "control_pipeline.h"
 #include <shellapi.h>
 #include <atlsplit.h>
+#include <atlctrlx.h>
 
 /*
 In WTL, the top-level window can be a dialog box itself, or can be a mainframe
@@ -22,6 +23,7 @@ class gui_frame :
 {
 private:
     CSplitterWindow wnd_splitter;
+    CPaneContainer wnd_panecontainer;
     CAppModule& module;
 public:
     DECLARE_FRAME_WND_CLASS(L"streaming", IDR_MAINFRAME);

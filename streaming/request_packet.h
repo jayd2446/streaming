@@ -51,15 +51,16 @@ public:
         request_packet rp;
         sample_view_t sample_view;
 
-        // these are explicitly defined since vs 2013 doesn't have
-        // implicit move constructor and operator implemented
         request_t() {}
-        request_t(request_t&&);
-        request_t& operator=(request_t&&);
+        // TODO: decide if just remove the explicit defaults
+        request_t(const request_t&) = default;
+        request_t& operator=(const request_t&) = default;
+        request_t(request_t&&) = default;
+        request_t& operator=(request_t&&) = default;
     };
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef std::lock_guard<std::mutex> scoped_lock;
 private:
-    mutable std::recursive_mutex requests_mutex;
+    mutable std::mutex requests_mutex;
     std::deque<request_t> requests;
     int first_packet_number, last_packet_number;
 
@@ -79,25 +80,6 @@ public:
 
 
 template<class T>
-request_queue<T>::request_t::request_t(request_t&& other) :
-    stream(other.stream),
-    prev_stream(other.prev_stream),
-    rp(other.rp),
-    sample_view(std::move(other.sample_view))
-{
-}
-
-template<class T>
-typename request_queue<T>::request_t& request_queue<T>::request_t::operator=(request_t&& other)
-{
-    this->stream = other.stream;
-    this->prev_stream = other.prev_stream;
-    this->rp = other.rp;
-    this->sample_view = std::move(other.sample_view);
-    return *this;
-}
-
-template<class T>
 request_queue<T>::request_queue() : 
     first_packet_number(INVALID_PACKET_NUMBER), last_packet_number(INVALID_PACKET_NUMBER)
 {
@@ -112,7 +94,7 @@ int request_queue<T>::get_index(int packet_number) const
 template<class T>
 bool request_queue<T>::can_pop() const
 {
-    scoped_lock lock(this->requests_mutex);
+    // lock is assumed
     if(!this->requests.empty())
         if(this->first_packet_number == this->requests.front().rp.packet_number)
             return true;

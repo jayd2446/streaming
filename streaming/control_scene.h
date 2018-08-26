@@ -60,13 +60,16 @@ public:
 
         audio_item() : reference(-1) {}
     };
+
+    typedef std::vector<video_item> video_items_t;
+    typedef std::vector<audio_item> audio_items_t;
 private:
     control_pipeline& pipeline;
 
     // video items is a collection of different types of video items
-    std::vector<video_item> video_items;
+    video_items_t video_items;
     std::vector<displaycapture_item> displaycapture_items;
-    std::vector<audio_item> audio_items;
+    audio_items_t audio_items;
 
     std::vector<std::pair<displaycapture_item, source_displaycapture5_t>> displaycapture_sources;
     // each video_item will activate a videoprocessor stream controller
@@ -100,4 +103,7 @@ public:
 
     void add_audio_item(const audio_item&, bool force_new_instance = false);
     /*void remove_audio(const std::wstring& item_name);*/
+
+    const video_items_t& get_video_items() const {return this->video_items;}
+    const audio_items_t& get_audio_items() const {return this->audio_items;}
 };

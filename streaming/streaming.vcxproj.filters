@@ -81,12 +81,6 @@
     <ClCompile Include="transform_audioprocessor.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="gui_frame.cpp">
-      <Filter>gui</Filter>
-    </ClCompile>
-    <ClCompile Include="gui_maindlg.cpp">
-      <Filter>gui</Filter>
-    </ClCompile>
     <ClCompile Include="gui_newdlg.cpp">
       <Filter>gui</Filter>
     </ClCompile>
@@ -96,13 +90,7 @@
     <ClCompile Include="control_scene.cpp">
       <Filter>control</Filter>
     </ClCompile>
-    <ClCompile Include="gui_preview.cpp">
-      <Filter>gui</Filter>
-    </ClCompile>
     <ClCompile Include="output_file.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="source_null.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="source_wasapi.cpp">
@@ -112,6 +100,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="media_stream.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_mainwnd.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_previewwnd.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_dlgs.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="source_empty.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -197,16 +197,10 @@
     <ClInclude Include="transform_audioprocessor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gui_frame.h">
-      <Filter>gui</Filter>
-    </ClInclude>
     <ClInclude Include="wtl.h">
       <Filter>gui</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
-      <Filter>gui</Filter>
-    </ClInclude>
-    <ClInclude Include="gui_maindlg.h">
       <Filter>gui</Filter>
     </ClInclude>
     <ClInclude Include="gui_newdlg.h">
@@ -218,22 +212,28 @@
     <ClInclude Include="control_scene.h">
       <Filter>control</Filter>
     </ClInclude>
-    <ClInclude Include="gui_preview.h">
-      <Filter>gui</Filter>
-    </ClInclude>
     <ClInclude Include="media_component.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="output_file.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source_null.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="source_wasapi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="transform_audiomixer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_mainwnd.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_previewwnd.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_dlgs.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="source_empty.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

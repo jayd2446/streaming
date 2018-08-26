@@ -1,22 +1,15 @@
-// Windows Template Library - WTL version 9.0
+// Windows Template Library - WTL version 10.0
 // Copyright (C) Microsoft Corporation, WTL Team. All rights reserved.
 //
 // This file is a part of the Windows Template Library.
 // The use and distribution terms for this software are covered by the
-// Common Public License 1.0 (http://opensource.org/licenses/cpl1.0.php)
-// which can be found in the file CPL.TXT at the root of this distribution.
-// By using this software in any fashion, you are agreeing to be bound by
-// the terms of this license. You must not remove this notice, or
-// any other, from this software.
+// Microsoft Public License (http://opensource.org/licenses/MS-PL)
+// which can be found in the file MS-PL.txt at the root folder.
 
 #ifndef __ATLDWM_H__
 #define __ATLDWM_H__
 
 #pragma once
-
-#ifdef _WIN32_WCE
-	#error atldwm.h is not supported on Windows CE
-#endif
 
 #ifndef __ATLAPP_H__
 	#error atldwm.h requires atlapp.h to be included first
@@ -40,10 +33,7 @@
 // Delay load is NOT AUTOMATIC for VC++ 7, you have to link to delayimp.lib, 
 // and add dwmapi.dll in the Linker.Input.Delay Loaded DLLs section of the 
 // project properties.
-#if (_MSC_VER < 1300) && !defined(_WTL_NO_DWMAPI_DELAYLOAD)
-  #pragma comment(lib, "delayimp.lib")
-  #pragma comment(linker, "/delayload:dwmapi.dll")
-#endif // (_MSC_VER < 1300) && !defined(_WTL_NO_DWMAPI_DELAYLOAD)
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // Classes in this file:
@@ -309,7 +299,7 @@ public:
 
 	void Attach(HTHUMBNAIL hThumbnailNew)
 	{
-		if(t_bManaged && m_hThumbnail != NULL && m_hThumbnail != hThumbnailNew)
+		if(t_bManaged && (m_hThumbnail != NULL) && (m_hThumbnail != hThumbnailNew))
 			Unregister();
 		m_hThumbnail = hThumbnailNew;
 	}
@@ -335,7 +325,7 @@ public:
 
 	HRESULT Unregister()
 	{
-		if(!IsDwmSupported())
+		if(!this->IsDwmSupported())
 			return E_NOTIMPL;
 		if(m_hThumbnail == NULL)
 			return S_FALSE;
@@ -392,7 +382,7 @@ public:
 
 	CAeroControlImpl()
 	{
-		m_PaintParams.dwFlags = BPPF_ERASE;
+		this->m_PaintParams.dwFlags = BPPF_ERASE;
 	}
 
 	static LPCWSTR GetThemeName()
@@ -424,8 +414,8 @@ public:
 
 	LRESULT OnActivate(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled)
 	{
-		if(IsThemingSupported())
-			Invalidate(FALSE);
+		if(this->IsThemingSupported())
+			this->Invalidate(FALSE);
 
 		bHandled = FALSE;
 		return 0;
@@ -449,7 +439,7 @@ public:
 // Implementation
 	LRESULT DefWindowProc()
 	{
-		const ATL::_ATL_MSG* pMsg = m_pCurrentMsg;
+		const ATL::_ATL_MSG* pMsg = this->m_pCurrentMsg;
 		LRESULT lRes = 0;
 		if(pMsg != NULL)
 			lRes = DefWindowProc(pMsg->message, pMsg->wParam, pMsg->lParam);
@@ -472,11 +462,11 @@ public:
 		T* pT = static_cast<T*>(this);
 		HDC hDCPaint = NULL;
 		RECT rcClient = { 0 };
-		GetClientRect(&rcClient);
-		m_BufferedPaint.Begin(hDC, &rcClient, m_dwFormat, &m_PaintParams, &hDCPaint);
+		this->GetClientRect(&rcClient);
+		this->m_BufferedPaint.Begin(hDC, &rcClient, this->m_dwFormat, &this->m_PaintParams, &hDCPaint);
 		ATLASSERT(hDCPaint != NULL);
 		pT->DoAeroPaint(hDCPaint, rcClient, rcPaint);
-		m_BufferedPaint.End();
+		this->m_BufferedPaint.End();
 	}
 
 	void DoPaint(HDC /*hdc*/, RECT& /*rcClient*/)
@@ -489,15 +479,15 @@ public:
 	{
 		T* pT = static_cast<T*>(this);
 		pT;   // avoid level 4 warning
-		SetThemeClassList(pT->GetThemeName());
-		if(m_lpstrThemeClassList != NULL)
-			OpenThemeData();
+		this->SetThemeClassList(pT->GetThemeName());
+		if(this->m_lpstrThemeClassList != NULL)
+			this->OpenThemeData();
 	}
 
 	void DoAeroPaint(HDC hDC, RECT& /*rcClient*/, RECT& rcPaint)
 	{
 		DefWindowProc(WM_PAINT, (WPARAM) hDC, 0L);
-		m_BufferedPaint.MakeOpaque(&rcPaint);
+		this->m_BufferedPaint.MakeOpaque(&rcPaint);
 	}
 };
 

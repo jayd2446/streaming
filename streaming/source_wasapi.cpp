@@ -20,40 +20,11 @@
 //        throw std::exception();
 //}
 
-void source_wasapi::convert_32bit_float_to_bitdepth_pcm(
-    UINT32 frames, UINT32 channels,
-    const float* in, bit_depth_t* out, bool silent)
+void source_wasapi::make_silence(UINT32 frames, UINT32 channels, bit_depth_t* buffer)
 {
-    assert_(sizeof(bit_depth_t) <= sizeof(int32_t));
-    // frame has a sample for each channel
     const UINT32 samples = frames * channels;
     for(UINT32 i = 0; i < samples; i++)
-    {
-        if(!silent)
-        {
-            // convert
-            double sample;
-            if(!this->generate_sine)
-                sample = in[i];
-            else
-            {
-                sample = sin(this->sine_var) * 0.05;
-                if(i % channels == 0)
-                    this->sine_var += 0.1;
-            }
-            int32_t sample_converted = (int32_t)(sample * std::numeric_limits<bit_depth_t>::max());
-
-            // clamp
-            if(sample_converted > std::numeric_limits<bit_depth_t>::max())
-                sample_converted = std::numeric_limits<bit_depth_t>::max();
-            else if(sample_converted < std::numeric_limits<bit_depth_t>::min())
-                sample_converted = std::numeric_limits<bit_depth_t>::min();
-
-            out[i] = (bit_depth_t)sample_converted;
-        }
-        else
-            out[i] = 0;
-    }
+        buffer[i] = 0.f;
 }
 
 source_wasapi::source_wasapi(const media_session_t& session) : 
@@ -253,11 +224,11 @@ void source_wasapi::serve_cb(void*)
             this->requests.pop(request);
 
             lock2.unlock();
-            /*lock.unlock();*/
+            lock.unlock();
             // dispatch the request
             request.stream->process_sample(audio, request.rp, NULL);
             /*this->session->give_sample(request.stream, audio, request.rp, false);*/
-            /*lock.lock();*/
+            lock.lock();
         }
         else
             break;
@@ -351,14 +322,15 @@ void source_wasapi::process_cb(void*)
 
         // convert and copy to buffer
         BYTE* buffer_data;
-        const UINT32 frame_len = this->get_block_align();
-        CHECK_HR(hr = MFCreateMemoryBuffer(frames * frame_len, &buffer));
+        const DWORD len = frames * this->get_block_align();
+        CHECK_HR(hr = MFCreateMemoryBuffer(len, &buffer));
         CHECK_HR(hr = buffer->Lock(&buffer_data, NULL, NULL));
-        convert_32bit_float_to_bitdepth_pcm(
-            frames, this->channels, 
-            (float*)data, (bit_depth_t*)buffer_data, silent);
+        if(silent)
+            make_silence(frames, this->channels, (float*)buffer_data);
+        else
+            memcpy(buffer_data, data, len);
         CHECK_HR(hr = buffer->Unlock());
-        CHECK_HR(hr = buffer->SetCurrentLength(frames * frame_len));
+        CHECK_HR(hr = buffer->SetCurrentLength(len));
         CHECK_HR(hr = sample->AddBuffer(buffer));
 
         // set the time and duration in frames

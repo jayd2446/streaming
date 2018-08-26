@@ -22,8 +22,8 @@ extern LARGE_INTEGER pc_frequency;
 source_displaycapture5::source_displaycapture5(
     const media_session_t& session, context_mutex_t context_mutex) : 
     media_source(session),
-    newest_buffer(new media_buffer_texture),
-    newest_pointer_buffer(new media_buffer_texture),
+    newest_buffer(new media_buffer_lockable_texture),
+    newest_pointer_buffer(new media_buffer_lockable_texture),
     context_mutex(context_mutex),
     output_index((UINT)-1)
 {
@@ -213,8 +213,8 @@ done:
 bool source_displaycapture5::capture_frame(
     bool& new_pointer_shape,
     DXGI_OUTDUPL_POINTER_POSITION& pointer_position,
-    media_buffer_texture_t& pointer,
-    media_buffer_texture_t& buffer, 
+    media_buffer_lockable_texture_t& pointer,
+    media_buffer_lockable_texture_t& buffer,
     time_unit& timestamp, 
     const presentation_clock_t& clock)
 {
@@ -286,7 +286,8 @@ capture:
     if(new_pointer_shape)
     {
         CHECK_HR(hr = this->create_pointer_texture(frame_info, pointer));
-        std::atomic_exchange(&this->newest_pointer_buffer, pointer);
+        this->newest_pointer_buffer = pointer;
+        /*std::atomic_exchange(&this->newest_pointer_buffer, pointer);*/
     }
 
     // copy
@@ -298,7 +299,8 @@ capture:
         /*timestamp = clock->performance_counter_to_time_unit(frame_info.LastPresentTime);*/
 
         // update the newest sample
-        std::atomic_exchange(&this->newest_buffer, buffer);
+        this->newest_buffer = buffer;
+        /*std::atomic_exchange(&this->newest_buffer, buffer);*/
     }
     else
         /*timestamp = clock->get_current_time()*/;
@@ -336,10 +338,11 @@ done:
 stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source, 
     const stream_videoprocessor_controller_t& videoprocessor_controller) : 
     source(source),
-    buffer(new media_buffer_texture),
+    buffer(new media_buffer_lockable_texture),
     videoprocessor_controller(videoprocessor_controller)
 {
-    this->capture_frame_callback.Attach(new async_callback_t(&stream_displaycapture5::capture_frame_cb));
+    this->capture_frame_callback.Attach(
+        new async_callback_t(&stream_displaycapture5::capture_frame_cb));
 }
 
 void stream_displaycapture5::capture_frame_cb(void*)
@@ -354,9 +357,11 @@ void stream_displaycapture5::capture_frame_cb(void*)
     this->videoprocessor_controller->get_params(params);
     // enable alpha is only for pointer which has alpha values
     params.enable_alpha = false;
-    media_sample_view_videoprocessor sample_view(media_sample_videoprocessor(params, this->buffer));
-    media_sample_view_videoprocessor pointer_sample_view(
-        media_sample_videoprocessor(this->pointer_stream->buffer));
+    media_sample_videoprocessor sample(params, this->buffer->lock_buffer());
+    /*media_sample_view_videoprocessor sample_view(this->buffer);*/
+    /*sample_view.params = params;*/
+    media_sample_videoprocessor pointer_sample(this->pointer_stream->buffer->lock_buffer());
+    /*media_sample_view_videoprocessor pointer_sample_view(this->pointer_stream->buffer);*/
 
     /*std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);*/
 
@@ -384,34 +389,42 @@ void stream_displaycapture5::capture_frame_cb(void*)
         // sample view must be reset to null before assigning a new sample view,
         // that is because the media_sample_view would lock the sample before
         // sample_view releasing its own reference to another sample_view
-        sample_view.attach(this->source->newest_buffer, view_lock_t::READ_LOCK_BUFFERS);
+        sample.buffer = NULL;
+        sample.buffer = this->source->newest_buffer->lock_buffer(buffer_lock_t::READ_LOCK);
+        /*sample_view.attach(this->source->newest_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
     }
     else
-        sample_view.sample.buffer->unlock_write();
+        this->buffer->unlock_write();
+        /*sample_view.buffer->unlock_write();*/
 
     if(!new_pointer_shape)
     {
-        pointer_sample_view.attach(
-            this->source->newest_pointer_buffer, view_lock_t::READ_LOCK_BUFFERS);
+        pointer_sample.buffer = NULL;
+        pointer_sample.buffer = 
+            this->source->newest_pointer_buffer->lock_buffer(buffer_lock_t::READ_LOCK);
+        /*pointer_sample_view.attach(
+            this->source->newest_pointer_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
     }
     else
-        pointer_sample_view.sample.buffer->unlock_write();
+        this->pointer_stream->buffer->unlock_write();
+        /*pointer_sample_view.buffer->unlock_write();*/
 
     request_packet rp = this->rp;
     this->rp = request_packet();
 
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
-    if(sample_view.sample.buffer->texture)
-        sample_view.sample.buffer->texture->GetDesc(ptr_desc = &desc);
+    if(sample.buffer->texture)
+        sample.buffer->texture->GetDesc(ptr_desc = &desc);
 
-    sample_view.sample.timestamp = rp.request_time;
+    sample.timestamp = rp.request_time;
     /*this->sample->timestamp = timestamp;*/
 
     lock.unlock();
-    this->process_sample(sample_view, rp, NULL);
+
+    this->process_sample(sample, rp, NULL);
     this->pointer_stream->dispatch(
-        new_pointer_shape, pointer_position, ptr_desc, pointer_sample_view, rp);
+        new_pointer_shape, pointer_position, ptr_desc, pointer_sample, rp);
 }
 
 media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp, const media_stream*)
@@ -444,8 +457,8 @@ media_stream::result_t stream_displaycapture5::process_sample(
 
 stream_displaycapture5_pointer::stream_displaycapture5_pointer(const source_displaycapture5_t& source) :
     source(source),
-    buffer(new media_buffer_texture),
-    null_buffer(new media_buffer_texture)
+    buffer(new media_buffer_lockable_texture),
+    null_buffer(new media_buffer_lockable_texture)
 {
 }
 
@@ -453,33 +466,34 @@ void stream_displaycapture5_pointer::dispatch(
     bool new_pointer_shape, 
     const DXGI_OUTDUPL_POINTER_POSITION& pointer_position, 
     const D3D11_TEXTURE2D_DESC* desktop_desc,
-    media_sample_view_videoprocessor& sample_view,
+    media_sample_videoprocessor& sample_view,
     request_packet& rp)
 {
-    if(pointer_position.Visible && desktop_desc && sample_view.sample.buffer->texture)
+    if(pointer_position.Visible && desktop_desc && sample_view.buffer->texture)
     {
         D3D11_TEXTURE2D_DESC desc;
-        sample_view.sample.buffer->texture->GetDesc(&desc);
+        sample_view.buffer->texture->GetDesc(&desc);
 
-        sample_view.sample.params.enable_alpha = true;
-        sample_view.sample.params.source_rect.left = sample_view.sample.params.source_rect.top = 0;
-        sample_view.sample.params.source_rect.right = desc.Width;
-        sample_view.sample.params.source_rect.bottom = desc.Height;
-        sample_view.sample.params.dest_rect.left = pointer_position.Position.x;
-        sample_view.sample.params.dest_rect.top = pointer_position.Position.y;
-        sample_view.sample.params.dest_rect.right = 
-            sample_view.sample.params.dest_rect.left + desc.Width;
-        sample_view.sample.params.dest_rect.bottom = 
-            sample_view.sample.params.dest_rect.top + desc.Height;
+        sample_view.params.enable_alpha = true;
+        sample_view.params.source_rect.left = sample_view.params.source_rect.top = 0;
+        sample_view.params.source_rect.right = desc.Width;
+        sample_view.params.source_rect.bottom = desc.Height;
+        sample_view.params.dest_rect.left = pointer_position.Position.x;
+        sample_view.params.dest_rect.top = pointer_position.Position.y;
+        sample_view.params.dest_rect.right = 
+            sample_view.params.dest_rect.left + desc.Width;
+        sample_view.params.dest_rect.bottom = 
+            sample_view.params.dest_rect.top + desc.Height;
     }
     else
     {
-        sample_view.attach(this->null_buffer, view_lock_t::READ_LOCK_BUFFERS);
+        sample_view.buffer = this->null_buffer;
+        /*sample_view.attach(this->null_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
     }
 
-    sample_view.sample.timestamp = rp.request_time;
+    sample_view.timestamp = rp.request_time;
 
-    this->source->session->give_sample(this, sample_view, rp, true);
+    this->source->session->give_sample(this, std::move(sample_view), rp, true);
 }
 
 media_stream::result_t stream_displaycapture5_pointer::request_sample(request_packet&, const media_stream*)

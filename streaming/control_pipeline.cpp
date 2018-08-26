@@ -11,7 +11,7 @@
 control_pipeline::control_pipeline() : 
     preview_wnd(NULL),
     scene_active(NULL),
-    d3d11dev_adapter(1),
+    d3d11dev_adapter(0),
     stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL)),
     recording_state_change(false),
     context_mutex(new std::recursive_mutex)
@@ -307,7 +307,7 @@ void control_pipeline::build_video_topology_branch(const media_topology_t& video
     if(this->item_mpeg_sink.null_file)
     {
         preview_stream->connect_streams(videoprocessor_stream, video_topology);
-        worker_stream->connect_streams(videoprocessor_stream, video_topology);
+        worker_stream->connect_streams(preview_stream, video_topology);
     }
     else
     {
@@ -317,8 +317,8 @@ void control_pipeline::build_video_topology_branch(const media_topology_t& video
         // TODO: encoder stream is redundant
         mpeg_sink_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
 
-        color_converter_stream->connect_streams(videoprocessor_stream, video_topology);
         preview_stream->connect_streams(videoprocessor_stream, video_topology);
+        color_converter_stream->connect_streams(preview_stream, video_topology);
         encoder_stream->connect_streams(color_converter_stream, video_topology);
         worker_stream->connect_streams(encoder_stream, video_topology);
     }

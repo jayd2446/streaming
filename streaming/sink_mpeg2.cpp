@@ -5,6 +5,9 @@
 #pragma comment(lib, "Mf.lib")
 #pragma comment(lib, "Mfreadwrite.lib")
 
+#undef max
+#undef min
+
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
 sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& audio_session) : 
@@ -42,7 +45,7 @@ void sink_mpeg2::write_packets_cb(void*)
         /*if(!request.sample_view)
             continue;*/
 
-        media_buffer_h264_t buffer = request.sample_view.sample.sample.buffer;
+        media_buffer_h264_t buffer = request.sample_view.sample.buffer;
         if(!buffer)
             continue;
         
@@ -109,7 +112,8 @@ stream_mpeg2::stream_mpeg2(
     const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream, const output_file_t& output) : 
     output(output), sink(sink), unavailable(0), running(false),
     media_stream_clock_sink(sink.get()),
-    audio_sink_stream(audio_sink_stream)
+    audio_sink_stream(audio_sink_stream),
+    last_due_time(std::numeric_limits<time_unit>::min())
 {
     HRESULT hr = S_OK;
     DWORD task_id;
@@ -135,13 +139,14 @@ void stream_mpeg2::on_component_stop(time_unit)
 
 void stream_mpeg2::on_stream_start(time_unit t)
 {
-    /*this->set_schedule_cb_work_queue(this->work_queue_id);*/
+    this->set_schedule_cb_work_queue(this->work_queue_id);
 
     // try to set the initial time for the output;
     // the output will modify the sample timestamps so that they start at 0
     this->sink->get_output()->set_initial_time(t);
 
     this->running = true;
+    this->last_due_time = t;
     this->schedule_new(t);
 }
 
@@ -177,7 +182,16 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     this->dispatch_request(rp);
     if(this->running)
     {
-        this->audio_sink_stream->request_sample(rp2);
+        using namespace std::chrono;
+        time_unit_t t2(this->last_due_time), t(due_time);
+        const sink_audio::periodicity_t periodicity =
+            duration_cast<sink_audio::periodicity_t>(t - t2);
+
+        if(periodicity.count())
+        {
+            this->last_due_time = due_time;
+            this->audio_sink_stream->request_sample(rp2);
+        }
         this->schedule_new(due_time);
     }
 }
@@ -257,8 +271,7 @@ void stream_mpeg2::add_worker_stream(const stream_mpeg2_worker_t& worker_stream)
 media_stream::result_t stream_mpeg2::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    const media_sample_view_h264* sample_view_h264 =
-        dynamic_cast<const media_sample_view_h264*>(&sample_view);
+    const media_sample_h264* sample_h264 = dynamic_cast<const media_sample_h264*>(&sample_view);
 
     // TODO: currently the write queue must be called every time
     // so that it can be properly flushed when stopping recording
@@ -267,8 +280,8 @@ media_stream::result_t stream_mpeg2::process_sample(
     sink_mpeg2::request_t request;
     request.rp = rp;
     request.sample_view.output = this->output;
-    if(sample_view_h264)
-        request.sample_view.sample = *sample_view_h264;
+    if(sample_h264)
+        request.sample_view.sample = *sample_h264;
     request.stream = this;
     this->sink->write_queue.push(request);
 

@@ -1,4 +1,5 @@
 #include "transform_audiomixer.h"
+#include "transform_audioprocessor.h"
 #include "assert.h"
 #include <Mferror.h>
 #include <iostream>
@@ -19,7 +20,7 @@ transform_audiomixer::transform_audiomixer(const media_session_t& session) :
 void transform_audiomixer::initialize()
 {
     // TODO: left over audio must be dismissed if the input data has been changed
-    this->leftover_audio.bit_depth = sizeof(transform_aac_encoder::bit_depth_t) * 8;
+    this->leftover_audio.bit_depth = sizeof(transform_audioprocessor::bit_depth_t) * 8;
     this->leftover_audio.channels = transform_aac_encoder::channels;
     this->leftover_audio.sample_rate = transform_aac_encoder::sample_rate;
 }
@@ -51,6 +52,11 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
     // TODO: buffer locking in case of failure
 
     assert_(out.samples.size() == 1);
+    assert_(in.bit_depth == sizeof(transform_audioprocessor::bit_depth_t) * 8);
+    assert_(in.channels == transform_aac_encoder::channels);
+    assert_(in.sample_rate == transform_aac_encoder::sample_rate);
+
+    typedef transform_audioprocessor::bit_depth_t bit_depth_in_t;
 
     HRESULT hr = S_OK;
     LONGLONG pos, dur;
@@ -74,7 +80,8 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
         frame_unit start_cut, end_cut;
         frame_unit sample_start, sample_end;
         CComPtr<IMFMediaBuffer> in_buffer;
-        bit_depth_t* in_data = NULL, *out_data = NULL;
+        bit_depth_in_t* in_data = NULL;
+        bit_depth_t *out_data = NULL;
 
         CHECK_HR(hr = (*it)->GetSampleTime(&pos));
         CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
@@ -104,14 +111,11 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
         {
             int64_t temp = *out_data;
             temp += *in_data++;
+            /*temp *= std::numeric_limits<bit_depth_t>::max();*/
 
             // clamp
-            if(temp > std::numeric_limits<bit_depth_t>::max())
-                temp = std::numeric_limits<bit_depth_t>::max();
-            else if(temp < std::numeric_limits<bit_depth_t>::min())
-                temp = std::numeric_limits<bit_depth_t>::min();
-
-            *out_data++ = (bit_depth_t)temp;
+            *out_data++ = (bit_depth_t)std::max((int64_t)std::numeric_limits<bit_depth_t>::min(),
+                std::min((int64_t)temp, (int64_t)std::numeric_limits<bit_depth_t>::max()));
         }
 
         CHECK_HR(hr = in_buffer->Unlock());
@@ -125,7 +129,30 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
 
             fully_mixed = false;
 
+            // TODO: left over buffer could be implemented the same way audioprocessor
+            // handles static buffers
             CComPtr<IMFSample> sample;
+            CComPtr<IMFMediaBuffer> buffer;
+            const UINT32 buffer_len = (UINT32)end_cut * in.get_block_align();
+            bit_depth_in_t* data = NULL;
+
+            CHECK_HR(hr = MFCreateSample(&sample));
+            CHECK_HR(hr = sample->SetSampleTime(frame_end_in - end_cut));
+            CHECK_HR(hr = sample->SetSampleDuration(end_cut));
+            CHECK_HR(hr = MFCreateAlignedMemoryBuffer(buffer_len,
+                in.get_block_align() / in.channels - 1, &buffer));
+            CHECK_HR(hr = buffer->SetCurrentLength(buffer_len));
+            CHECK_HR(hr = sample->AddBuffer(buffer));
+            CHECK_HR(hr = buffer->Lock((BYTE**)&data, NULL, NULL));
+
+            for(UINT32 i = 0; i < buffer_len / sizeof(bit_depth_in_t); i++)
+                *data++ = *in_data++;
+
+            CHECK_HR(hr = buffer->Unlock());
+
+            this->leftover_audio.buffer->samples.push_back(sample);
+
+           /* CComPtr<IMFSample> sample;
             CComPtr<IMFMediaBuffer> buffer;
             const DWORD wrapper_offset = 
                 (DWORD)((frame_end_in - end_cut) - frame_start_in) * in.get_block_align();
@@ -138,7 +165,7 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
             CHECK_HR(hr = buffer->SetCurrentLength(wrapper_len));
             CHECK_HR(hr = sample->AddBuffer(buffer));
 
-            this->leftover_audio.buffer->samples.push_back(sample);
+            this->leftover_audio.buffer->samples.push_back(sample);*/
 
             // update the end position for leftover buffer
             this->next_position3 = std::max(this->next_position3, frame_end_in);
@@ -229,12 +256,11 @@ void transform_audiomixer::process(
 done:
     if(FAILED(hr))
         throw std::exception();
-
 }
 
 void transform_audiomixer::process()
 {
-    scoped_lock lock(this->process_mutex);
+    std::unique_lock<std::mutex> lock(this->process_mutex);
 
     request_t request;
     while(this->requests.pop(request))
@@ -245,7 +271,10 @@ void transform_audiomixer::process()
         media_sample_audio audio(stream->audio_buffer);
 
         this->process(audio, request.sample_view.audios, request.sample_view.drain, drain_point);
+
+        lock.unlock();
         this->session->give_sample(request.stream, audio, request.rp, false);
+        lock.lock();
     }
 }
 
@@ -316,9 +345,8 @@ media_stream::result_t stream_audiomixer::process_sample(
         // push the request and transfer list
         transform_audiomixer::media_sample_audios& audios = 
             this->transform->requests.push(request).sample_view.audios;
-        audios.splice(audios.end(), this->audios);
+        audios = std::move(this->audios);
 
-        lock.unlock();
         this->transform->process();
     }
 

@@ -2,6 +2,7 @@
 
 #include "wtl.h"
 #include "control_scene.h"
+#include "control_pipeline.h"
 #include <string>
 #include <vector>
 
@@ -9,6 +10,11 @@ class gui_maindlg;
 
 class gui_newdlg : public CDialogImpl<gui_newdlg>
 {
+public:
+    enum new_item_t
+    {
+        NEW_SCENE, NEW_VIDEO, NEW_AUDIO
+    };
 private:
     control_scene* scene;
     CComboBox combobox;
@@ -16,14 +22,13 @@ private:
 public:
     enum {IDD = IDD_DIALOG_NEW};
 
-    gui_maindlg& wnd_parent;
     std::vector<control_scene::displaycapture_item> displaycaptures;
     std::vector<control_scene::audio_item> audios;
     std::wstring new_scene_name;
-    int cursel;
+    int cursel, audio_sel_offset;
     int new_item;
 
-    explicit gui_newdlg(gui_maindlg&, control_scene*);
+    explicit gui_newdlg(control_scene*);
 
     BEGIN_MSG_MAP(gui_newdlg)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)

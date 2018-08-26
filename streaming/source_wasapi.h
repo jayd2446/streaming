@@ -16,12 +16,7 @@
 
 #pragma comment(lib, "Mfplat.lib")
 
-// requests are served roughly twice in a buffer duration
-
-// the buffer duration should be greater than the pull rate interval so that
-// each request will generate data
-#define BUFFER_DURATION (SECOND_IN_TIME_UNIT / 10) // 100ms buffer
-#define MILLISECOND_IN_TIMEUNIT (SECOND_IN_TIME_UNIT / 1000)
+#define BUFFER_DURATION (SECOND_IN_TIME_UNIT / 2) // 500ms buffer
 // wasapi is always 32 bit float in shared mode
 #define WASAPI_BITS_PER_SAMPLE 32
 
@@ -50,8 +45,8 @@ public:
     // the base of consecutive samples the relative sample refers to
     /*struct sample_base_t {LONGLONG time, sample;};*/
 
-    // output bit depth
-    typedef transform_aac_encoder::bit_depth_t bit_depth_t;
+    // wasapi is always 32 bit float in shared mode
+    typedef float bit_depth_t;
     /*typedef std::deque<CComPtr<IMFSample>> sample_container;*/
 
     struct empty {};
@@ -105,6 +100,8 @@ private:
     // samples to downstream consistently
     HRESULT initialize_render(IMMDevice*, WAVEFORMATEX*);
 
+    static void make_silence(UINT32 frames, UINT32 channels, bit_depth_t* buffer);
+
     double sine_var;
 public:
     bool generate_sine;
@@ -116,10 +113,6 @@ public:
     // TODO: all initialize functions should just throw
     void initialize(const std::wstring& device_id, bool capture);
     media_stream_t create_stream();
-
-    void convert_32bit_float_to_bitdepth_pcm(
-        UINT32 frames, UINT32 channels,
-        const float* in, bit_depth_t* out, bool silent);
 
     // returns the block align of the converted samples in the buffer
     UINT32 get_block_align() const {return sizeof(bit_depth_t) * this->channels;}

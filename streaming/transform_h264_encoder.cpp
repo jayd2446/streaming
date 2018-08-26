@@ -25,8 +25,10 @@ transform_h264_encoder::transform_h264_encoder(const media_session_t& session,
     context_mutex(context_mutex)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
-    this->process_output_callback.Attach(new async_callback_t(&transform_h264_encoder::process_output_cb));
-    this->process_input_callback.Attach(new async_callback_t(&transform_h264_encoder::process_input_cb));
+    this->process_output_callback.Attach(
+        new async_callback_t(&transform_h264_encoder::process_output_cb));
+    this->process_input_callback.Attach(
+        new async_callback_t(&transform_h264_encoder::process_input_cb));
 }
 
 HRESULT transform_h264_encoder::set_input_stream_type()
@@ -88,19 +90,12 @@ done:
 
 void transform_h264_encoder::events_cb(void* unk)
 {
-    // TODO: upradeable lock for stream events callback
-    // TODO: this should be somewhat synchronized because endgetevent shouldn't be called twice
     IMFAsyncResult* result = (IMFAsyncResult*)unk;
     HRESULT hr = S_OK;
     CComPtr<IMFMediaEvent> media_event;
-    {
-        scoped_lock lock(this->events_mutex);
 
-        // get the event from the event queue
-        CHECK_HR(hr = this->event_generator->EndGetEvent(result, &media_event));
-        // set callback for the next event
-        CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
-    }
+    // get the event from the event queue
+    CHECK_HR(hr = this->event_generator->EndGetEvent(result, &media_event));
 
     // process the event
     MediaEventType type = MEUnknown;
@@ -110,6 +105,7 @@ void transform_h264_encoder::events_cb(void* unk)
 
     if(type == METransformNeedInput)
     {
+        this->encoder_requests++;
         const HRESULT hr = this->process_input_callback->mf_put_work_item(
             this->shared_from_this<transform_h264_encoder>());
         if(FAILED(hr) && hr != MF_E_SHUTDOWN)
@@ -129,6 +125,9 @@ void transform_h264_encoder::events_cb(void* unk)
     else
         assert_(false);
 
+    // set callback for the next event
+    CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
+
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -136,41 +135,23 @@ done:
 
 void transform_h264_encoder::processing_cb(void*)
 {
-    // TODO: hot path
+    // encoder needs to be locked so that the samples are submitted in right order
+    scoped_lock lock(this->process_mutex);
 
     HRESULT hr = S_OK;
-    while(this->encoder_requests)
+    
+    request_t request;
+    while(this->encoder_requests && this->requests.pop(request))
     {
-        // encoder needs to be locked so that the samples are submitted in right order
-        scoped_lock lock(this->encoder_mutex);
-        request_t request;
-        time_unit timestamp;
+        assert_(request.sample_view.buffer->texture);
 
         {
-            scoped_lock lock2(this->processed_samples_mutex);
-
-            // pull the next sample from the queue
-            if(!this->encoder_requests || !this->requests.pop(request))
-                return;
-
-            // pass the null sample to downstream and continue;
-            // the passing must be done like this so that request queue doesn't corrupt;
-            // null samples are generated only at the very startup of the session, though
-            if(!request.sample_view.sample.buffer->texture)
-            {
-                this->session->give_sample(request.stream, request.sample_view, request.rp, false);
-                continue;
-            }
-
-            timestamp = request.sample_view.sample.timestamp;
-
-            // TODO: remove processed samples queue because it might introduce bugs
-            // add the sample to the processed samples queue
-            assert_(this->processed_samples.find(timestamp) == this->processed_samples.end());
-            this->processed_samples[timestamp] = request;
-
-            this->encoder_requests--;
+            scoped_lock lock(this->processed_samples_mutex);
+            this->processed_samples.push(request);
         }
+        this->encoder_requests--;
+
+        const time_unit timestamp = request.sample_view.timestamp;
 
 #ifdef _DEBUG
         if(timestamp <= this->last_time_stamp)
@@ -182,20 +163,13 @@ void transform_h264_encoder::processing_cb(void*)
         CComPtr<IMFMediaBuffer> buffer;
         CComPtr<IMF2DBuffer> buffer2d;
         CComPtr<IMFSample> sample;
-
+        
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
-            request.sample_view.sample.buffer->texture, 0, FALSE, &buffer));
-        /*CHECK_HR(hr = buffer->QueryInterface(&buffer2d));
-        CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
-        CHECK_HR(hr = buffer->SetCurrentLength(len));*/
-        // do not use MFCreateVideoSampleFromSurface because it creates evr thread
+            request.sample_view.buffer->texture, 0, FALSE, &buffer));
         CHECK_HR(hr = MFCreateSample(&sample));
         CHECK_HR(hr = sample->AddBuffer(buffer));
-        /*UINT64 duration;
-        CHECK_HR(hr = MFFrameRateToAverageTimePerFrame(60, 1, &duration));*/
         CHECK_HR(hr = sample->SetSampleTime(timestamp));
-        /*CHECK_HR(hr = sample->SetSampleDuration(duration));*/
         {
             scoped_lock lock(*this->context_mutex);
             CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));
@@ -210,13 +184,10 @@ done:
 void transform_h264_encoder::process_output_cb(void*)
 {
     HRESULT hr = S_OK;
-
-    // TODO: the call order can be ensured
-
-    // the processed packets might arrive out of order
-    media_sample_view_h264 sample_view(media_sample_h264(media_buffer_h264_t(new media_buffer_h264)));
+    media_sample_h264 sample_view(media_buffer_h264_t(new media_buffer_h264));
     request_packet rp;
     const media_stream* stream;
+    LONGLONG timestamp;
 
     const DWORD mft_provides_samples =
         this->output_stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
@@ -231,23 +202,26 @@ void transform_h264_encoder::process_output_cb(void*)
     output.dwStatus = 0;
     output.pEvents = NULL;
 
-    CHECK_HR(hr = this->encoder->ProcessOutput(0, 1, &output, &status));
-    LONGLONG time;
-    CHECK_HR(hr = output.pSample->GetSampleTime(&time));
-    /*CHECK_HR(hr = output.pSample->ConvertToContiguousBuffer(&buffer));*/
-
     {
-        scoped_lock lock(this->processed_samples_mutex);
-        auto it = this->processed_samples.find(time);
-        assert_(it != this->processed_samples.end());
-        rp = it->second.rp;
-        stream = it->second.stream;
-        this->processed_samples.erase(it);
+        scoped_lock lock(this->process_output_mutex);
+        CHECK_HR(hr = this->encoder->ProcessOutput(0, 1, &output, &status));
+        CHECK_HR(hr = output.pSample->GetSampleTime(&timestamp));
+
+        {
+            scoped_lock lock(this->processed_samples_mutex);
+            request_t request = this->processed_samples.front();
+            this->processed_samples.pop();
+            assert_(timestamp == request.sample_view.timestamp);
+
+            rp = request.rp;
+            stream = request.stream;
+        }
     }
 
-    sample_view.sample.timestamp = time;
-    sample_view.sample.buffer->sample.Attach(output.pSample);
+    sample_view.timestamp = timestamp;
+    sample_view.buffer->sample.Attach(output.pSample);
     this->session->give_sample(stream, sample_view, rp, false);
+
 done:
     if(FAILED(hr))
         throw std::exception();
@@ -255,7 +229,6 @@ done:
 
 void transform_h264_encoder::process_input_cb(void*)
 {
-    this->encoder_requests++;
     this->processing_cb(NULL);
 }
 
@@ -263,7 +236,7 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
 {
     HRESULT hr = S_OK;
 
-    this->d3d11dev = d3d11dev;
+    /*this->d3d11dev = d3d11dev;*/
     CComPtr<IMFAttributes> attributes;
     UINT count = 0;
     // array must be released with cotaskmemfree
@@ -395,9 +368,6 @@ stream_h264_encoder::stream_h264_encoder(const transform_h264_encoder_t& transfo
 
 media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, const media_stream*)
 {
-    // TODO: the mpeg sink should use the timestamp from the sample,
-    // not request time(request time might be greatly drifted if there's system overhead)
-
     if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
     return OK;
@@ -408,7 +378,7 @@ media_stream::result_t stream_h264_encoder::process_sample(
 {
     transform_h264_encoder::request_t request;
     request.stream = this;
-    request.sample_view = reinterpret_cast<const media_sample_view_texture&>(sample_view);
+    request.sample_view = reinterpret_cast<const media_sample_texture&>(sample_view);
     request.rp = rp;
 
     this->transform->requests.push(request);

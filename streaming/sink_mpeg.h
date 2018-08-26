@@ -6,6 +6,7 @@
 #include "transform_h264_encoder.h"
 #include "transform_aac_encoder.h"
 #include "source_loopback.h"
+#include "stream_worker.h"
 #include <memory>
 #include <vector>
 #include <mutex>
@@ -28,8 +29,10 @@ each topology branch is a separate instance of the same elementary topology
 
 */
 
+class sink_mpeg;
+typedef std::shared_ptr<sink_mpeg> sink_mpeg_t;
 class stream_mpeg_host;
-class stream_mpeg;
+typedef stream_worker<sink_mpeg_t> stream_mpeg;
 typedef std::shared_ptr<stream_mpeg_host> stream_mpeg_host_t;
 typedef std::shared_ptr<stream_mpeg> stream_mpeg_t;
 
@@ -57,8 +60,8 @@ public:
     };
 private:
     // used for writing the packet to disk
-    std::recursive_mutex packets_mutex;
-    std::map<time_unit /*request time*/, packet> packets;
+    std::recursive_mutex packets_mutex[2];
+    std::map<time_unit /*request time*/, packet> packets[2];
     std::recursive_mutex processed_packets_mutex;
     std::queue<packet> processed_packets;
     CComPtr<async_callback_t> processing_callback;
@@ -75,14 +78,14 @@ private:
     transform_aac_encoder_t aac_encoder_transform;
     std::shared_ptr<sink_mpeg> mpeg_sink;
 
-    void new_packet();
+    void new_packet(int audio);
     void processing_cb(void*);
 
     bool parent;
 
     sink_mpeg(const media_session_t& session, const CComPtr<IMFSinkWriter>&);
 public:
-    sink_mpeg(const media_session_t& session);
+    explicit sink_mpeg(const media_session_t& session);
     ~sink_mpeg();
 
     void initialize(const CComPtr<IMFMediaType>& input_type);
@@ -91,21 +94,6 @@ public:
     stream_mpeg_host_t create_host_stream(presentation_clock_t&);
     // streams must be connected to the host stream
     stream_mpeg_t create_worker_stream();
-};
-
-typedef std::shared_ptr<sink_mpeg> sink_mpeg_t;
-
-class stream_mpeg : public media_stream
-{
-    friend class stream_mpeg_host;
-private:
-    sink_mpeg_t sink;
-    volatile bool available;
-public:
-    explicit stream_mpeg(const sink_mpeg_t& sink);
-
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample_view_t&, request_packet&, const media_stream*);
 };
 
 class stream_mpeg_host : public media_stream, public presentation_clock_sink
@@ -122,6 +110,7 @@ public:
 private:
     sink_mpeg_t sink;
     bool running;
+    bool discard;
 
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_mpeg_t> worker_streams;
@@ -136,6 +125,7 @@ private:
     // the audio topology is switched to the session
     // when the video topology starts
     media_topology_t audio_topology;
+    stream_mpeg_host_t mpeg_stream_audio;
 
     void set_audio_session(time_unit time_point);
 

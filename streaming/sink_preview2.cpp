@@ -3,6 +3,9 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
 
+#undef max
+#undef min
+
 sink_preview2::sink_preview2(const media_session_t& session, context_mutex_t context_mutex) : 
     media_sink(session), context_mutex(context_mutex)
 {
@@ -49,7 +52,7 @@ void sink_preview2::initialize(
     swapchain_desc.BufferCount = 2; // use double buffering to enable flip
     swapchain_desc.Scaling = DXGI_SCALING_NONE;
     swapchain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-    swapchain_desc.Flags = 0;
+    swapchain_desc.Flags = DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE;
 
     // identify the physical adapter (gpu or card) this device runs on
     CHECK_HR(hr = this->dxgidev->GetAdapter(&dxgiadapter));
@@ -99,30 +102,55 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 {
     HRESULT hr = S_OK;
 
-    const media_sample_view_texture& sample_view =
-        reinterpret_cast<const media_sample_view_texture&>(sample_view_);
+    const media_sample_texture& sample_view =
+        reinterpret_cast<const media_sample_texture&>(sample_view_);
 
-    CComPtr<ID3D11Texture2D> texture = sample_view.sample.buffer->texture;
+    CComPtr<ID3D11Texture2D> texture = sample_view.buffer->texture;
     if(texture)
     {
+        using namespace D2D1;
+        D3D11_TEXTURE2D_DESC desc;
+        sample_view.buffer->texture->GetDesc(&desc);
+
+        const FLOAT width = (FLOAT)this->width, 
+            height = (FLOAT)this->height;
+        const FLOAT scale_w = width / desc.Width,
+            scale_h = height / desc.Height;
+        const bool use_scale_w = scale_w < scale_h;
+        const FLOAT scale = use_scale_w ? scale_w : scale_h;
+        FLOAT padding = use_scale_w ? desc.Height * scale : desc.Width * scale;
+        if(use_scale_w)
+            padding = (height - padding) / 2;
+        else
+            padding = (width - padding) / 2;
+
+        D2D1_RECT_F rect;
+        rect.top = rect.left = 20 / scale;
+        rect.right = (FLOAT)desc.Width - 20 / scale;
+        rect.bottom = (FLOAT)desc.Height - 20 / scale;
+
+        Matrix3x2F scale_mtx = Matrix3x2F::Scale(scale, scale);
+        Matrix3x2F translation_mtx = use_scale_w ?
+            Matrix3x2F::Translation(0.f, padding) :
+            Matrix3x2F::Translation(padding, 0.f);
+        
+        scoped_lock lock(*this->context_mutex);
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
-        D2D1_RECT_F rect;
-        rect.top = rect.left = 0;
-        rect.right = (FLOAT)this->width;
-        rect.bottom = (FLOAT)this->height;
-
-        scoped_lock lock(*this->context_mutex);
         CHECK_HR(hr = texture->QueryInterface(&surface));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
             surface,
-            D2D1::BitmapProperties1(
+            BitmapProperties1(
             D2D1_BITMAP_OPTIONS_NONE,
-            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
+            PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
             &bitmap));
-
         this->d2d1devctx->BeginDraw();
-        this->d2d1devctx->DrawBitmap(bitmap, &rect);
+        this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
+        if(rect.top < rect.bottom && rect.left < rect.right)
+        {
+            this->d2d1devctx->SetTransform(scale_mtx * translation_mtx);
+            this->d2d1devctx->DrawBitmap(bitmap, &rect);
+        }
         this->d2d1devctx->EndDraw();
 
         // dxgi functions need to be synchronized with the context mutex
@@ -178,20 +206,18 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-stream_preview2::stream_preview2(const sink_preview2_t& sink) : 
-    sink(sink), media_stream(media_stream::PROCESS)
+stream_preview2::stream_preview2(const sink_preview2_t& sink) : sink(sink)
 {
 }
 
-media_stream::result_t stream_preview2::request_sample(request_packet&, const media_stream*)
+media_stream::result_t stream_preview2::request_sample(request_packet& rp, const media_stream*)
 {
-    assert_(false);
-    return OK;
+    return this->sink->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
 }
 
 media_stream::result_t stream_preview2::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     this->sink->draw_sample(sample_view, rp);
-    return OK;
+    return this->sink->session->give_sample(this, sample_view, rp, false) ? OK : FATAL_ERROR;
 }

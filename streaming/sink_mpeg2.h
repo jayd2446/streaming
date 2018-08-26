@@ -11,6 +11,7 @@
 #include "assert.h"
 #include <vector>
 #include <mutex>
+#include <chrono>
 
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -30,7 +31,7 @@ public:
     struct packet
     {
         output_file_t output;
-        media_sample_view_h264 sample;
+        media_sample_h264 sample;
     };
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<sink_mpeg2> async_callback_t;
@@ -81,6 +82,7 @@ class stream_mpeg2 : public media_stream_clock_sink, public presentation_clock_s
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef presentation_time_source::time_unit_t time_unit_t;
 private:
     sink_mpeg2_t sink;
     bool running;
@@ -89,6 +91,7 @@ private:
     std::vector<stream_mpeg2_worker_t> worker_streams;
     stream_audio_t audio_sink_stream;
     output_file_t output;
+    time_unit last_due_time;
 
     // for debug
     int unavailable;

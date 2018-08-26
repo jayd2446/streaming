@@ -71,11 +71,9 @@ media_stream_t transform_color_converter::create_stream()
 
 stream_color_converter::stream_color_converter(const transform_color_converter_t& transform) :
     transform(transform),
-    output_buffer(new media_buffer_texture),
-    output_buffer_null(new media_buffer_texture)
+    output_buffer(new media_buffer_texture)
 {
     HRESULT hr = S_OK;
-    this->processing_callback.Attach(new async_callback_t(&stream_color_converter::processing_cb));
 
     CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessor(
         this->transform->enumerator, 0, &this->videoprocessor));
@@ -116,17 +114,21 @@ done:
 void stream_color_converter::processing_cb(void*)
 {
     HRESULT hr = S_OK;
-
     {
         // lock the output sample
         /*media_sample_view_t sample_view;*/
-        media_sample_view_texture sample_view;
+        media_sample_texture sample_view;
 
-        CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample_view.sample.buffer->texture;
+        CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample_view.buffer->texture;
 
-        if(texture)
+        assert_(texture);
+        /*if(texture)*/
+        // scope is important here so that the context mutex is unlocked;
+        // failure to unlock it before proceeding to next component
+        // introduces a deadlock scenario
         {
-            sample_view.attach(this->output_buffer);
+            sample_view.buffer = this->output_buffer;
+            /*sample_view.attach(this->output_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
             /*sample_view.reset(new media_sample_view(this->output_buffer));*/
 
             // create the input view for the sample to be converted
@@ -183,17 +185,18 @@ void stream_color_converter::processing_cb(void*)
                 this->videoprocessor, this->output_view,
                 0, stream_count, &stream));
         }
-        else
-            // TODO: read lock buffers is just a workaround for a deadlock bug
-            sample_view.attach(this->output_buffer_null, view_lock_t::READ_LOCK_BUFFERS);
+        //else
+        //    // TODO: read lock buffers is just a workaround for a deadlock bug
+        //    sample_view.attach(this->output_buffer_null, view_lock_t::READ_LOCK_BUFFERS);
             /*sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));*/
 
-        sample_view.sample.timestamp = this->pending_packet.sample_view.sample.timestamp;
+        sample_view.timestamp = this->pending_packet.sample_view.timestamp;
         
         request_packet rp = this->pending_packet.rp;
 
         // reset the sample view from the pending packet so it is unlocked
-        this->pending_packet.sample_view.detach();
+        this->pending_packet.sample_view.buffer = NULL;
+        /*this->pending_packet.sample_view.detach();*/
         // remove the rps so that there aren't any circular dependencies at shutdown
         this->pending_packet.rp = request_packet();
 
@@ -216,8 +219,8 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 media_stream::result_t stream_color_converter::process_sample(
     const media_sample& sample_view_, request_packet& rp, const media_stream*)
 {
-    const media_sample_view_texture& sample_view = 
-        reinterpret_cast<const media_sample_view_texture&>(sample_view_);
+    const media_sample_texture& sample_view = 
+        reinterpret_cast<const media_sample_texture&>(sample_view_);
 
     /*CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;*/
 
