@@ -11,14 +11,14 @@ class gui_scenedlg :
     public CDialogResize<gui_scenedlg>
 {
 private:
-    control_pipeline& ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     gui_sourcedlg& dlg_sources;
     CButton btn_addscene, btn_removescene;
     CListBox wnd_scenelist;
 public:
     enum {IDD = IDD_SCENEDLG};
 
-    gui_scenedlg(gui_sourcedlg&, control_pipeline&);
+    gui_scenedlg(gui_sourcedlg&, const control_pipeline_t&);
 
     void add_scene(const std::wstring& scene_name);
 
@@ -50,14 +50,14 @@ class gui_sourcedlg :
     public CDialogResize<gui_sourcedlg>
 {
 private:
-    control_pipeline& ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     gui_scenedlg& dlg_scenes;
     CButton btn_addsource, btn_removesource;
     CTreeViewCtrlEx wnd_sourcetree;
 public:
     enum {IDD = IDD_SOURCEDLG};
 
-    gui_sourcedlg(gui_scenedlg&, control_pipeline&);
+    gui_sourcedlg(gui_scenedlg&, const control_pipeline_t&);
 
     void set_source_tree(const control_scene&);
 
@@ -86,12 +86,12 @@ class gui_controldlg :
     public CDialogResize<gui_controldlg>
 {
 private:
-    control_pipeline& ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     CButton btn_start_recording;
 public:
     enum {IDD = IDD_CTRLDLG};
 
-    explicit gui_controldlg(control_pipeline&);
+    explicit gui_controldlg(const control_pipeline_t&);
 
     BEGIN_MSG_MAP(gui_controldlg)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)

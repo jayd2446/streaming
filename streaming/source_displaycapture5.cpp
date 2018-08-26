@@ -14,7 +14,13 @@
 #undef max
 #undef min
 
-extern LARGE_INTEGER pc_frequency;
+class displaycapture_exception : public std::exception {};
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
 
 // TODO: decide if allocating memory for newest buffer is redundant
 // (currently is not, since the videprocessor assumes a non null sample view)
@@ -77,10 +83,14 @@ done:
 }
 
 HRESULT source_displaycapture5::initialize(
-    UINT output_index, const CComPtr<ID3D11Device>& d3d11dev, const CComPtr<ID3D11DeviceContext>& devctx)
+    const control_pipeline_t& ctrl_pipeline,
+    UINT output_index, 
+    const CComPtr<ID3D11Device>& d3d11dev, 
+    const CComPtr<ID3D11DeviceContext>& devctx)
 {
     HRESULT hr = S_OK;
 
+    this->ctrl_pipeline = ctrl_pipeline;
     this->d3d11dev2 = this->d3d11dev = d3d11dev;
     this->d3d11devctx2 = this->d3d11devctx = devctx;
     this->output_index = output_index;
@@ -100,6 +110,7 @@ done:
 }
 
 HRESULT source_displaycapture5::initialize(
+    const control_pipeline_t& ctrl_pipeline,
     UINT adapter_index,
     UINT output_index, 
     const CComPtr<IDXGIFactory1>& factory,
@@ -128,7 +139,7 @@ HRESULT source_displaycapture5::initialize(
         D3D11_SDK_VERSION, &this->d3d11dev, &feature_level, &this->d3d11devctx));
 
     // currently initialization never fails
-    CHECK_HR(hr = this->initialize(output_index, this->d3d11dev, this->d3d11devctx));
+    CHECK_HR(hr = this->initialize(ctrl_pipeline, output_index, this->d3d11dev, this->d3d11devctx));
 
     this->d3d11dev2 = d3d11dev;
     this->d3d11devctx2 = devctx;
@@ -323,7 +334,7 @@ done:
             hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE || hr == DXGI_ERROR_SESSION_DISCONNECTED)
             return false;
         else
-            throw std::exception();
+            throw displaycapture_exception();
     }
 
     return (frame_info.LastPresentTime.QuadPart != 0);
@@ -371,17 +382,28 @@ void stream_displaycapture5::capture_frame_cb(void*)
     presentation_clock_t clock;
 
     // capture a frame
+    // TODO: buffer parameter is redundant because the routine
+    // updates the newest buffer field
+
+    // clock is assumed to be valid
+    this->rp.get_clock(clock);
+    try
     {
-        /*scoped_lock lock(this->source->capture_frame_mutex);*/
-
-        // TODO: buffer parameter is redundant because the routine
-        // updates the newest buffer field
-
-        // clock is assumed to be valid
-        this->rp.get_clock(clock);
         frame_captured = this->source->capture_frame(
             new_pointer_shape, pointer_position, this->pointer_stream->buffer,
             this->buffer, timestamp, clock);
+    }
+    catch(displaycapture_exception)
+    {
+        frame_captured = false;
+
+        //// initiate scene reinitialization
+        //control_pipeline::scoped_lock lock(this->source->ctrl_pipeline->mutex);
+
+        //// scene activation isn't possible anymore if the pipeline has been shutdown
+        //if(this->source->ctrl_pipeline->is_running())
+        //    this->source->ctrl_pipeline->set_active(
+        //        *this->source->ctrl_pipeline->get_active_scene());
     }
 
     if(!frame_captured)
@@ -391,23 +413,18 @@ void stream_displaycapture5::capture_frame_cb(void*)
         // sample_view releasing its own reference to another sample_view
         sample.buffer = NULL;
         sample.buffer = this->source->newest_buffer->lock_buffer(buffer_lock_t::READ_LOCK);
-        /*sample_view.attach(this->source->newest_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
     }
     else
         this->buffer->unlock_write();
-        /*sample_view.buffer->unlock_write();*/
 
     if(!new_pointer_shape)
     {
         pointer_sample.buffer = NULL;
         pointer_sample.buffer = 
             this->source->newest_pointer_buffer->lock_buffer(buffer_lock_t::READ_LOCK);
-        /*pointer_sample_view.attach(
-            this->source->newest_pointer_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
     }
     else
         this->pointer_stream->buffer->unlock_write();
-        /*pointer_sample_view.buffer->unlock_write();*/
 
     request_packet rp = this->rp;
     this->rp = request_packet();
@@ -418,7 +435,6 @@ void stream_displaycapture5::capture_frame_cb(void*)
         sample.buffer->texture->GetDesc(ptr_desc = &desc);
 
     sample.timestamp = rp.request_time;
-    /*this->sample->timestamp = timestamp;*/
 
     lock.unlock();
 
@@ -493,7 +509,7 @@ void stream_displaycapture5_pointer::dispatch(
 
     sample_view.timestamp = rp.request_time;
 
-    this->source->session->give_sample(this, std::move(sample_view), rp, true);
+    this->source->session->give_sample(this, sample_view, rp, true);
 }
 
 media_stream::result_t stream_displaycapture5_pointer::request_sample(request_packet&, const media_stream*)

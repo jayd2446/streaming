@@ -1,7 +1,7 @@
 #include "gui_dlgs.h"
 #include "gui_newdlg.h"
 
-gui_scenedlg::gui_scenedlg(gui_sourcedlg& dlg_sources, control_pipeline& ctrl_pipeline) : 
+gui_scenedlg::gui_scenedlg(gui_sourcedlg& dlg_sources, const control_pipeline_t& ctrl_pipeline) : 
     ctrl_pipeline(ctrl_pipeline),
     dlg_sources(dlg_sources)
 {
@@ -9,12 +9,14 @@ gui_scenedlg::gui_scenedlg(gui_sourcedlg& dlg_sources, control_pipeline& ctrl_pi
 
 void gui_scenedlg::add_scene(const std::wstring& scene_name)
 {
-    control_scene& scene = this->ctrl_pipeline.create_scene(scene_name);
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    control_scene& scene = this->ctrl_pipeline->create_scene(scene_name);
     const int index = this->wnd_scenelist.AddString(scene_name.c_str());
     this->wnd_scenelist.SetCurSel(index);
 
     // switch to the new scene
-    this->ctrl_pipeline.set_active(scene);
+    this->ctrl_pipeline->set_active(scene);
 
     // set focus to the scene list
     this->wnd_scenelist.SetFocus();
@@ -35,13 +37,15 @@ LRESULT gui_scenedlg::OnBnClickedAddscene(WORD /*wNotifyCode*/, WORD /*wID*/, HW
 
 LRESULT gui_scenedlg::OnBnClickedRemovescene(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    if(this->ctrl_pipeline.is_running())
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    if(this->ctrl_pipeline->is_running())
     {
-        for(int i = 0; i < 20; i++)
+        for(int i = 0; i < 19; i++)
         {
             this->wnd_scenelist.SetCurSel(i % 2);
-            this->ctrl_pipeline.set_active(this->ctrl_pipeline.get_scene(i % 2));
-            this->dlg_sources.set_source_tree(*this->ctrl_pipeline.get_active_scene());
+            this->ctrl_pipeline->set_active(this->ctrl_pipeline->get_scene(i % 2));
+            this->dlg_sources.set_source_tree(*this->ctrl_pipeline->get_active_scene());
         }
     }
 
@@ -61,12 +65,14 @@ LRESULT gui_scenedlg::OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL
 
 LRESULT gui_scenedlg::OnLbnSelchangeScenelist(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    if(this->ctrl_pipeline.is_running())
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    if(this->ctrl_pipeline->is_running())
     {
         const int index = this->wnd_scenelist.GetCurSel();
-        this->ctrl_pipeline.set_active(this->ctrl_pipeline.get_scene(index));
+        this->ctrl_pipeline->set_active(this->ctrl_pipeline->get_scene(index));
         
-        this->dlg_sources.set_source_tree(*this->ctrl_pipeline.get_active_scene());
+        this->dlg_sources.set_source_tree(*this->ctrl_pipeline->get_active_scene());
     }
 
     return 0;
@@ -78,7 +84,7 @@ LRESULT gui_scenedlg::OnLbnSelchangeScenelist(WORD /*wNotifyCode*/, WORD /*wID*/
 /////////////////////////////////////////////////////////////////
 
 
-gui_sourcedlg::gui_sourcedlg(gui_scenedlg& dlg_scenes, control_pipeline& ctrl_pipeline) :
+gui_sourcedlg::gui_sourcedlg(gui_scenedlg& dlg_scenes, const control_pipeline_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
     dlg_scenes(dlg_scenes)
 {
@@ -101,11 +107,13 @@ void gui_sourcedlg::set_source_tree(const control_scene& scene)
 
 LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    control_scene* scene = this->ctrl_pipeline.get_active_scene();
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    control_scene* scene = this->ctrl_pipeline->get_active_scene();
     if(!scene)
     {
         this->dlg_scenes.add_scene(L"New Scene");
-        scene = this->ctrl_pipeline.get_active_scene();
+        scene = this->ctrl_pipeline->get_active_scene();
         assert_(scene);
     }
 
@@ -140,7 +148,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             // TODO: just add items instead of rebuilding the tree
             this->set_source_tree(*scene);
 
-            this->ctrl_pipeline.set_active(*scene);
+            this->ctrl_pipeline->set_active(*scene);
             /*CTreeItem item = this->wnd_sourcetree.InsertItem(L"Video", TVI_ROOT, TVI_LAST);*/
             /*}*/
             k = 1;
@@ -157,12 +165,12 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             // TODO: just add items instead of rebuilding the tree
             this->set_source_tree(*scene);
             /*CTreeItem item = this->wnd_sourcetree.InsertItem(L"Audio", TVI_ROOT, TVI_LAST);*/
-            this->ctrl_pipeline.set_active(*scene);
+            this->ctrl_pipeline->set_active(*scene);
             /*}*/
             k = 1;
         }
 
-        this->ctrl_pipeline.set_active(*scene);
+        this->ctrl_pipeline->set_active(*scene);
     }
 
     return 0;
@@ -191,7 +199,7 @@ LRESULT gui_sourcedlg::OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BOO
 /////////////////////////////////////////////////////////////////
 
 
-gui_controldlg::gui_controldlg(control_pipeline& ctrl_pipeline) : ctrl_pipeline(ctrl_pipeline)
+gui_controldlg::gui_controldlg(const control_pipeline_t& ctrl_pipeline) : ctrl_pipeline(ctrl_pipeline)
 {
 }
 
@@ -206,20 +214,22 @@ LRESULT gui_controldlg::OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BO
 
 LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    if(!this->ctrl_pipeline.get_active_scene())
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    if(!this->ctrl_pipeline->get_active_scene())
     {
         this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
         return 0;
     }
 
-    if(!this->ctrl_pipeline.is_recording())
+    if(!this->ctrl_pipeline->is_recording())
     {
-        this->ctrl_pipeline.start_recording(L"test.mp4", *this->ctrl_pipeline.get_active_scene());
+        this->ctrl_pipeline->start_recording(L"test.mp4", *this->ctrl_pipeline->get_active_scene());
         this->btn_start_recording.SetWindowTextW(L"Stop Recording");
     }
     else
     {
-        this->ctrl_pipeline.stop_recording();
+        this->ctrl_pipeline->stop_recording();
         this->btn_start_recording.SetWindowTextW(L"Start Recording");
     }
 

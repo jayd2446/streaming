@@ -1,7 +1,7 @@
 #pragma once
+#include "control_pipeline.h"
 #include "media_topology.h"
 #include "source_wasapi.h"
-#include "source_displaycapture5.h"
 #include "transform_videoprocessor.h"
 #include "transform_audioprocessor.h"
 #include "transform_audiomixer.h"
@@ -12,11 +12,6 @@
 
 // control_scene needs to maintain a link between the component and the name of the item;
 // components are shared between scenes
-
-class control_pipeline;
-// each audio source must have an audio processor attached to it for audio buffering
-// and resampling to work
-typedef std::pair<source_wasapi_t, transform_audioprocessor_t> source_audio_t;
 
 class control_scene
 {

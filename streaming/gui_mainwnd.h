@@ -14,7 +14,7 @@ class gui_controlwnd :
     public CMessageFilter
 {
 private:
-    control_pipeline& ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     gui_scenedlg dlg_scenes;
     gui_sourcedlg dlg_sources;
     gui_controldlg dlg_controls;
@@ -23,7 +23,7 @@ private:
 public:
     DECLARE_WND_CLASS(L"control")
 
-    explicit gui_controlwnd(control_pipeline&);
+    explicit gui_controlwnd(const control_pipeline_t&);
 
     BOOL PreTranslateMessage(MSG* pMsg);
 
@@ -48,7 +48,7 @@ class gui_mainwnd :
 {
 public:
 private:
-    control_pipeline ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
 
     CSplitterWindow wnd_splitter;
     gui_previewwnd wnd_preview;

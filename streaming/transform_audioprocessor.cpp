@@ -122,14 +122,14 @@ void transform_audioprocessor::resample(
     if(!lock.owns_lock())
         throw std::exception();
     // stream is assumed to have provided a buffer
-    assert_(out_audio.buffer->samples.size() == 1);
+    assert_(out_audio.buffer && out_audio.buffer->samples.size() == 1);
 
     this->reset_input_type(audio.channels, audio.sample_rate, audio.bit_depth);
 
     out_audio.bit_depth = sizeof(bit_depth_t) * 8;
     out_audio.channels = transform_aac_encoder::channels;
     out_audio.sample_rate = transform_aac_encoder::sample_rate;
-    out_audio.frame_end = std::numeric_limits<frame_unit>::min();
+    out_audio.frame_end = media_sample_audio::invalid_frame_end;
 
     // declare resampling operations
     HRESULT hr = S_OK;
@@ -211,7 +211,7 @@ void transform_audioprocessor::resample(
         return hr;
     };
 
-    // get the provided sample and clear the buffer
+    // get the provided buffer and clear the buffer
     CHECK_HR(hr = out_audio.buffer->samples[0]->GetBufferByIndex(0, &out_buffer));
     out_audio.buffer->samples.clear();
 
@@ -283,7 +283,7 @@ done:
         throw std::exception();
 }
 
-void transform_audioprocessor::initialize()
+void transform_audioprocessor::initialize(/*UINT32 sample_rate*/)
 {
     HRESULT hr = S_OK;
     CComPtr<IWMResamplerProps> props;
@@ -308,6 +308,8 @@ void transform_audioprocessor::initialize()
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, block_align));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
         transform_aac_encoder::sample_rate * block_align));
+
+    /*this->sample_rate = sample_rate;*/
 
 done:
     if(FAILED(hr))
@@ -357,9 +359,13 @@ stream_audioprocessor::stream_audioprocessor(const transform_audioprocessor_t& t
 
     const UINT32 block_align = 
         sizeof(transform_audioprocessor::bit_depth_t) * transform_aac_encoder::channels;
+    const double frame_duration = SECOND_IN_TIME_UNIT / (double)transform_aac_encoder::sample_rate;
+    const frame_unit frames =
+        (frame_unit)(transform_audioprocessor::buffer_duration / frame_duration);
+
     CHECK_HR(hr = MFCreateSample(&this->sample));
     CHECK_HR(hr = MFCreateAlignedMemoryBuffer(
-        transform_aac_encoder::input_frames * block_align * 2,
+        frames * block_align * 2,
         this->transform->output_stream_info.cbAlignment, &this->buffer));
     CHECK_HR(hr = this->sample->AddBuffer(this->buffer));
 

@@ -1,4 +1,6 @@
 #include "control_pipeline.h"
+#include "source_displaycapture5.h"
+#include "control_scene.h"
 
 #ifdef _DEBUG
 #define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
@@ -14,7 +16,8 @@ control_pipeline::control_pipeline() :
     d3d11dev_adapter(0),
     stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL)),
     recording_state_change(false),
-    context_mutex(new std::recursive_mutex)
+    context_mutex(new std::recursive_mutex),
+    is_shutdown(false)
 {
     if(!this->stopped_signal)
         throw std::exception();
@@ -288,10 +291,11 @@ source_displaycapture5_t control_pipeline::create_displaycapture_source(
     source_displaycapture5_t displaycapture_source(
         new source_displaycapture5(this->session, this->context_mutex));
     if(adapter_ordinal == this->d3d11dev_adapter)
-        displaycapture_source->initialize(output_ordinal, this->d3d11dev, this->devctx);
+        displaycapture_source->initialize(this->shared_from_this<control_pipeline>(), 
+            output_ordinal, this->d3d11dev, this->devctx);
     else
-        displaycapture_source->initialize(adapter_ordinal, output_ordinal, 
-        this->dxgifactory, this->d3d11dev, this->devctx);
+        displaycapture_source->initialize(this->shared_from_this<control_pipeline>(), 
+            adapter_ordinal, output_ordinal, this->dxgifactory, this->d3d11dev, this->devctx);
     return displaycapture_source;
 }
 
@@ -352,7 +356,7 @@ void control_pipeline::build_audio_topology_branch(const media_topology_t& audio
 
 void control_pipeline::set_active(control_scene& scene)
 {
-    /*const bool first_start = !this->scene_active;*/
+    assert_(!this->is_shutdown);
 
     this->activate_components();
 
@@ -369,17 +373,15 @@ void control_pipeline::set_active(control_scene& scene)
         // in the lifetime of pipeline;
         this->mpeg_sink.second->start_topologies(
             0, this->scene_active->video_topology, this->scene_active->audio_topology);
-        /*this->session->start_playback(this->scene_active->video_topology, 0);*/
     }
     else
     {
         this->mpeg_sink.second->switch_topologies(
             this->scene_active->video_topology, this->scene_active->audio_topology);
-        /*this->session->switch_topology(this->scene_active->video_topology);*/
     }
 }
 
-void control_pipeline::set_inactive()
+void control_pipeline::shutdown()
 {
     assert_(this->scene_active);
 
@@ -399,6 +401,8 @@ void control_pipeline::set_inactive()
     this->session = NULL;
     this->audio_session = NULL;
     this->time_source = NULL;
+
+    this->is_shutdown = true;
     
     // TODO: the pipeline might throw when the media foundation has already been
     // closed while the pipeline is still active;

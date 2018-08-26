@@ -48,7 +48,8 @@ public:
 
     // requests samples from media session or processes
     // samples if there are any;
-    // implements input stream functionality
+    // implements input stream functionality;
+    // NOTE: request_sample shouldn't lock anything, because otherwise a deadlock might occur
     virtual result_t request_sample(request_packet&, const media_stream* previous_stream) = 0;
     // processes the new sample and optionally calls media_session::give_sample;
     // implements output stream functionality

@@ -14,6 +14,9 @@
 #include "assert.h"
 #include "enable_shared_from_this.h"
 
+#undef max
+#undef min
+
 #define SECOND_IN_TIME_UNIT 10000000
 
 // 100 nanosecond = 1 time_unit
@@ -239,6 +242,7 @@ class media_sample_audio : public media_sample
 {
 public:
     typedef media_buffer_samples_t buffer_t;
+    static const frame_unit invalid_frame_end = std::numeric_limits<frame_unit>::min();
 public:
     // the (sample pos + sample dur) max of buffer
     frame_unit frame_end;

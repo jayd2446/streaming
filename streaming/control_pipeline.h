@@ -1,7 +1,6 @@
 #pragma once
 #include "presentation_clock.h"
 #include "media_session.h"
-#include "control_scene.h"
 #include "transform_aac_encoder.h"
 #include "transform_h264_encoder.h"
 #include "transform_color_converter.h"
@@ -12,8 +11,8 @@
 #include "sink_audio.h"
 #include "sink_preview2.h"
 #include "source_wasapi.h"
-#include "source_displaycapture5.h"
 #include "output_file.h"
+#include "enable_shared_from_this.h"
 #include <atlbase.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -21,6 +20,8 @@
 #include <vector>
 #include <list>
 #include <memory>
+#include <mutex>
+#include <string>
 
 #pragma comment(lib, "D3D11.lib")
 #pragma comment(lib, "DXGI.lib")
@@ -28,20 +29,29 @@
 // controls the entire pipeline which includes scene switches;
 // hosts the video and audio encoder and sinks aswell
 
-// control classes aren't multithread safe
-
 // TODO: pipeline should host components the same way control_scene does
 
-class control_pipeline
+class source_displaycapture5;
+typedef std::shared_ptr<source_displaycapture5> source_displaycapture5_t;
+// each audio source must have an audio processor attached to it for audio buffering
+// and resampling to work
+typedef std::pair<source_wasapi_t, transform_audioprocessor_t> source_audio_t;
+
+class control_scene;
+
+class control_pipeline : public enable_shared_from_this
 {
     friend class control_scene;
 public:
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     struct mpeg_sink_item
     {
         bool null_file;
         std::wstring filename;
     };
 private:
+    volatile bool is_shutdown;
+
     CHandle stopped_signal;
     HWND preview_wnd;
 
@@ -101,6 +111,9 @@ private:
         const media_stream_t& audiomixer_stream,
         const stream_audio_t& audio_sink_stream);
 public:
+    // the mutex must be locked before using any of the pipeline/scene functions;
+    std::recursive_mutex mutex;
+
     control_pipeline();
 
     bool is_running() const {return this->scene_active != NULL;}
@@ -116,9 +129,13 @@ public:
     control_scene* get_active_scene() const;
     bool is_active(const control_scene&);
     void set_active(control_scene&);
-    // stops the pipeline
-    void set_inactive();
+
+    // releases all circular dependencies;
+    // control pipeline is invalid after this call
+    void shutdown();
 
     void start_recording(const std::wstring& filename, control_scene&);
     void stop_recording();
 };
+
+typedef std::shared_ptr<control_pipeline> control_pipeline_t;

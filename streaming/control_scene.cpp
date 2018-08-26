@@ -1,7 +1,6 @@
 #include "control_scene.h"
-#include "control_pipeline.h"
 #include "source_empty.h"
-#include "transform_h264_encoder.h"
+#include "source_displaycapture5.h"
 #include "assert.h"
 #include <functiondiscoverykeys_devpkey.h>
 #include <queue>

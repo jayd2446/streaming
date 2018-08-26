@@ -27,6 +27,9 @@ public:
     typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;
 
+    // the duration of the resampled buffer that is preallocated
+    static const time_unit buffer_duration = 2 * SECOND_IN_TIME_UNIT;
+
     // audio processor outputs 16 bit audio because
     // the mixer mixes in 16 bit mode only
     typedef int16_t bit_depth_t;
@@ -46,6 +49,8 @@ private:
 
     request_queue requests;
 
+    // TODO: reset input type is invalid because the initialize method
+    // initializes the input type
     void reset_input_type(UINT channels, UINT sample_rate, UINT bit_depth);
     bool resampler_process_output(IMFSample* sample);
     // resamples all the samples and pushes them to samples container
@@ -55,7 +60,7 @@ private:
 public:
     explicit transform_audioprocessor(const media_session_t& session);
 
-    void initialize();
+    void initialize(/*UINT32 sample_rate*/);
     media_stream_t create_stream(presentation_clock_t&);
 };
 

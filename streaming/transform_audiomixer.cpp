@@ -189,6 +189,8 @@ void transform_audiomixer::process(
     CComPtr<IMFSample> out_sample;
     CComPtr<IMFMediaBuffer> out_buffer;
 
+    assert_(audio.buffer);
+
     audio.bit_depth = sizeof(transform_aac_encoder::bit_depth_t) * 8;
     audio.channels = transform_aac_encoder::channels;
     audio.sample_rate = transform_aac_encoder::sample_rate;
@@ -346,6 +348,8 @@ media_stream::result_t stream_audiomixer::process_sample(
         transform_audiomixer::media_sample_audios& audios = 
             this->transform->requests.push(request).sample_view.audios;
         audios = std::move(this->audios);
+        // clear returns the moved container back to usable state
+        this->audios.clear();
 
         this->transform->process();
     }

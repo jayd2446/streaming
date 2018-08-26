@@ -4,7 +4,7 @@ extern CAppModule module_;
 
 #undef max
 
-gui_controlwnd::gui_controlwnd(control_pipeline& ctrl_pipeline) :
+gui_controlwnd::gui_controlwnd(const control_pipeline_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
     dlg_scenes(dlg_sources, ctrl_pipeline),
     dlg_sources(dlg_scenes, ctrl_pipeline),
@@ -36,8 +36,10 @@ int gui_controlwnd::OnCreate(LPCREATESTRUCT)
 
 void gui_controlwnd::OnDestroy()
 {
-    if(this->ctrl_pipeline.is_running())
-        this->ctrl_pipeline.set_inactive();
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    if(this->ctrl_pipeline->is_running())
+        this->ctrl_pipeline->shutdown();
 
     CMessageLoop* loop = module_.GetMessageLoop();
     loop->RemoveMessageFilter(this);
@@ -79,6 +81,7 @@ LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM wParam, LPARAM lParam
 
 
 gui_mainwnd::gui_mainwnd() : 
+    ctrl_pipeline(new control_pipeline),
     wnd_preview(this->ctrl_pipeline),
     wnd_control(this->ctrl_pipeline),
     // use this class' messagemap(=this) and use map section 1
@@ -164,7 +167,8 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT createstruct)
     this->wnd_control.ShowWindow(SW_SHOW);
 
     // initialize the pipeline
-    this->ctrl_pipeline.initialize(this->wnd_preview);
+    // TODO: rename initialize to set_preview or similar
+    this->ctrl_pipeline->initialize(this->wnd_preview);
 
     return 0;
 }
