@@ -82,7 +82,7 @@ done:
     return hr;
 }
 
-HRESULT source_displaycapture5::initialize(
+void source_displaycapture5::initialize(
     const control_pipeline_t& ctrl_pipeline,
     UINT output_index, 
     const CComPtr<ID3D11Device>& d3d11dev, 
@@ -105,11 +105,9 @@ done:
     }
     /*else if(FAILED(hr))
         throw std::exception();*/
-
-    return S_OK;//hr;
 }
 
-HRESULT source_displaycapture5::initialize(
+void source_displaycapture5::initialize(
     const control_pipeline_t& ctrl_pipeline,
     UINT adapter_index,
     UINT output_index, 
@@ -139,7 +137,7 @@ HRESULT source_displaycapture5::initialize(
         D3D11_SDK_VERSION, &this->d3d11dev, &feature_level, &this->d3d11devctx));
 
     // currently initialization never fails
-    CHECK_HR(hr = this->initialize(ctrl_pipeline, output_index, this->d3d11dev, this->d3d11devctx));
+    this->initialize(ctrl_pipeline, output_index, this->d3d11dev, this->d3d11devctx);
 
     this->d3d11dev2 = d3d11dev;
     this->d3d11devctx2 = devctx;
@@ -148,12 +146,9 @@ done:
     if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
     {
         std::cerr << "maximum number of desktop duplication api applications running" << std::endl;
-        return hr;
     }
     else if(FAILED(hr))
         throw std::exception();
-
-    return S_OK;
 }
 HRESULT source_displaycapture5::setup_initial_data(const media_buffer_texture_t& pointer)
 {

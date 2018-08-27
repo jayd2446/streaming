@@ -10,7 +10,6 @@
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
 #include "sink_preview2.h"
-#include "source_wasapi.h"
 #include "output_file.h"
 #include "enable_shared_from_this.h"
 #include <atlbase.h>
@@ -33,6 +32,10 @@
 
 class source_displaycapture5;
 typedef std::shared_ptr<source_displaycapture5> source_displaycapture5_t;
+class source_wasapi;
+typedef std::shared_ptr<source_wasapi> source_wasapi_t;
+
+
 // each audio source must have an audio processor attached to it for audio buffering
 // and resampling to work
 typedef std::pair<source_wasapi_t, transform_audioprocessor_t> source_audio_t;
@@ -112,6 +115,8 @@ private:
         const stream_audio_t& audio_sink_stream);
 public:
     // the mutex must be locked before using any of the pipeline/scene functions;
+    // all locks should be cleared before locking this, and nothing that may
+    // lock should be called while holding this mutex
     std::recursive_mutex mutex;
 
     control_pipeline();
@@ -134,7 +139,8 @@ public:
     // control pipeline is invalid after this call
     void shutdown();
 
-    void start_recording(const std::wstring& filename, control_scene&);
+    // returns an event handle that is signalled when the recording is ended
+    CHandle start_recording(const std::wstring& filename, control_scene&);
     void stop_recording();
 };
 

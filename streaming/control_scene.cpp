@@ -1,6 +1,7 @@
 #include "control_scene.h"
 #include "source_empty.h"
 #include "source_displaycapture5.h"
+#include "source_wasapi.h"
 #include "assert.h"
 #include <functiondiscoverykeys_devpkey.h>
 #include <queue>

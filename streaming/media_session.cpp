@@ -84,8 +84,7 @@ void media_session::start_playback(const media_topology_t& topology, time_unit t
 
 void media_session::stop_playback()
 {
-    // TODO: stop play back should switch to a topology that has the same time source
-    // but no streams
+    // TODO: decide if stop_playback should lock the topology switch mutex
 
     this->is_started = false;
 

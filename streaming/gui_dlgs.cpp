@@ -214,22 +214,33 @@ LRESULT gui_controldlg::OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BO
 
 LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
-
-    if(!this->ctrl_pipeline->get_active_scene())
+    bool stop_recording = false;
     {
-        this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
-        return 0;
+        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+        if(!this->ctrl_pipeline->get_active_scene())
+        {
+            this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
+            return 0;
+        }
+
+        if(!this->ctrl_pipeline->is_recording())
+        {
+            this->stop_recording_event = this->ctrl_pipeline->start_recording(
+                L"test.mp4", *this->ctrl_pipeline->get_active_scene());
+            this->btn_start_recording.SetWindowTextW(L"Stop Recording");
+        }
+        else
+        {
+            this->ctrl_pipeline->stop_recording();
+            stop_recording = true;
+        }
     }
 
-    if(!this->ctrl_pipeline->is_recording())
+    // all locks should be unlocked before calling a blocking function
+    if(stop_recording)
     {
-        this->ctrl_pipeline->start_recording(L"test.mp4", *this->ctrl_pipeline->get_active_scene());
-        this->btn_start_recording.SetWindowTextW(L"Stop Recording");
-    }
-    else
-    {
-        this->ctrl_pipeline->stop_recording();
+        WaitForSingleObject(this->stop_recording_event, INFINITE);
         this->btn_start_recording.SetWindowTextW(L"Start Recording");
     }
 

@@ -71,6 +71,10 @@ int YourReportHook( int reportType, char *message, int *returnValue )
 }
 #endif
 
+DWORD capture_work_queue_id;
+// greater priority value has a greater priority
+LONG capture_audio_priority = 10;
+
 int main()
 {
     HRESULT hr = S_OK;
@@ -78,6 +82,10 @@ int main()
     AtlInitCommonControls(ICC_COOL_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES);
     CHECK_HR(hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET));
     CHECK_HR(hr = module_.Init(NULL, NULL));
+
+    // lock a capture priority multithreaded work queue
+    DWORD task_id = 0;
+    CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &capture_work_queue_id));
 
     //// register all media foundation standard work queues as playback
     /*DWORD taskgroup_id = 0;
@@ -110,6 +118,10 @@ int main()
 done:
     if(FAILED(hr))
         throw std::exception();
+
+    // unlocking the work queue might crash ongoing async operations,
+    // so it is safer just to call mfshutdown
+    /*hr = MFUnlockWorkQueue(capture_work_queue_id);*/
     module_.Term();
     hr = MFShutdown();
     CoUninitialize();

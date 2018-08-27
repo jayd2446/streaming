@@ -49,8 +49,6 @@ private:
 
     request_queue requests;
 
-    // TODO: reset input type is invalid because the initialize method
-    // initializes the input type
     void reset_input_type(UINT channels, UINT sample_rate, UINT bit_depth);
     bool resampler_process_output(IMFSample* sample);
     // resamples all the samples and pushes them to samples container

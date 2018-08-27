@@ -1,6 +1,7 @@
 #include "control_pipeline.h"
-#include "source_displaycapture5.h"
 #include "control_scene.h"
+#include "source_displaycapture5.h"
+#include "source_wasapi.h"
 
 #ifdef _DEBUG
 #define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
@@ -14,14 +15,10 @@ control_pipeline::control_pipeline() :
     preview_wnd(NULL),
     scene_active(NULL),
     d3d11dev_adapter(0),
-    stopped_signal(CreateEvent(NULL, TRUE, FALSE, NULL)),
     recording_state_change(false),
     context_mutex(new std::recursive_mutex),
     is_shutdown(false)
 {
-    if(!this->stopped_signal)
-        throw std::exception();
-
     HRESULT hr = S_OK;
     CComPtr<IDXGIAdapter1> dxgiadapter;
     D3D_FEATURE_LEVEL feature_levels[] =
@@ -260,7 +257,18 @@ source_audio_t control_pipeline::create_audio_source(const std::wstring& id, boo
             it != this->scene_active->audio_sources.end();
             it++)
         {
-            if(it->first.device_id == id && it->first.capture == capture && !this->recording_state_change)
+            // do not share if the instance is null
+            // (happens when the component is initialized the first time
+            // or it is a reference)
+            if(!it->second.first)
+                continue;
+
+            // do not share if the instance is not shareable
+            if(it->second.first->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
+                continue;
+
+            if(it->first.device_id == id && it->first.capture == capture && 
+                !this->recording_state_change)
                 return it->second;
         }
     }
@@ -269,7 +277,7 @@ source_audio_t control_pipeline::create_audio_source(const std::wstring& id, boo
     audio_source.first.reset(new source_wasapi(this->audio_session));
     audio_source.second.reset(new transform_audioprocessor(this->audio_session));
 
-    audio_source.first->initialize(id, capture);
+    audio_source.first->initialize(this->shared_from_this<control_pipeline>(), id, capture);
     audio_source.second->initialize();
     return audio_source;
 }
@@ -283,7 +291,8 @@ source_displaycapture5_t control_pipeline::create_displaycapture_source(
             it != this->scene_active->displaycapture_sources.end();
             it++)
         {
-            if(it->first.adapter_ordinal == adapter_ordinal && it->first.output_ordinal == output_ordinal)
+            if(it->first.adapter_ordinal == adapter_ordinal && 
+                it->first.output_ordinal == output_ordinal)
                 return it->second;
         }
     }
@@ -409,16 +418,25 @@ void control_pipeline::shutdown()
     // async callback should just ignore the exceptions
 }
 
-void control_pipeline::start_recording(const std::wstring& filename, control_scene& scene)
+CHandle control_pipeline::start_recording(const std::wstring& filename, control_scene& scene)
 {
+    assert_(!this->is_recording());
+
     mpeg_sink_item item;
     item.null_file = false;
     item.filename = filename;
     this->set_mpeg_sink_item(item);
 
+    assert_(!this->stopped_signal);
+    this->stopped_signal.Attach(CreateEvent(NULL, TRUE, FALSE, NULL));
+    if(!this->stopped_signal)
+        throw std::exception();
+
     this->recording_state_change = true;
     this->set_active(scene);
     this->recording_state_change = false;
+
+    return CHandle(this->stopped_signal);
 }
 
 void control_pipeline::stop_recording()
@@ -434,6 +452,6 @@ void control_pipeline::stop_recording()
     this->set_active(*this->scene_active);
     this->recording_state_change = false;
 
-    WaitForSingleObject(this->stopped_signal, INFINITE);
-    ResetEvent(this->stopped_signal);
+    /*WaitForSingleObject(this->stopped_signal, INFINITE);
+    ResetEvent(this->stopped_signal);*/
 }

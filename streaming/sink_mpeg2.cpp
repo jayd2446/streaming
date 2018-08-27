@@ -139,7 +139,7 @@ void stream_mpeg2::on_component_stop(time_unit)
 
 void stream_mpeg2::on_stream_start(time_unit t)
 {
-    this->set_schedule_cb_work_queue(this->work_queue_id);
+    /*this->set_schedule_cb_work_queue(this->work_queue_id);*/
 
     // try to set the initial time for the output;
     // the output will modify the sample timestamps so that they start at 0
@@ -160,7 +160,9 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
     this->sink->pending_audio_topology = NULL;
 
-    this->audio_sink_stream->request_sample_last(t);
+    // do not bother requesting the last sample if the session is shutting down
+    if(this->sink->session->started())
+        this->audio_sink_stream->request_sample_last(t);
 }
 
 void stream_mpeg2::scheduled_callback(time_unit due_time)

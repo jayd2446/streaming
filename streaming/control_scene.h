@@ -1,7 +1,6 @@
 #pragma once
 #include "control_pipeline.h"
 #include "media_topology.h"
-#include "source_wasapi.h"
 #include "transform_videoprocessor.h"
 #include "transform_audioprocessor.h"
 #include "transform_audiomixer.h"

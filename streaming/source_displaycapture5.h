@@ -70,13 +70,13 @@ public:
 
     // currently displaycapture initialization never fails;
     // uses the d3d11 device for capturing that is used in the pipeline
-    HRESULT initialize(
+    void initialize(
         const control_pipeline_t&,
         UINT output_index, 
         const CComPtr<ID3D11Device>&,
         const CComPtr<ID3D11DeviceContext>&);
     // creates a d3d11 device that is bound to the adapter index
-    HRESULT initialize(
+    void initialize(
         const control_pipeline_t&,
         UINT adapter_index,
         UINT output_index, 

@@ -88,6 +88,7 @@ class gui_controldlg :
 private:
     control_pipeline_t ctrl_pipeline;
     CButton btn_start_recording;
+    CHandle stop_recording_event;
 public:
     enum {IDD = IDD_CTRLDLG};
 
