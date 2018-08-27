@@ -17,9 +17,7 @@
 
 #pragma comment(lib, "Mfplat.lib")
 
-#define BUFFER_DURATION (SECOND_IN_TIME_UNIT / 2) // 500ms buffer
-// wasapi is always 32 bit float in shared mode
-#define WASAPI_BITS_PER_SAMPLE 32
+#define CAPTURE_BUFFER_DURATION (SECOND_IN_TIME_UNIT) // 1s buffer
 
 class source_wasapi;
 typedef std::shared_ptr<source_wasapi> source_wasapi_t;
@@ -40,8 +38,7 @@ public:
 
     // wasapi is always 32 bit float in shared mode
     typedef float bit_depth_t;
-    // the interval of request pumping when the component has broken
-    static const INT64 request_pump_interval_ms = 200;//40;
+    static const INT64 capture_interval_ms = 40;
 
     struct empty {};
     typedef request_queue<empty> request_queue;
@@ -52,7 +49,6 @@ private:
     CComPtr<IAudioClient> audio_client, audio_client_render;
     CComPtr<IAudioCaptureClient> audio_capture_client;
     CComPtr<IAudioRenderClient> audio_render_client;
-    CHandle process_event;
     MFWORKITEM_KEY process_work_key;
     DWORD work_queue_id;
 

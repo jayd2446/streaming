@@ -2,6 +2,7 @@
 #include "assert.h"
 #include <initguid.h>
 #include <mmdeviceapi.h>
+#include <audiopolicy.h>
 #include <Mferror.h>
 #include <iostream>
 #include <limits>
@@ -41,7 +42,9 @@ source_wasapi::source_wasapi(const media_session_t& session) :
 {
     HRESULT hr = S_OK;
 
-    this->process_callback.Attach(new async_callback_t(&source_wasapi::process_cb, this->work_queue_id));
+    // the process callback really cannot be in higher priority mode,
+    // because it can cause problems with the work queue under a high load
+    this->process_callback.Attach(new async_callback_t(&source_wasapi::process_cb/*, this->work_queue_id*/));
     this->serve_callback.Attach(new async_callback_t(&source_wasapi::serve_cb));
 
 done:
@@ -65,14 +68,11 @@ source_wasapi::~source_wasapi()
 
     if(this->started)
     {
-        // it seems that stopping the audio client causes the event object to signal
-        // which will clear to work queue, so cancelworkitem is not needed
-        // when the component isn't broken
         hr = this->audio_client->Stop();
         if(!this->capture)
             hr = this->audio_client_render->Stop();
     }
-    if(this->wait_queue && this->broken)
+    if(this->wait_queue)
         // no source_wasapi functions can be running when @ the destructor;
         // cancel the outstanding waiting item so that it won't
         // remain in the work queue(there exists a theoretical chance that
@@ -80,8 +80,6 @@ source_wasapi::~source_wasapi()
         // the chance of broken and lastly the small time window between last fired scheduled item
         // and this call causes the chance of collision to be rather nonexistent)
         hr = MFCancelWorkItem(this->process_work_key);
-
-    /*assert_(SUCCEEDED(hr) || hr == MF_E_SHUTDOWN);*/
 }
 
 HRESULT source_wasapi::add_event_to_wait_queue()
@@ -89,22 +87,9 @@ HRESULT source_wasapi::add_event_to_wait_queue()
     HRESULT hr = S_OK;
 
     CComPtr<IMFAsyncResult> asyncresult;
-
-    if(!this->broken)
-    {
-        CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->process_callback->native, NULL, &asyncresult));
-        CHECK_HR(hr = this->process_callback->mf_put_waiting_work_item(
-            this->shared_from_this<source_wasapi>(),
-            this->process_event, ::capture_audio_priority, asyncresult, &this->process_work_key));
-    }
-    else
-    {
-        // the signalling won't work anymore if the component is broken,
-        // so just use a predefined interval to pump requests
-        CHECK_HR(hr = this->process_callback->mf_schedule_work_item(
-            this->shared_from_this<source_wasapi>(), 
-            request_pump_interval_ms, &this->process_work_key));
-    }
+    CHECK_HR(hr = this->process_callback->mf_schedule_work_item(
+        this->shared_from_this<source_wasapi>(), 
+        capture_interval_ms, &this->process_work_key));
 
 done:
     return hr;
@@ -277,13 +262,13 @@ done:
 void source_wasapi::process_cb(void*)
 {
     scoped_lock lock(this->process_mutex);
-    ResetEvent(this->process_event);
 
     HRESULT hr = S_OK;
     // nextpacketsize and frames are equal
     UINT32 nextpacketsize = 0, returned_frames = 0;
     UINT64 returned_devposition;
     bool getbuffer = false;
+
     while(SUCCEEDED(hr = this->audio_capture_client->GetNextPacketSize(&nextpacketsize)) && 
         nextpacketsize)
     {
@@ -442,7 +427,7 @@ HRESULT source_wasapi::initialize_render(IMMDevice* device, WAVEFORMATEX* engine
     CHECK_HR(hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, 
         (void**)&this->audio_client_render));
     CHECK_HR(hr = this->audio_client_render->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, 0, BUFFER_DURATION, 0, engine_format, NULL));
+        AUDCLNT_SHAREMODE_SHARED, 0, CAPTURE_BUFFER_DURATION, 0, engine_format, NULL));
 
     CHECK_HR(hr = this->audio_client_render->GetBufferSize(&this->render_buffer_frame_count));
     CHECK_HR(hr = this->audio_client_render->GetService(
@@ -464,6 +449,7 @@ void source_wasapi::initialize(const control_pipeline_t& ctrl_pipeline,
     CComPtr<IMMDevice> device;
     WAVEFORMATEX* engine_format = NULL;
     UINT32 buffer_frame_count;
+    REFERENCE_TIME def_device_period, min_device_period;
 
     this->ctrl_pipeline = ctrl_pipeline;
     this->capture = capture;
@@ -478,13 +464,16 @@ void source_wasapi::initialize(const control_pipeline_t& ctrl_pipeline,
 
     CHECK_HR(hr = this->audio_client->Initialize(
         AUDCLNT_SHAREMODE_SHARED, 
-        (this->capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK) | AUDCLNT_STREAMFLAGS_EVENTCALLBACK, 
-        BUFFER_DURATION, 0, engine_format, NULL));
+        this->capture ? 0 : AUDCLNT_STREAMFLAGS_LOOPBACK, 
+        CAPTURE_BUFFER_DURATION, 0, engine_format, NULL));
 
     CHECK_HR(hr = this->audio_client->GetBufferSize(&buffer_frame_count));
 
     CHECK_HR(hr = this->audio_client->GetService(
         __uuidof(IAudioCaptureClient), (void**)&this->audio_capture_client));
+
+    CHECK_HR(hr = this->audio_client->GetDevicePeriod(&def_device_period, &min_device_period));
+    assert_(def_device_period < SECOND_IN_TIME_UNIT / 1000 * capture_interval_ms);
 
     /*
     In Windows 8, the first use of IAudioClient to access the audio device should be
@@ -512,14 +501,6 @@ void source_wasapi::initialize(const control_pipeline_t& ctrl_pipeline,
     // (https://github.com/jp9000/obs-studio/blob/master/plugins/win-wasapi/win-wasapi.cpp#L199)
     if(!this->capture)
         CHECK_HR(hr = this->initialize_render(device, engine_format));
-
-    // create manual reset event handle
-    assert_(!this->process_event);
-    this->process_event.Attach(CreateEvent(
-        NULL, TRUE, FALSE, NULL));  
-    if(!this->process_event)
-        CHECK_HR(hr = E_FAIL);
-    CHECK_HR(hr = this->audio_client->SetEventHandle(this->process_event));
 
     assert_(this->serve_callback);
     CHECK_HR(hr = this->add_event_to_wait_queue());
