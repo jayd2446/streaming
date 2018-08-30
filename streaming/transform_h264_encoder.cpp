@@ -320,6 +320,7 @@ HRESULT transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev
     this->events_callback->set_callback(this->shared_from_this<transform_h264_encoder>());
 
     /*
+    amd holds the reference to the submitted buffer
     amd hardware mft supports nv12 and argb32 input types
 
     intel quicksync only supports nv12 and is not direct3d aware

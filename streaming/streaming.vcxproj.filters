@@ -114,6 +114,9 @@
     <ClCompile Include="source_empty.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="assert.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">

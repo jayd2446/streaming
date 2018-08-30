@@ -11,8 +11,6 @@
 #pragma comment(lib, "Mfplat.lib")
 
 // resamples the audio
-
-// TODO: if input type is reset, the samples buffer must be dismissed
 class transform_audioprocessor : public media_source
 {
     friend class stream_audioprocessor;
@@ -38,6 +36,7 @@ private:
     bool running;
     CComPtr<IMFTransform> processor;
     MFT_OUTPUT_STREAM_INFO output_stream_info;
+    MFT_INPUT_STREAM_INFO input_stream_info;
     CComPtr<IMFMediaType> input_type, output_type;
     UINT32 channels, sample_rate, block_align;
 

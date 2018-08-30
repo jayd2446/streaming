@@ -8,3 +8,5 @@
 #else
 #define assert_(_Expression) ((void)0)
 #endif
+
+void maybe_assert(bool);

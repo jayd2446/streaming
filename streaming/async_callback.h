@@ -35,7 +35,8 @@ private:
             // the locking of the parent isn't possible anymore, but
             // the parent has still a reference to this in addition to the
             // media foundation callback having a reference to this
-            assert_(this->RefCount == 1);
+            maybe_assert(this->RefCount == 1);
+            /*assert_(this->RefCount == 1);*/
         return S_OK;
     }
 public:
@@ -83,6 +84,6 @@ public:
         MFWORKITEM_KEY* key)
     {
         this->set_callback(parent);
-        return MFScheduleWorkItem(&this->native, NULL, timeout_ms, key);
+        return MFScheduleWorkItem(&this->native, NULL, -timeout_ms, key);
     }
 };

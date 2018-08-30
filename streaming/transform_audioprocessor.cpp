@@ -59,6 +59,7 @@ void transform_audioprocessor::reset_input_type(UINT channels, UINT sample_rate,
     CHECK_HR(hr = this->processor->SetInputType(0, this->input_type, 0));
     CHECK_HR(hr = this->processor->SetOutputType(0, this->output_type, 0));
     CHECK_HR(hr = this->processor->GetOutputStreamInfo(0, &this->output_stream_info));
+    CHECK_HR(hr = this->processor->GetInputStreamInfo(0, &this->input_stream_info));
 
     CHECK_HR(hr = this->processor->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, NULL));
     if(!this->running)
@@ -129,7 +130,8 @@ void transform_audioprocessor::resample(
     out_audio.bit_depth = sizeof(bit_depth_t) * 8;
     out_audio.channels = transform_aac_encoder::channels;
     out_audio.sample_rate = transform_aac_encoder::sample_rate;
-    out_audio.frame_end = media_sample_audio::invalid_frame_end;
+    out_audio.frame_end = 0;
+    out_audio.silent = false;
 
     // declare resampling operations
     HRESULT hr = S_OK;
@@ -263,6 +265,8 @@ void transform_audioprocessor::resample(
         this->next_sample_pos_in = frame_pos + frame_dur;
 
     back:
+        // it seems that the audio processor holds a reference to the buffer in the sample
+        // (the audio processor doesn't set any input stream flags)
         hr = this->processor->ProcessInput(0, sample, 0);
         if(hr == MF_E_NOTACCEPTING)
         {
@@ -365,7 +369,7 @@ stream_audioprocessor::stream_audioprocessor(const transform_audioprocessor_t& t
 
     CHECK_HR(hr = MFCreateSample(&this->sample));
     CHECK_HR(hr = MFCreateAlignedMemoryBuffer(
-        frames * block_align * 2,
+        frames * block_align,
         this->transform->output_stream_info.cbAlignment, &this->buffer));
     CHECK_HR(hr = this->sample->AddBuffer(this->buffer));
 

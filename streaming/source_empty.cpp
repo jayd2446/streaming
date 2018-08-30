@@ -33,6 +33,7 @@ media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, co
     audio.channels = transform_aac_encoder::channels;
     audio.sample_rate = transform_aac_encoder::sample_rate;
     audio.frame_end = (frame_unit)(rp.request_time / frame_duration);
+    audio.silent = true;
 
     return this->process_sample(audio, rp, NULL);
 }

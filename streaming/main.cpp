@@ -122,9 +122,12 @@ done:
     // unlocking the work queue might crash ongoing async operations,
     // so it is safer just to call mfshutdown
     /*hr = MFUnlockWorkQueue(capture_work_queue_id);*/
+
+#ifdef _DEBUG
     module_.Term();
     hr = MFShutdown();
     CoUninitialize();
+#endif
 
     return 0;
 }

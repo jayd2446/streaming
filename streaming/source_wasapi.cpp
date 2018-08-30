@@ -24,18 +24,11 @@
 extern DWORD capture_work_queue_id;
 extern LONG capture_audio_priority;
 
-void source_wasapi::make_silence(UINT32 frames, UINT32 channels, bit_depth_t* buffer)
-{
-    const UINT32 samples = frames * channels;
-    for(UINT32 i = 0; i < samples; i++)
-        buffer[i] = 0.f;
-}
-
 source_wasapi::source_wasapi(const media_session_t& session) : 
     media_source(session), started(false), 
     consumed_samples_end(std::numeric_limits<frame_unit>::min()),
     next_frame_position(std::numeric_limits<frame_unit>::min()),
-    capture(false), broken(false), wait_queue(false),
+    capture(false), broken(false), wait_queue(false), reset(false),
     frame_base(std::numeric_limits<frame_unit>::min()),
     devposition_base(std::numeric_limits<frame_unit>::min()),
     work_queue_id(::capture_work_queue_id)
@@ -112,13 +105,16 @@ done:
 
 void source_wasapi::serve_cb(void*)
 {
-    std::unique_lock<std::mutex> lock(this->serve_mutex, std::try_to_lock);
+    /*std::unique_lock<std::mutex> lock(this->serve_mutex, std::try_to_lock);
     if(!lock.owns_lock())
-        return;
+        return;*/
 
-    // reset the scene to recreate this component
-    if(this->broken)
+    // reset the scene to recreate this component;
+    // TODO: reset the scene should be dispatched to work queue
+    if(this->broken && !this->reset)
     {
+        this->reset = true;
+
         // set this component as not shareable so that it is recreated when resetting
         // the active scene
         this->instance_type = INSTANCE_NOT_SHAREABLE;
@@ -133,13 +129,6 @@ void source_wasapi::serve_cb(void*)
             this->ctrl_pipeline->set_active(*this->ctrl_pipeline->get_active_scene());
     }
 
-    // splice the raw buffer to the cached buffer(O(1) operation);
-    // raw buffer becomes empty
-    {
-        scoped_lock lock(this->raw_buffer_mutex), lock2(this->buffer_mutex);
-        this->buffer.splice(this->buffer.end(), this->raw_buffer);
-    }
-
     // try to serve
     HRESULT hr = S_OK;
     request_t request;
@@ -152,10 +141,10 @@ void source_wasapi::serve_cb(void*)
 
         bool dispatch = false;
 
-        // use the buffer allocated in request stream for the audio sample
+        // use the stream's sample
         stream_wasapi* stream = reinterpret_cast<stream_wasapi*>(request.stream);
-        stream->audio_buffer->samples.clear();
-        media_sample_audio audio(stream->audio_buffer);
+        media_sample_audio& audio = stream->audio_sample;
+        audio.buffer->samples.clear();
         audio.bit_depth = sizeof(bit_depth_t) * 8;
         audio.channels = this->channels;
         audio.sample_rate = this->samples_per_second;
@@ -163,10 +152,10 @@ void source_wasapi::serve_cb(void*)
         const double sample_duration = SECOND_IN_TIME_UNIT / (double)this->samples_per_second;
         frame_unit request_end = (frame_unit)(request.rp.request_time / sample_duration);
 
-        std::unique_lock<std::mutex> lock2(this->buffer_mutex);
         size_t consumed_samples = 0;
         frame_unit consumed_samples_end = this->consumed_samples_end;
-        for(auto it = this->buffer.begin(); it != this->buffer.end() && !dispatch; it++)
+        for(auto it = this->buffer.samples.begin(); it != this->buffer.samples.end() && !dispatch; 
+            it++)
         {
             CComPtr<IMFSample> sample;
             CComPtr<IMFMediaBuffer> buffer, oldbuffer;
@@ -229,40 +218,47 @@ void source_wasapi::serve_cb(void*)
             consumed_samples_end = std::max(new_sample_time + new_sample_dur, consumed_samples_end);
         }
 
-        // if the component is broken, dispatch all the requests, otherwise
-        // they would be never dispatched and would stall the pipeline
-        if(dispatch || this->broken)
+        // calculate timeout for the request so that it is dispatched even if there's no
+        // data for it available
+        presentation_clock_t clock;
+        request.rp.get_clock(clock);
+        if(dispatch || clock->get_current_time() >= (request.rp.request_time + request_timeout))
         {
             // update the consumed samples position
             this->consumed_samples_end = consumed_samples_end;
 
             // erase all consumed samples
             for(size_t i = 0; i < consumed_samples; i++)
-                this->buffer.pop_front();
+                this->buffer.samples.pop_front();
 
             // pop the request from the queue
             this->requests.pop(request);
 
-            lock2.unlock();
-            lock.unlock();
-            // dispatch the request
-            request.stream->process_sample(audio, request.rp, NULL);
-            /*this->session->give_sample(request.stream, audio, request.rp, false);*/
-            lock.lock();
+            /*lock.unlock();*/
+            // dispatch the request in a work queue
+            if(FAILED(hr = stream->process_sample_callback->mf_put_work_item(
+                stream->shared_from_this<stream_wasapi>())))
+            {
+                stream->rp = request_packet();
+                goto done;
+            }
+            /*request.stream->process_sample(audio, request.rp, NULL);*/
+
+            //// just try locking
+            //if(!lock.try_lock())
+            //    return;
         }
         else
             break;
     }
 
 done:
-    if(FAILED(hr))
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
 }
 
 void source_wasapi::process_cb(void*)
 {
-    scoped_lock lock(this->process_mutex);
-
     HRESULT hr = S_OK;
     // nextpacketsize and frames are equal
     UINT32 nextpacketsize = 0, returned_frames = 0;
@@ -340,7 +336,7 @@ void source_wasapi::process_cb(void*)
         CHECK_HR(hr = MFCreateMemoryBuffer(len, &buffer));
         CHECK_HR(hr = buffer->Lock(&buffer_data, NULL, NULL));
         if(silent)
-            make_silence(frames, this->channels, (float*)buffer_data);
+            memset(buffer_data, 0, len);
         else
             memcpy(buffer_data, data, len);
         CHECK_HR(hr = buffer->Unlock());
@@ -354,28 +350,24 @@ void source_wasapi::process_cb(void*)
         CHECK_HR(hr = sample->SetSampleDuration(frames));
         this->next_frame_position = sample_time + (frame_unit)frames;
 
-        // add sample
-        {
-            scoped_lock lock(this->raw_buffer_mutex);
-            this->raw_buffer.push_back(sample);
-        }
-
+        // release buffer
         getbuffer = false;
         CHECK_HR(hr = this->audio_capture_client->ReleaseBuffer(returned_frames));
+
+        // add sample
+        this->buffer.samples.push_back(sample);
     }
 
-    if(!this->capture)
-        CHECK_HR(hr = this->play_silence());
 done:
     if(getbuffer)
     {
         getbuffer = false;
         this->audio_capture_client->ReleaseBuffer(returned_frames);
     }
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+    if(FAILED(hr))
     {
         // reinit the component if the audio device has been invalidated
-        if(hr == AUDCLNT_E_DEVICE_INVALIDATED)
+        if(hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_SERVICE_NOT_RUNNING)
         {
             /*std::cout << "audio device invalidated, resetting..." << std::endl;*/
 
@@ -390,10 +382,12 @@ done:
             throw std::exception();
     }
 
+    this->serve_cb(NULL);
+
     if(FAILED(hr = this->add_event_to_wait_queue()) && hr != MF_E_SHUTDOWN)
         throw std::exception();
 
-    this->serve_requests();
+    /*this->serve_requests();*/
 }
 
 HRESULT source_wasapi::play_silence()
@@ -427,7 +421,7 @@ HRESULT source_wasapi::initialize_render(IMMDevice* device, WAVEFORMATEX* engine
     CHECK_HR(hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, NULL, 
         (void**)&this->audio_client_render));
     CHECK_HR(hr = this->audio_client_render->Initialize(
-        AUDCLNT_SHAREMODE_SHARED, 0, CAPTURE_BUFFER_DURATION, 0, engine_format, NULL));
+        AUDCLNT_SHAREMODE_SHARED, 0, 0, 0, engine_format, NULL));
 
     CHECK_HR(hr = this->audio_client_render->GetBufferSize(&this->render_buffer_frame_count));
     CHECK_HR(hr = this->audio_client_render->GetService(
@@ -533,15 +527,24 @@ media_stream_t source_wasapi::create_stream()
 
 stream_wasapi::stream_wasapi(const source_wasapi_t& source) : 
     source(source),
-    audio_buffer(new media_buffer_samples)
+    audio_sample(media_buffer_samples_t(new media_buffer_samples)) 
 {
+    this->process_sample_callback.Attach(new async_callback_t(&stream_wasapi::process_sample_cb));
+}
+
+void stream_wasapi::process_sample_cb(void*)
+{
+    request_packet rp = this->rp;
+    this->rp = request_packet();
+    this->process_sample(this->audio_sample, rp, NULL);
 }
 
 media_stream::result_t stream_wasapi::request_sample(request_packet& rp, const media_stream*)
 {
     source_wasapi::request_t request;
     request.stream = this;
-    request.rp = rp;
+    this->rp = rp;
+    request.rp = this->rp;
     this->source->requests.push(request);
 
     return OK;

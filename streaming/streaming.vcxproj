@@ -134,7 +134,7 @@
       <DisableSpecificWarnings>4458;4456</DisableSpecificWarnings>
     </ClCompile>
     <Link>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
@@ -157,7 +157,7 @@
       <DisableSpecificWarnings>4458;4456</DisableSpecificWarnings>
     </ClCompile>
     <Link>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
@@ -167,6 +167,7 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="assert.cpp" />
     <ClCompile Include="control_pipeline.cpp" />
     <ClCompile Include="control_scene.cpp" />
     <ClCompile Include="gui_mainwnd.cpp" />

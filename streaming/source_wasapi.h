@@ -39,6 +39,9 @@ public:
     // wasapi is always 32 bit float in shared mode
     typedef float bit_depth_t;
     static const INT64 capture_interval_ms = 40;
+    // the timeout for the request after which it is considered stale
+    // and dispatched without accompanying data
+    static const time_unit request_timeout = SECOND_IN_TIME_UNIT;
 
     struct empty {};
     typedef request_queue<empty> request_queue;
@@ -52,7 +55,6 @@ private:
     MFWORKITEM_KEY process_work_key;
     DWORD work_queue_id;
 
-    std::mutex process_mutex, serve_mutex;
     CComPtr<async_callback_t> process_callback;
     CComPtr<async_callback_t> serve_callback;
 
@@ -65,10 +67,9 @@ private:
     frame_unit next_frame_position;
     frame_unit frame_base, devposition_base;
 
-    bool started, capture, broken, wait_queue;
+    bool started, capture, broken, wait_queue, reset;
 
-    std::mutex raw_buffer_mutex, buffer_mutex;
-    buffer_t raw_buffer, buffer;
+    media_buffer_samples buffer;
 
     CComPtr<IMFMediaType> waveformat_type;
     // maximum number of audio frames(aka pcm samples) the allocated buffer can hold
@@ -90,8 +91,6 @@ private:
     // stay consistent in regard to time and the source loopback pushes
     // samples to downstream consistently
     HRESULT initialize_render(IMMDevice*, WAVEFORMATEX*);
-
-    static void make_silence(UINT32 frames, UINT32 channels, bit_depth_t* buffer);
 public:
     explicit source_wasapi(const media_session_t& session);
     ~source_wasapi();
@@ -106,10 +105,14 @@ class stream_wasapi : public media_stream
 {
     friend class source_wasapi;
 public:
-    /*typedef source_wasapi::scoped_lock scoped_lock;*/
+    typedef async_callback<stream_wasapi> async_callback_t;
 private:
     source_wasapi_t source;
-    media_buffer_samples_t audio_buffer;
+    media_sample_audio audio_sample;
+    request_packet rp;
+    CComPtr<async_callback_t> process_sample_callback;
+
+    void process_sample_cb(void*);
 public:
     explicit stream_wasapi(const source_wasapi_t& source);
 

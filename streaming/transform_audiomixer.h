@@ -8,7 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <utility>
-#include <list>
+#include <vector>
 
 #pragma comment(lib, "Mfplat.lib")
 
@@ -22,19 +22,12 @@ class transform_audiomixer : public media_source
     friend class stream_audiomixer;
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
-    typedef std::list<media_sample_audio> media_sample_audios;
+    typedef std::vector<media_sample_audio> media_sample_audios;
     struct packet 
     {
-        media_sample_audios audios; 
+        media_sample_audios* audios; 
         bool drain;
         time_unit drain_point;
-
-        packet() {}
-        // TODO: decide if just remove the explicit defaults
-        packet(const packet&) = default;
-        packet& operator=(const packet&) = default;
-        packet(packet&&) = default;
-        packet& operator=(packet&&) = default;
     };
     typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;
@@ -79,6 +72,7 @@ private:
 
     void on_component_start(time_unit);
     void on_component_stop(time_unit);
+    void on_stream_start(time_unit);
 public:
     explicit stream_audiomixer(const transform_audiomixer_t& transform);
 

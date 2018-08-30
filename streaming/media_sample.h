@@ -242,10 +242,12 @@ class media_sample_audio : public media_sample
 {
 public:
     typedef media_buffer_samples_t buffer_t;
-    static const frame_unit invalid_frame_end = std::numeric_limits<frame_unit>::min();
 public:
-    // the (sample pos + sample dur) max of buffer
+    // the (sample pos + sample dur) max of buffer;
+    // the frame_end is considered invalid if the buffer is empty,
+    // unless the silent flag is set
     frame_unit frame_end;
+    bool silent;
     // bit depth is assumed to be 16 bits always
     UINT32 channels, bit_depth, sample_rate;
     media_buffer_samples_t buffer;

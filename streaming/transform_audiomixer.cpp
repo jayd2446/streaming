@@ -204,6 +204,11 @@ void transform_audiomixer::process(
     // on drain max frame end is set
     for(auto it = audios.begin(); it != audios.end(); it++)
     {
+        // the frame end is invalid if the buffer is empty and the silent flag
+        // isn't set
+        if(!it->silent && it->buffer->samples.empty())
+            continue;
+
         if(!frames_end_set)
             frames_end = it->frame_end, frames_end_set = true;
         else
@@ -211,10 +216,12 @@ void transform_audiomixer::process(
             if(!drain)
                 frames_end = std::min(frames_end, it->frame_end);
             else
-                frames_end = std::max(std::max(frames_end, it->frame_end), drain_point);
+                frames_end = std::max(frames_end, it->frame_end);
         }
     }
     frames_end = std::max(frames_start, std::max(this->next_position3, frames_end));
+    if(drain)
+        frames_end = std::max(frames_end, drain_point);
     assert_(frames_end >= frames_start);
 
      // allocate the out buffer
@@ -230,8 +237,7 @@ void transform_audiomixer::process(
         CHECK_HR(hr = out_buffer->SetCurrentLength(len));
         CHECK_HR(hr = out_sample->AddBuffer(out_buffer));
         CHECK_HR(hr = out_buffer->Lock((BYTE**)&out_data, NULL, NULL));
-        for(UINT32 i = 0; i < len / sizeof(bit_depth_t); i++)
-            *out_data++ = 0;
+        memset(out_data, 0, len);
         CHECK_HR(hr = out_buffer->Unlock());
 
         audio.buffer->samples.push_back(out_sample);
@@ -272,7 +278,7 @@ void transform_audiomixer::process()
         stream_audiomixer* stream = reinterpret_cast<stream_audiomixer*>(request.stream);
         media_sample_audio audio(stream->audio_buffer);
 
-        this->process(audio, request.sample_view.audios, request.sample_view.drain, drain_point);
+        this->process(audio, *request.sample_view.audios, request.sample_view.drain, drain_point);
 
         lock.unlock();
         this->session->give_sample(request.stream, audio, request.rp, false);
@@ -306,6 +312,13 @@ void stream_audiomixer::on_component_stop(time_unit t)
     this->drain_point = t;
 }
 
+void stream_audiomixer::on_stream_start(time_unit)
+{
+    if(this->input_stream_count == 0)
+        throw std::exception();
+    this->audios.reserve(this->input_stream_count);
+}
+
 void stream_audiomixer::connect_streams(const media_stream_t& from, const media_topology_t& topology)
 {
     this->input_stream_count++;
@@ -314,9 +327,8 @@ void stream_audiomixer::connect_streams(const media_stream_t& from, const media_
 
 media_stream::result_t stream_audiomixer::request_sample(request_packet& rp, const media_stream*)
 {
-    if(this->input_stream_count == 0)
-        throw std::exception();
-
+    // make the buffer ready for the next iteration
+    this->audios.clear();
     return this->transform->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
 }
 
@@ -330,6 +342,7 @@ media_stream::result_t stream_audiomixer::process_sample(
     this->samples_received++;
     this->audios.push_back(audio_sample);
 
+    assert_(this->audios.capacity() >= this->samples_received);
     if(this->samples_received == this->input_stream_count)
     {
         this->samples_received = 0;
@@ -340,16 +353,13 @@ media_stream::result_t stream_audiomixer::process_sample(
         request.stream = this;
         request.sample_view.drain = (this->drain_point == rp.request_time);
         request.sample_view.drain_point = this->drain_point;
+        request.sample_view.audios = &this->audios;
 
-        // clear the buffer
+        // clear the output buffer
         this->audio_buffer->samples.clear();
 
-        // push the request and transfer list
-        transform_audiomixer::media_sample_audios& audios = 
-            this->transform->requests.push(request).sample_view.audios;
-        audios = std::move(this->audios);
-        // clear returns the moved container back to usable state
-        this->audios.clear();
+        // push the request
+        this->transform->requests.push(request);
 
         this->transform->process();
     }

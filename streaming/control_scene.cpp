@@ -284,12 +284,11 @@ void control_scene::build_topology(bool reset)
                         audioprocessor_streams[reference], this->audio_topology);
                 }
             }
-            if(this->audio_items.empty())
-            {
-                source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
-                media_stream_t empty_stream = empty_source->create_stream();
-                audiomixer_stream->connect_streams(empty_stream, this->audio_topology);
-            }
+            // add the silent source so that in case of source_wasapi stopping to send samples
+            // the audio will be still recorded
+            source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
+            media_stream_t empty_stream = empty_source->create_stream();
+            audiomixer_stream->connect_streams(empty_stream, this->audio_topology);
 
             // set the pipeline specific part of the topology
             this->pipeline.build_audio_topology_branch(
