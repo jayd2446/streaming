@@ -56,7 +56,6 @@ private:
     DWORD work_queue_id;
 
     CComPtr<async_callback_t> process_callback;
-    CComPtr<async_callback_t> serve_callback;
 
     request_queue requests;
 
@@ -80,7 +79,6 @@ private:
     // https://blogs.msdn.microsoft.com/matthew_van_eerde/2008/12/10/sample-playing-silence-via-wasapi-event-driven-pull-mode/
     // https://github.com/mvaneerde/blog/blob/master/silence/silence/silence.cpp
     HRESULT play_silence();
-    void serve_requests();
 
     // handles cutting operations
     void serve_cb(void*);

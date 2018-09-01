@@ -8,6 +8,7 @@
 #include <d3d11.h>
 #include <dxgi.h>
 #include <dxgi1_2.h>
+#include <dxgi1_5.h>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -31,7 +32,7 @@ public:
 private:
     control_pipeline_t ctrl_pipeline;
 
-    CComPtr<IDXGIOutput1> output;
+    CComPtr<IDXGIOutput5> output;
     CComPtr<IDXGIOutputDuplication> output_duplication;
     // first devs are for the output duplicator,
     // second devs for the rendering operations in the pipeline;

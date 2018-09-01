@@ -12,55 +12,16 @@
 
 sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& audio_session) : 
     media_sink(session),
-    audio_session(audio_session),
-    stopped_signal(NULL)
+    audio_session(audio_session)
 {
-    this->write_packets_callback.Attach(new async_callback_t(&sink_mpeg2::write_packets_cb));
 }
 
 sink_mpeg2::~sink_mpeg2()
 {
 }
 
-void sink_mpeg2::write_packets()
+void sink_mpeg2::initialize()
 {
-    const HRESULT hr = this->write_packets_callback->mf_put_work_item(
-        this->shared_from_this<sink_mpeg2>());
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
-    else if(hr == MF_E_SHUTDOWN)
-        return;
-}
-
-void sink_mpeg2::write_packets_cb(void*)
-{
-    std::unique_lock<std::mutex> lock(this->writing_mutex, std::try_to_lock);
-    if(!lock.owns_lock())
-        return;
-
-    request_t request;
-    while(this->write_queue.pop(request))
-    {
-        /*std::cout << request.rp.packet_number << std::endl;*/
-        /*if(!request.sample_view)
-            continue;*/
-
-        media_buffer_h264_t buffer = request.sample_view.sample.buffer;
-        if(!buffer)
-            continue;
-        
-        request.sample_view.output->write_sample(true, buffer->sample);
-        /*this->file_output->write_sample(true, buffer->sample);*/
-    }
-}
-
-void sink_mpeg2::initialize(
-    bool null_file,
-    HANDLE stopped_signal,
-    const CComPtr<IMFMediaType>& video_type, const CComPtr<IMFMediaType>& audio_type)
-{
-    this->file_output.reset(new output_file);
-    this->file_output->initialize(null_file, stopped_signal, video_type, audio_type);
 }
 
 void sink_mpeg2::switch_topologies(
@@ -91,7 +52,7 @@ stream_mpeg2_t sink_mpeg2::create_stream(
     presentation_clock_t& clock, const stream_audio_t& audio_stream)
 {
     stream_mpeg2_t stream(
-        new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream, this->file_output));
+        new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream));
     stream->register_sink(clock);
 
     return stream;
@@ -109,15 +70,15 @@ stream_mpeg2_worker_t sink_mpeg2::create_worker_stream()
 
 
 stream_mpeg2::stream_mpeg2(
-    const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream, const output_file_t& output) : 
-    output(output), sink(sink), unavailable(0), running(false),
+    const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream) : 
+    sink(sink), unavailable(0), running(false),
     media_stream_clock_sink(sink.get()),
     audio_sink_stream(audio_sink_stream),
     last_due_time(std::numeric_limits<time_unit>::min())
 {
     HRESULT hr = S_OK;
     DWORD task_id;
-    CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &this->work_queue_id));
+    /*CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &this->work_queue_id));*/
 
 done:
     if(FAILED(hr))
@@ -126,7 +87,7 @@ done:
 
 stream_mpeg2::~stream_mpeg2()
 {
-    MFUnlockWorkQueue(this->work_queue_id);
+    /*MFUnlockWorkQueue(this->work_queue_id);*/
 }
 
 void stream_mpeg2::on_component_start(time_unit)
@@ -143,7 +104,7 @@ void stream_mpeg2::on_stream_start(time_unit t)
 
     // try to set the initial time for the output;
     // the output will modify the sample timestamps so that they start at 0
-    this->sink->get_output()->set_initial_time(t);
+    /*this->sink->get_output()->set_initial_time(t);*/
 
     this->running = true;
     this->last_due_time = t;
@@ -234,12 +195,6 @@ void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
 {
     assert_(this->unavailable <= 240);
 
-    // initiate the audio request
-    // TODO: this if statement doesn't work for all pull rates
-    /*request_packet rp2 = rp;*/
-    /*if((rp2.request_time % SECOND_IN_TIME_UNIT) == 0)*/
-        /*this->sink->audio_sink_stream->request_sample(rp2);*/
-
     // initiate the video request
     scoped_lock lock(this->worker_streams_mutex);
     for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
@@ -273,27 +228,5 @@ void stream_mpeg2::add_worker_stream(const stream_mpeg2_worker_t& worker_stream)
 media_stream::result_t stream_mpeg2::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    const media_sample_h264* sample_h264 = dynamic_cast<const media_sample_h264*>(&sample_view);
-
-    // TODO: currently the write queue must be called every time
-    // so that it can be properly flushed when stopping recording
-
-    // add h264 samples to write queue
-    sink_mpeg2::request_t request;
-    request.rp = rp;
-    request.sample_view.output = this->output;
-    if(sample_h264)
-        request.sample_view.sample = *sample_h264;
-    request.stream = this;
-    this->sink->write_queue.push(request);
-
-    // if the sample view is locking a resource,
-    // it must be ensured that the resource is unlocked in this call;
-    // currently though, the sample views won't lock at this point anymore
-    // (except when the sample is passed from video mixer)
-    // (it evidently causes a deadlock)
-
-    this->sink->write_packets();
-
     return OK;
 }

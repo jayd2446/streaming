@@ -28,42 +28,19 @@ class sink_mpeg2 : public media_sink
 {
     friend class stream_mpeg2;
 public:
-    struct packet
-    {
-        output_file_t output;
-        media_sample_h264 sample;
-    };
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<sink_mpeg2> async_callback_t;
-    typedef request_queue<packet> request_queue;
-    typedef request_queue::request_t request_t;
 private:
-    HANDLE stopped_signal;
-    request_queue write_queue;
-    CComPtr<async_callback_t> write_packets_callback;
-
     std::recursive_mutex topology_switch_mutex;
 
     media_session_t audio_session;
     media_topology_t pending_audio_topology;
-
-    output_file_t file_output;
-    std::mutex writing_mutex;
-
-    void write_packets();
-    void write_packets_cb(void*);
 public:
     sink_mpeg2(const media_session_t& session, const media_session_t& audio_session);
     ~sink_mpeg2();
 
-    const output_file_t& get_output() const {return this->file_output;}
-
     // TODO: initialize fps
-    void initialize(
-        bool null_file,
-        HANDLE stopped_signal,
-        const CComPtr<IMFMediaType>& video_type, 
-        const CComPtr<IMFMediaType>& audio_type);
+    void initialize();
 
     // this function makes sure that the both topologies are switched at the same time
     void switch_topologies(
@@ -90,13 +67,12 @@ private:
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_mpeg2_worker_t> worker_streams;
     stream_audio_t audio_sink_stream;
-    output_file_t output;
     time_unit last_due_time;
 
     // for debug
     int unavailable;
 
-    DWORD work_queue_id;
+    /*DWORD work_queue_id;*/
 
     // media_stream_clock_sink
     void on_component_start(time_unit);
@@ -111,7 +87,7 @@ private:
 public:
     stream_h264_encoder_t encoder_stream;
 
-    stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&, const output_file_t&);
+    stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&);
     ~stream_mpeg2();
 
     void add_worker_stream(const stream_mpeg2_worker_t& worker_stream);

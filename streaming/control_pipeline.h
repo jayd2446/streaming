@@ -10,6 +10,7 @@
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
 #include "sink_preview2.h"
+#include "sink_file.h"
 #include "output_file.h"
 #include "enable_shared_from_this.h"
 #include <atlbase.h>
@@ -39,6 +40,7 @@ typedef std::shared_ptr<source_wasapi> source_wasapi_t;
 // each audio source must have an audio processor attached to it for audio buffering
 // and resampling to work
 typedef std::pair<source_wasapi_t, transform_audioprocessor_t> source_audio_t;
+typedef std::pair<sink_file_t, sink_file_t> sink_mp4_t;
 
 class control_scene;
 
@@ -69,6 +71,7 @@ private:
     transform_aac_encoder_t aac_encoder_transform;
     transform_audiomixer_t audiomixer_transform;
     sink_preview2_t preview_sink;
+    sink_mp4_t mp4_sink;
 
     mpeg_sink_item item_mpeg_sink;
 
@@ -92,13 +95,14 @@ private:
     transform_h264_encoder_t create_h264_encoder(bool null_file);
     transform_color_converter_t create_color_converter(bool null_file);
     sink_preview2_t create_preview_sink(HWND hwnd);
-    transform_aac_encoder_t create_aac_encoder(bool null_file);
-    transform_audiomixer_t create_audio_mixer();
-    sink_mpeg2_t create_mpeg_sink(
-        bool null_file, const std::wstring& filename, 
+    sink_mp4_t create_mp4_sink(
+        bool null_file, const std::wstring& filename,
         const CComPtr<IMFMediaType>& video_input_type,
         const CComPtr<IMFMediaType>& audio_input_type);
-    sink_audio_t create_audio_sink(bool null_file, const output_file_t& output);
+    transform_aac_encoder_t create_aac_encoder(bool null_file);
+    transform_audiomixer_t create_audio_mixer();
+    sink_mpeg2_t create_mpeg_sink(bool null_file);
+    sink_audio_t create_audio_sink(bool null_file);
 
     /*void reset_components(bool create_new);*/
     // creates and initializes the component

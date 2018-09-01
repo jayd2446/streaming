@@ -262,9 +262,9 @@ HRESULT stream_videoprocessor::blit(
 
     if(!streams.empty())
     {
-        if(streams.size() == 1)
+        /*if(streams.size() == 1)
             this->transform->videocontext->VideoProcessorSetStreamAlpha(
-                this->videoprocessor, 0, TRUE, 1.f);
+                this->videoprocessor, 0, TRUE, 1.f);*/
 
         // the output texture is assumed to be locked
         // dxva 2 and direct3d11 video seems to be similar

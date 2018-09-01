@@ -9,42 +9,10 @@
 
 sink_audio::sink_audio(const media_session_t& session) : media_sink(session)
 {
-    this->write_packets_callback.Attach(new async_callback_t(&sink_audio::write_packets_cb));
 }
 
-void sink_audio::write_packets()
+void sink_audio::initialize()
 {
-    const HRESULT hr = this->write_packets_callback->mf_put_work_item(
-        this->shared_from_this<sink_audio>());
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
-    else if(hr == MF_E_SHUTDOWN)
-        return;
-}
-
-void sink_audio::write_packets_cb(void*)
-{
-    std::unique_lock<std::recursive_mutex> lock(this->writing_mutex, std::try_to_lock);
-    if(!lock.owns_lock())
-        return;
-
-    request_t request;
-    while(this->write_queue.pop(request))
-    {
-        /*std::cout << request.rp.packet_number << std::endl;*/
-
-        media_buffer_samples_t buffer = request.sample_view.buffer;
-        if(!buffer || buffer->samples.empty())
-            continue;
-
-        for(auto it = buffer->samples.begin(); it != buffer->samples.end(); it++)
-            this->file_output->write_sample(false, *it);
-    }
-}
-
-void sink_audio::initialize(const output_file_t& file_output)
-{
-    this->file_output = file_output;
 }
 
 stream_audio_t sink_audio::create_stream(presentation_clock_t& clock)
@@ -74,28 +42,12 @@ stream_audio::stream_audio(const sink_audio_t& sink) :
 
 void stream_audio::on_stream_start(time_unit t)
 {
-    //request_packet rp;
-    //
-    //// discard all the samples that are queued up to this point
-    //rp.flags = AUDIO_DISCARD_PREVIOUS_SAMPLES;
-    //rp.request_time = t;
-    //rp.timestamp = t;
-    
     this->running = true;
     this->ran_once = true;
-    /*this->dispatch_request(rp);*/
 }
 
 void stream_audio::on_stream_stop(time_unit t)
 {
-    //request_packet rp;
-
-    //// collect all the remaining samples that are queued up to this point
-    //rp.flags = 0;
-    //rp.request_time = t;
-    //rp.timestamp = t;
-
-    //this->dispatch_request(rp);
     this->running = false;
     this->stopped = true;
 }
@@ -103,9 +55,6 @@ void stream_audio::on_stream_stop(time_unit t)
 void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
 {
     assert_(this->unavailable <= 240);
-    /*if(!this->running)
-        return;*/
-
     assert_(this->running);
 
     const int j = no_drop ? 0 : 1;
@@ -122,14 +71,10 @@ void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
             if(res == FATAL_ERROR)
                 std::cout << "couldn't dispatch request on stream audio" << std::endl;
 
-            /*assert_(!no_drop || this->stopped);*/
-
             return;
         }
     }
 
-    // serve the requests from the audio source queue
-    /*this->source->serve_requests();*/
     assert_(!no_drop);
     std::cout << "--SAMPLE REQUEST DROPPED IN AUDIO_SINK--" << std::endl;
     this->unavailable++;
@@ -161,19 +106,5 @@ media_stream::result_t stream_audio::request_sample(
 media_stream::result_t stream_audio::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    const media_sample_aac* audio_sample = dynamic_cast<const media_sample_aac*>(&sample_view);
-
-    // TODO: currently the write queue must be called every time
-    // so that it can be properly flushed when stopping recording
-
-    sink_audio::request_t request;
-    request.rp = rp;
-    if(audio_sample)
-        request.sample_view = *audio_sample;
-    request.stream = this;
-    this->sink->write_queue.push(request);
-
-    this->sink->write_packets();
-
     return OK;
 }

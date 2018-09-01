@@ -38,7 +38,6 @@ source_wasapi::source_wasapi(const media_session_t& session) :
     // the process callback really cannot be in higher priority mode,
     // because it can cause problems with the work queue under a high load
     this->process_callback.Attach(new async_callback_t(&source_wasapi::process_cb/*, this->work_queue_id*/));
-    this->serve_callback.Attach(new async_callback_t(&source_wasapi::serve_cb));
 
 done:
     if(FAILED(hr))
@@ -105,12 +104,7 @@ done:
 
 void source_wasapi::serve_cb(void*)
 {
-    /*std::unique_lock<std::mutex> lock(this->serve_mutex, std::try_to_lock);
-    if(!lock.owns_lock())
-        return;*/
-
-    // reset the scene to recreate this component;
-    // TODO: reset the scene should be dispatched to work queue
+    // reset the scene to recreate this component
     if(this->broken && !this->reset)
     {
         this->reset = true;
@@ -234,7 +228,6 @@ void source_wasapi::serve_cb(void*)
             // pop the request from the queue
             this->requests.pop(request);
 
-            /*lock.unlock();*/
             // dispatch the request in a work queue
             if(FAILED(hr = stream->process_sample_callback->mf_put_work_item(
                 stream->shared_from_this<stream_wasapi>())))
@@ -242,11 +235,6 @@ void source_wasapi::serve_cb(void*)
                 stream->rp = request_packet();
                 goto done;
             }
-            /*request.stream->process_sample(audio, request.rp, NULL);*/
-
-            //// just try locking
-            //if(!lock.try_lock())
-            //    return;
         }
         else
             break;
@@ -386,8 +374,6 @@ done:
 
     if(FAILED(hr = this->add_event_to_wait_queue()) && hr != MF_E_SHUTDOWN)
         throw std::exception();
-
-    /*this->serve_requests();*/
 }
 
 HRESULT source_wasapi::play_silence()
@@ -404,13 +390,6 @@ HRESULT source_wasapi::play_silence()
 
 done:
     return hr;
-}
-
-void source_wasapi::serve_requests()
-{
-    const HRESULT hr = this->serve_callback->mf_put_work_item(this->shared_from_this<source_wasapi>());
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
 }
 
 HRESULT source_wasapi::initialize_render(IMMDevice* device, WAVEFORMATEX* engine_format)
@@ -496,7 +475,6 @@ void source_wasapi::initialize(const control_pipeline_t& ctrl_pipeline,
     if(!this->capture)
         CHECK_HR(hr = this->initialize_render(device, engine_format));
 
-    assert_(this->serve_callback);
     CHECK_HR(hr = this->add_event_to_wait_queue());
     this->wait_queue = true;
 

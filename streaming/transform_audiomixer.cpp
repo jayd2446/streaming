@@ -81,7 +81,7 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
         frame_unit sample_start, sample_end;
         CComPtr<IMFMediaBuffer> in_buffer;
         bit_depth_in_t* in_data = NULL;
-        bit_depth_t *out_data = NULL;
+        bit_depth_t* out_data = NULL;
 
         CHECK_HR(hr = (*it)->GetSampleTime(&pos));
         CHECK_HR(hr = (*it)->GetSampleDuration(&dur));

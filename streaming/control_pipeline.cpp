@@ -82,16 +82,18 @@ void control_pipeline::activate_components()
     // activate audiomixer transform
     this->audiomixer_transform = this->create_audio_mixer();
 
-    // activate mpeg sink
-    this->mpeg_sink.second = this->create_mpeg_sink(
+    // activate mp4 sink
+    this->mp4_sink = this->create_mp4_sink(
         this->item_mpeg_sink.null_file, this->item_mpeg_sink.filename,
         this->h264_encoder_transform->output_type, this->aac_encoder_transform->output_type);
+
+    // activate mpeg sink
+    this->mpeg_sink.second = this->create_mpeg_sink(this->item_mpeg_sink.null_file);
     // set the mpeg sink attributes after creating the new sink
     this->mpeg_sink.first = this->item_mpeg_sink;
 
     // activate audio sink
-    this->audio_sink.second = this->create_audio_sink(
-        this->item_mpeg_sink.null_file, this->mpeg_sink.second->get_output());
+    this->audio_sink.second = this->create_audio_sink(this->item_mpeg_sink.null_file);
     // set the mpeg sink attributes after creating the new sink
     this->audio_sink.first = this->item_mpeg_sink;
 }
@@ -102,6 +104,7 @@ void control_pipeline::deactivate_components()
     this->h264_encoder_transform = NULL;
     this->color_converter_transform = NULL;
     this->preview_sink = NULL;
+    this->mp4_sink = sink_mp4_t(NULL, NULL);
     this->mpeg_sink.second = NULL;
     this->aac_encoder_transform = NULL;
     this->audiomixer_transform = NULL;
@@ -158,6 +161,29 @@ sink_preview2_t control_pipeline::create_preview_sink(HWND hwnd)
     return preview_sink;
 }
 
+sink_mp4_t control_pipeline::create_mp4_sink(
+    bool null_file, const std::wstring& filename,
+    const CComPtr<IMFMediaType>& video_input_type,
+    const CComPtr<IMFMediaType>& audio_input_type)
+{
+    if(null_file)
+        return sink_mp4_t(NULL, NULL);
+    if(this->mp4_sink.first && this->mp4_sink.second)
+        return this->mp4_sink;
+
+    sink_mp4_t mp4_sink;
+    mp4_sink.first.reset(new sink_file(this->session));
+    mp4_sink.second.reset(new sink_file(this->audio_session));
+
+    output_file_t file_output(new output_file);
+    file_output->initialize(false, this->stopped_signal, video_input_type, audio_input_type);
+
+    mp4_sink.first->initialize(file_output, true);
+    mp4_sink.second->initialize(file_output, false);
+
+    return mp4_sink;
+}
+
 transform_aac_encoder_t control_pipeline::create_aac_encoder(bool null_file)
 {
     if(null_file)
@@ -180,10 +206,7 @@ transform_audiomixer_t control_pipeline::create_audio_mixer()
     return transform_audio_mixer;
 }
 
-sink_mpeg2_t control_pipeline::create_mpeg_sink(
-    bool null_file, const std::wstring& filename,
-    const CComPtr<IMFMediaType>& video_input_type,
-    const CComPtr<IMFMediaType>& audio_input_type)
+sink_mpeg2_t control_pipeline::create_mpeg_sink(bool null_file)
 {
     if(this->mpeg_sink.second)
     {
@@ -193,19 +216,17 @@ sink_mpeg2_t control_pipeline::create_mpeg_sink(
     else
     {
         sink_mpeg2_t mpeg_sink(new sink_mpeg2(this->session, this->audio_session));
-        mpeg_sink->initialize(null_file, this->stopped_signal, video_input_type, audio_input_type);
+        mpeg_sink->initialize();
         return mpeg_sink;
     }
 
-    // mpeg sink is simply reinitialized with the new output
-    this->mpeg_sink.second->initialize(
-        null_file, this->stopped_signal,
-        video_input_type, audio_input_type);
+    // mpeg sink is simply reinitialized
+    this->mpeg_sink.second->initialize();
 
     return this->mpeg_sink.second;
 }
 
-sink_audio_t control_pipeline::create_audio_sink(bool null_file, const output_file_t& output)
+sink_audio_t control_pipeline::create_audio_sink(bool null_file)
 {
     if(this->audio_sink.second)
     {
@@ -214,7 +235,7 @@ sink_audio_t control_pipeline::create_audio_sink(bool null_file, const output_fi
     }
 
     sink_audio_t audio_sink(new sink_audio(this->audio_session));
-    audio_sink->initialize(output);
+    audio_sink->initialize();
     return audio_sink;
 }
 
@@ -326,6 +347,7 @@ void control_pipeline::build_video_topology_branch(const media_topology_t& video
     {
         media_stream_t encoder_stream = this->h264_encoder_transform->create_stream();
         media_stream_t color_converter_stream = this->color_converter_transform->create_stream();
+        media_stream_t mp4_stream = this->mp4_sink.first->create_stream(video_topology->get_clock());
 
         // TODO: encoder stream is redundant
         mpeg_sink_stream->encoder_stream = std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream);
@@ -333,7 +355,8 @@ void control_pipeline::build_video_topology_branch(const media_topology_t& video
         preview_stream->connect_streams(videoprocessor_stream, video_topology);
         color_converter_stream->connect_streams(preview_stream, video_topology);
         encoder_stream->connect_streams(color_converter_stream, video_topology);
-        worker_stream->connect_streams(encoder_stream, video_topology);
+        mp4_stream->connect_streams(encoder_stream, video_topology);
+        worker_stream->connect_streams(mp4_stream, video_topology);
     }
 
     mpeg_sink_stream->connect_streams(worker_stream, video_topology);
@@ -355,9 +378,12 @@ void control_pipeline::build_audio_topology_branch(const media_topology_t& audio
     {
         media_stream_t encoder_stream = 
             this->aac_encoder_transform->create_stream(audio_topology->get_clock());
+        media_stream_t mp4_stream =
+            this->mp4_sink.second->create_stream(audio_topology->get_clock());
 
         encoder_stream->connect_streams(audiomixer_stream, audio_topology);
-        worker_stream->connect_streams(encoder_stream, audio_topology);
+        mp4_stream->connect_streams(encoder_stream, audio_topology);
+        worker_stream->connect_streams(mp4_stream, audio_topology);
     }
 
     audio_sink_stream->connect_streams(worker_stream, audio_topology);

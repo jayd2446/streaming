@@ -4,6 +4,9 @@
 #include "transform_videoprocessor.h"
 #include "transform_audioprocessor.h"
 
+// TODO: decide if these empty sources should dispatch requests to work queues
+// like normal sources
+
 source_empty_audio::source_empty_audio(const media_session_t& session) : media_source(session)
 {
 }

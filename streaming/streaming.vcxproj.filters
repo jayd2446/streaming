@@ -33,13 +33,7 @@
     <ClCompile Include="media_session.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sink_preview.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="presentation_clock.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="source_displaycapture4.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="transform_videoprocessor.cpp">
@@ -52,9 +46,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="transform_h264_encoder.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="sink_mpeg.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="sink_preview2.cpp">
@@ -117,6 +108,9 @@
     <ClCompile Include="assert.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="sink_file.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -140,16 +134,10 @@
     <ClInclude Include="media_source.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="sink_preview.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="media_sink.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="presentation_clock.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source_displaycapture4.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="transform_videoprocessor.h">
@@ -165,9 +153,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="transform_h264_encoder.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="sink_mpeg.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="sink_preview2.h">
@@ -237,6 +222,9 @@
       <Filter>gui</Filter>
     </ClInclude>
     <ClInclude Include="source_empty.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sink_file.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

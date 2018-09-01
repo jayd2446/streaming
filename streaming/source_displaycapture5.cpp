@@ -2,6 +2,7 @@
 #include "presentation_clock.h"
 #include <iostream>
 #include <atomic>
+#include <dxgi1_5.h>
 #include <Mferror.h>
 
 #pragma comment(lib, "D3D11.lib")
@@ -54,6 +55,18 @@ HRESULT source_displaycapture5::reinitialize(UINT output_index)
     if(output_index == (UINT)-1)
         throw std::exception();
 
+    static const DXGI_FORMAT supported_formats[] =
+    {
+        DXGI_FORMAT_B8G8R8A8_UNORM,
+        /*DXGI_FORMAT_R16G16B16A16_FLOAT,
+        DXGI_FORMAT_R10G10B10A2_UNORM,
+        DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM,
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,*/
+
+    };
+
     HRESULT hr = S_OK;
     CComPtr<IDXGIDevice1> dxgidev;
     CComPtr<IDXGIAdapter1> dxgiadapter;
@@ -70,13 +83,16 @@ HRESULT source_displaycapture5::reinitialize(UINT output_index)
     DXGI_OUTPUT_DESC desc;
     CHECK_HR(hr = output->GetDesc(&desc));
 
-    // qi for output1
+    // qi for output5
     this->output = NULL;
     CHECK_HR(hr = output->QueryInterface(&this->output));
 
-    // create the desktop duplication
+    // create the desktop duplication;
+    // duplicateoutput1 works if the dpi awareness of the process is per monitor aware v2
     this->output_duplication = NULL;
-    CHECK_HR(hr = this->output->DuplicateOutput(this->d3d11dev, &this->output_duplication));
+    /*CHECK_HR(hr = this->output->DuplicateOutput(this->d3d11dev, &this->output_duplication));*/
+    CHECK_HR(hr = this->output->DuplicateOutput1(this->d3d11dev, 0,
+        ARRAYSIZE(supported_formats), supported_formats, &this->output_duplication));
 
 done:
     return hr;
@@ -264,6 +280,7 @@ capture:
         screen_frame_desc.MiscFlags = same_device ? 0 : D3D11_RESOURCE_MISC_SHARED;
         screen_frame_desc.Usage = D3D11_USAGE_DEFAULT;
 
+        buffer->intermediate_texture = NULL;
         CHECK_HR(hr = this->d3d11dev->CreateTexture2D(
             &screen_frame_desc, NULL, &buffer->intermediate_texture));
         
@@ -300,6 +317,8 @@ capture:
     if(frame_info.LastPresentTime.QuadPart != 0)
     {
         this->d3d11devctx->CopyResource(buffer->intermediate_texture, screen_frame);
+
+        /*this->d3d11devctx->Flush();*/
 
         // TODO: the timestamp might not be consecutive
         /*timestamp = clock->performance_counter_to_time_unit(frame_info.LastPresentTime);*/
@@ -391,14 +410,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
     catch(displaycapture_exception)
     {
         frame_captured = false;
-
-        //// initiate scene reinitialization
-        //control_pipeline::scoped_lock lock(this->source->ctrl_pipeline->mutex);
-
-        //// scene activation isn't possible anymore if the pipeline has been shutdown
-        //if(this->source->ctrl_pipeline->is_running())
-        //    this->source->ctrl_pipeline->set_active(
-        //        *this->source->ctrl_pipeline->get_active_scene());
+        new_pointer_shape = false;
     }
 
     if(!frame_captured)
@@ -445,6 +457,8 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
     // dispatch the capture request
     const HRESULT hr = this->capture_frame_callback->mf_put_work_item(
         this->shared_from_this<stream_displaycapture5>());
+    if(FAILED(hr))
+        this->rp = request_packet();
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     else if(hr == MF_E_SHUTDOWN)

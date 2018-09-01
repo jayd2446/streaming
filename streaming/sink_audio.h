@@ -27,24 +27,15 @@ class sink_audio : public media_sink
     friend class stream_audio;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef async_callback<sink_audio> async_callback_t;
     typedef request_queue<media_sample_aac> request_queue;
-    typedef request_queue::request_t request_t;
     typedef std::chrono::duration<time_unit, 
         std::ratio<transform_aac_encoder::input_frames, transform_aac_encoder::sample_rate>>
         periodicity_t;
 private:
-    request_queue write_queue;
-    output_file_t file_output;
-    CComPtr<async_callback_t> write_packets_callback;
-    std::recursive_mutex writing_mutex;
-
-    void write_packets();
-    void write_packets_cb(void*);
 public:
     explicit sink_audio(const media_session_t& session);
 
-    void initialize(const output_file_t& file_output);
+    void initialize();
 
     stream_audio_t create_stream(presentation_clock_t&);
     // worker streams duplicate the topology so that individual branches can be
@@ -52,7 +43,7 @@ public:
     stream_audio_worker_t create_worker_stream();
 };
 
-class stream_audio : public media_stream_clock_sink/*, public presentation_clock_sink*/
+class stream_audio : public media_stream_clock_sink
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
@@ -70,8 +61,6 @@ private:
     // media_stream_clock_sink
     void on_stream_start(time_unit);
     void on_stream_stop(time_unit);
-    //// presentation_clock_sink
-    //void scheduled_callback(time_unit) {assert_(false);}
 
     void dispatch_request(request_packet&, bool no_drop = false);
 public:
@@ -82,8 +71,6 @@ public:
     // uses a special stream branch so that the request won't be dropped
     result_t request_sample_last(time_unit);
 
-    // presentation_clock_sink
-    /*bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}*/
     // media_stream
     result_t request_sample(request_packet&, const media_stream* = NULL);
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);

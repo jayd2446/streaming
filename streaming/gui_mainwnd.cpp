@@ -91,8 +91,9 @@ gui_mainwnd::gui_mainwnd() :
     // the debug version of this exe had the dpi setting overridden in the
     // compatibility section of the exe;
     // https://stackoverflow.com/questions/46651074/wm-dpichanged-not-received-when-scaling-performed-by-application
-    /*BOOL success = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    assert_(success);*/
+    // enable setprocessdpiawarenesscontext to allow duplicateoutput1 to succeed
+    BOOL success = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    assert_(success);
 
     // TODO: wtl is not dpi aware
 }
