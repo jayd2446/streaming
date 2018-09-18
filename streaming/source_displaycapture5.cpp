@@ -32,16 +32,17 @@ source_displaycapture5::source_displaycapture5(
     newest_buffer(new media_buffer_lockable_texture),
     newest_pointer_buffer(new media_buffer_lockable_texture),
     context_mutex(context_mutex),
-    output_index((UINT)-1)
+    output_index((UINT)-1),
+    same_device(false)
 {
     this->pointer_position.Visible = FALSE;
     this->pointer_shape_info.Type = DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR;
 }
 
-stream_displaycapture5_t source_displaycapture5::create_stream(const stream_videoprocessor_controller_t& c)
+stream_displaycapture5_t source_displaycapture5::create_stream()
 {
     return stream_displaycapture5_t(
-        new stream_displaycapture5(this->shared_from_this<source_displaycapture5>(), c));
+        new stream_displaycapture5(this->shared_from_this<source_displaycapture5>()));
 }
 
 stream_displaycapture5_pointer_t source_displaycapture5::create_pointer_stream()
@@ -94,6 +95,8 @@ HRESULT source_displaycapture5::reinitialize(UINT output_index)
     CHECK_HR(hr = this->output->DuplicateOutput1(this->d3d11dev, 0,
         ARRAYSIZE(supported_formats), supported_formats, &this->output_duplication));
 
+    this->output_duplication->GetDesc(&this->outdupl_desc);
+
 done:
     return hr;
 }
@@ -112,6 +115,8 @@ void source_displaycapture5::initialize(
     this->output_index = output_index;
 
     CHECK_HR(hr = this->reinitialize(output_index));
+
+    this->same_device = true;
 
 done:
     if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
@@ -158,6 +163,8 @@ void source_displaycapture5::initialize(
     this->d3d11dev2 = d3d11dev;
     this->d3d11devctx2 = devctx;
 
+    this->same_device = false;
+
 done:
     if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
     {
@@ -166,6 +173,64 @@ done:
     else if(FAILED(hr))
         throw std::exception();
 }
+
+HRESULT source_displaycapture5::copy_between_adapters(
+    ID3D11Device* dst_dev, ID3D11Texture2D* dst, 
+    ID3D11Device* src_dev, ID3D11Texture2D* src)
+{
+    HRESULT hr = S_OK;
+    D3D11_TEXTURE2D_DESC desc;
+    CComPtr<ID3D11DeviceContext> src_dev_ctx, dst_dev_ctx;
+
+    src_dev->GetImmediateContext(&src_dev_ctx);
+    dst_dev->GetImmediateContext(&dst_dev_ctx);
+
+    src->GetDesc(&desc);
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.MiscFlags = 0;
+
+    // create staging texture for reading
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    if(!this->stage_src)
+        CHECK_HR(hr = src_dev->CreateTexture2D(&desc, NULL, &this->stage_src));
+
+    // create staging texture for writing
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if(!this->stage_dst)
+        CHECK_HR(hr = dst_dev->CreateTexture2D(&desc, NULL, &this->stage_dst));
+
+    // copy src video memory to src staging buffer
+    src_dev_ctx->CopyResource(this->stage_src, src);
+
+    // map the src staging buffer for reading
+    D3D11_MAPPED_SUBRESOURCE src_sub_rsrc;
+    src_dev_ctx->Map(this->stage_src, 0, D3D11_MAP_READ, 0, &src_sub_rsrc);
+
+    // map the dst staging buffer for writing
+    D3D11_MAPPED_SUBRESOURCE dst_sub_rsrc;
+    {
+        scoped_lock lock(*this->context_mutex);
+        dst_dev_ctx->Map(this->stage_dst, 0, D3D11_MAP_WRITE, 0, &dst_sub_rsrc);
+
+        assert_(src_sub_rsrc.RowPitch == dst_sub_rsrc.RowPitch);
+
+        // copy from src staging buffer to dst staging buffer
+        const size_t size = dst_sub_rsrc.RowPitch * desc.Height;
+        memcpy(dst_sub_rsrc.pData, src_sub_rsrc.pData, size);
+
+        // unmap the staging buffers
+        src_dev_ctx->Unmap(this->stage_src, 0);
+        dst_dev_ctx->Unmap(this->stage_dst, 0);
+
+        // copy from dst staging buffer to dst video memory
+        dst_dev_ctx->CopyResource(dst, this->stage_dst);
+    }
+
+done:
+    return hr;
+}
+
 HRESULT source_displaycapture5::setup_initial_data(const media_buffer_texture_t& pointer)
 {
     HRESULT hr = S_OK;
@@ -240,10 +305,10 @@ bool source_displaycapture5::capture_frame(
     time_unit& timestamp, 
     const presentation_clock_t& clock)
 {
-    // TODO: context mutex not needed when the dxgioutput is initialized with another device
-
     // dxgi functions need to be synchronized with the context mutex
-    scoped_lock lock(*this->context_mutex);
+    std::unique_lock<std::recursive_mutex> lock(*this->context_mutex, std::defer_lock);
+    if(this->same_device)
+        lock.lock();
 
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;
@@ -272,27 +337,12 @@ capture:
     if(!buffer->texture)
     {
         D3D11_TEXTURE2D_DESC screen_frame_desc;
-        CComPtr<IDXGIResource> idxgiresource;
-        HANDLE handle;
-        const bool same_device = this->d3d11dev2.IsEqualObject(this->d3d11dev);
 
         screen_frame->GetDesc(&screen_frame_desc);
-        screen_frame_desc.MiscFlags = same_device ? 0 : D3D11_RESOURCE_MISC_SHARED;
+        screen_frame_desc.MiscFlags = 0;
         screen_frame_desc.Usage = D3D11_USAGE_DEFAULT;
 
-        buffer->intermediate_texture = NULL;
-        CHECK_HR(hr = this->d3d11dev->CreateTexture2D(
-            &screen_frame_desc, NULL, &buffer->intermediate_texture));
-        
-        if(!same_device)
-        {
-            CHECK_HR(hr = buffer->intermediate_texture->QueryInterface(&idxgiresource));
-            CHECK_HR(hr = idxgiresource->GetSharedHandle(&handle));
-            CHECK_HR(hr = this->d3d11dev2->OpenSharedResource(
-                handle,  __uuidof(ID3D11Texture2D), (void**)&buffer->texture));
-        }
-        else
-            buffer->texture = buffer->intermediate_texture;
+        CHECK_HR(hr = this->d3d11dev2->CreateTexture2D(&screen_frame_desc, NULL, &buffer->texture));
     }
 
     // pointer position update
@@ -316,7 +366,11 @@ capture:
     // copy
     if(frame_info.LastPresentTime.QuadPart != 0)
     {
-        this->d3d11devctx->CopyResource(buffer->intermediate_texture, screen_frame);
+        if(this->same_device)
+            this->d3d11devctx->CopyResource(buffer->texture, screen_frame);
+        else
+            this->copy_between_adapters(
+                this->d3d11dev2, buffer->texture, this->d3d11dev, screen_frame);
 
         /*this->d3d11devctx->Flush();*/
 
@@ -360,11 +414,9 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source, 
-    const stream_videoprocessor_controller_t& videoprocessor_controller) : 
+stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source) : 
     source(source),
-    buffer(new media_buffer_lockable_texture),
-    videoprocessor_controller(videoprocessor_controller)
+    buffer(new media_buffer_lockable_texture)
 {
     this->capture_frame_callback.Attach(
         new async_callback_t(&stream_displaycapture5::capture_frame_cb));
@@ -378,17 +430,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     // cache texture
     std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);
 
-    stream_videoprocessor_controller::params_t params;
-    this->videoprocessor_controller->get_params(params);
-    // enable alpha is only for pointer which has alpha values
-    params.enable_alpha = false;
-    media_sample_videoprocessor sample(params, this->buffer->lock_buffer());
-    /*media_sample_view_videoprocessor sample_view(this->buffer);*/
-    /*sample_view.params = params;*/
+    media_sample_videoprocessor sample(this->buffer->lock_buffer());
     media_sample_videoprocessor pointer_sample(this->pointer_stream->buffer->lock_buffer());
-    /*media_sample_view_videoprocessor pointer_sample_view(this->pointer_stream->buffer);*/
-
-    /*std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);*/
 
     bool frame_captured, new_pointer_shape;
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
@@ -439,7 +482,16 @@ void stream_displaycapture5::capture_frame_cb(void*)
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
     if(sample.buffer->texture)
+    {
         sample.buffer->texture->GetDesc(ptr_desc = &desc);
+
+        // enable alpha is only for pointer which has alpha values
+        sample.params.enable_alpha = false;
+        sample.params.source_rect.top = sample.params.source_rect.left = 0;
+        sample.params.source_rect.right = desc.Width;
+        sample.params.source_rect.bottom = desc.Height;
+        sample.params.dest_rect = sample.params.source_rect;
+    }
 
     sample.timestamp = rp.request_time;
 

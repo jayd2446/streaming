@@ -85,9 +85,8 @@ UINT transform_videoprocessor::max_input_streams() const
     // maxinputstreams and maxstreamstates are 0x10 for amd devices,
     // but actually only support up to 10 simultaneous streams
 
-    return 10;
-    /*return std::min(this->videoprocessor_caps.MaxInputStreams, 
-            this->videoprocessor_caps.MaxStreamStates);*/
+    return std::min(10U, std::min(this->videoprocessor_caps.MaxInputStreams, 
+            this->videoprocessor_caps.MaxStreamStates));
 }
 
 

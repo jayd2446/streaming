@@ -34,10 +34,12 @@ private:
 
     CComPtr<IDXGIOutput5> output;
     CComPtr<IDXGIOutputDuplication> output_duplication;
+    DXGI_OUTDUPL_DESC outdupl_desc;
     // first devs are for the output duplicator,
     // second devs for the rendering operations in the pipeline;
     CComPtr<ID3D11Device> d3d11dev, d3d11dev2;
     CComPtr<ID3D11DeviceContext> d3d11devctx, d3d11devctx2;
+    CComPtr<ID3D11Texture2D> stage_src, stage_dst;
     UINT output_index;
 
     std::recursive_mutex capture_frame_mutex;
@@ -48,7 +50,13 @@ private:
     DXGI_OUTDUPL_POINTER_SHAPE_INFO pointer_shape_info;
 
     context_mutex_t context_mutex;
+    bool same_device;
 
+    HRESULT copy_between_adapters(
+        ID3D11Device* dst_dev,
+        ID3D11Texture2D* dst, 
+        ID3D11Device* src_dev,
+        ID3D11Texture2D* src);
     HRESULT setup_initial_data(
         const media_buffer_texture_t&);
     HRESULT create_pointer_texture(
@@ -66,7 +74,7 @@ public:
         time_unit& timestamp, 
         const presentation_clock_t&);
 
-    stream_displaycapture5_t create_stream(const stream_videoprocessor_controller_t&);
+    stream_displaycapture5_t create_stream();
     stream_displaycapture5_pointer_t create_pointer_stream();
 
     // currently displaycapture initialization never fails;
@@ -95,7 +103,6 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_displaycapture5_t source;
-    stream_videoprocessor_controller_t videoprocessor_controller;
     media_buffer_lockable_texture_t buffer;
     CComPtr<async_callback_t> capture_frame_callback;
 
@@ -104,8 +111,7 @@ private:
 
     void capture_frame_cb(void*);
 public:
-    stream_displaycapture5(
-        const source_displaycapture5_t& source, const stream_videoprocessor_controller_t&);
+    explicit stream_displaycapture5(const source_displaycapture5_t& source);
 
     void set_pointer_stream(const stream_displaycapture5_pointer_t& s) {this->pointer_stream = s;}
 

@@ -2,6 +2,7 @@
 #include "control_scene.h"
 #include "source_displaycapture5.h"
 #include "source_wasapi.h"
+#include <iostream>
 
 #ifdef _DEBUG
 #define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
@@ -42,6 +43,8 @@ control_pipeline::control_pipeline() :
         &feature_level, &this->devctx));
 
     this->item_mpeg_sink.null_file = true;
+
+    std::cout << "adapter " << this->d3d11dev_adapter << std::endl;
 
 done:
     if(FAILED(hr))

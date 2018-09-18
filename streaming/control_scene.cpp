@@ -170,19 +170,7 @@ void control_scene::build_topology(bool reset)
                         const source_displaycapture5_t source = 
                             this->displaycapture_sources[displaycapture_index].second;
 
-                        // TODO: control scene shouldnt control src rect for displaycapture sample
-                        stream_videoprocessor_controller_t 
-                            videoprocessor_stream_controller(new stream_videoprocessor_controller);
-                        stream_videoprocessor_controller::params_t params;
-                        params.source_rect.top = params.source_rect.left = 0;
-                        params.source_rect.right = 1920;
-                        params.source_rect.bottom = 1080;
-                        params.dest_rect = params.source_rect;
-                        params.enable_alpha = true;
-                        videoprocessor_stream_controller->set_params(params);
-
-                        stream_displaycapture5_t displaycapture_stream = source->create_stream(
-                            videoprocessor_stream_controller);
+                        stream_displaycapture5_t displaycapture_stream = source->create_stream();
                         stream_displaycapture5_pointer_t displaycapture_pointer_stream = 
                             source->create_pointer_stream();
 

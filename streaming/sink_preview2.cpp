@@ -52,7 +52,7 @@ void sink_preview2::initialize(
     swapchain_desc.BufferCount = 2; // use double buffering to enable flip
     swapchain_desc.Scaling = DXGI_SCALING_NONE;
     swapchain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-    swapchain_desc.Flags = DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE;
+    swapchain_desc.Flags = 0/*DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE*/;
 
     // identify the physical adapter (gpu or card) this device runs on
     CHECK_HR(hr = this->dxgidev->GetAdapter(&dxgiadapter));

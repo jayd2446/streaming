@@ -58,7 +58,6 @@ void sink_file::write_cb(void*)
                     this->write_callback->mf_put_work_item(this->shared_from_this<sink_file>()));
         }
 
-        // TODO: change these if statements to asserts(actually no)
         if(!request.sample_view.buffer)
             return;
         this->file_output->write_sample(true, request.sample_view.buffer->sample);
@@ -119,61 +118,57 @@ media_stream::result_t stream_file::process_sample(
     HRESULT hr = S_OK;
     if(this->sink->video)
     {
-        // TODO: change the if statements to asserts
-        const media_sample_h264* sample_h264 = dynamic_cast<const media_sample_h264*>(&sample);
-        if(sample_h264)
+        const media_sample_h264* sample_h264 = reinterpret_cast<const media_sample_h264*>(&sample);
+        assert_(dynamic_cast<const media_sample_h264*>(&sample));
+
+        sink_file::request_video_t request;
+        request.rp = rp;
+        request.stream = this;
+        request.sample_view = *sample_h264;
+
+        // add the new sample to queue and drop oldest sample if the queue is full
+        sink_file::scoped_lock lock(this->sink->requests_mutex);
+        this->sink->requests_video.push(request);
+        this->sink->requests++;
+        while(this->sink->requests > sink_file::max_queue_depth)
         {
             sink_file::request_video_t request;
-            request.rp = rp;
-            request.stream = this;
-            request.sample_view = *sample_h264;
-
-            // add the new sample to queue and drop oldest sample if the queue is full
-            sink_file::scoped_lock lock(this->sink->requests_mutex);
-            this->sink->requests_video.push(request);
-            this->sink->requests++;
-            while(this->sink->requests > sink_file::max_queue_depth)
-            {
-                sink_file::request_video_t request;
-                if(!this->sink->requests_video.pop(request))
-                    break;
-                this->sink->requests--;
-                std::cout << "------video output sample dropped------" << std::endl;
-            }
-
-            // add to work queue if the max queue depth isn't exceeded
-            if(this->sink->requests <= sink_file::max_queue_depth)
-                CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
+            if(!this->sink->requests_video.pop(request))
+                break;
+            this->sink->requests--;
+            std::cout << "------video output sample dropped------" << std::endl;
         }
 
+        // add to work queue if the max queue depth isn't exceeded
+        if(this->sink->requests <= sink_file::max_queue_depth)
+            CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
     }
     else
     {
-        const media_sample_aac* sample_aac = dynamic_cast<const media_sample_aac*>(&sample);
-        if(sample_aac)
+        const media_sample_aac* sample_aac = reinterpret_cast<const media_sample_aac*>(&sample);
+        assert_(dynamic_cast<const media_sample_aac*>(&sample));
+
+        sink_file::request_audio_t request;
+        request.rp = rp;
+        request.stream = this;
+        request.sample_view = *sample_aac;
+
+        // add the new sample to queue and drop oldest sample if the queue is full
+        sink_file::scoped_lock lock(this->sink->requests_mutex);
+        this->sink->requests_audio.push(request);
+        this->sink->requests++;
+        while(this->sink->requests > sink_file::max_queue_depth)
         {
             sink_file::request_audio_t request;
-            request.rp = rp;
-            request.stream = this;
-            request.sample_view = *sample_aac;
-
-            // add the new sample to queue and drop oldest sample if the queue is full
-            sink_file::scoped_lock lock(this->sink->requests_mutex);
-            this->sink->requests_audio.push(request);
-            this->sink->requests++;
-            while(this->sink->requests > sink_file::max_queue_depth)
-            {
-                sink_file::request_audio_t request;
-                if(!this->sink->requests_audio.pop(request))
-                    break;
-                this->sink->requests--;
-                std::cout << "------audio output sample dropped------" << std::endl;
-            }
-
-            // add to work queue if the max queue depth isn't exceeded
-            if(this->sink->requests <= sink_file::max_queue_depth)
-                CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
+            if(!this->sink->requests_audio.pop(request))
+                break;
+            this->sink->requests--;
+            std::cout << "------audio output sample dropped------" << std::endl;
         }
+
+        // add to work queue if the max queue depth isn't exceeded
+        if(this->sink->requests <= sink_file::max_queue_depth)
+            CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
     }
 
     this->sink->session->give_sample(this, sample, rp, false);

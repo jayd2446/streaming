@@ -193,10 +193,6 @@ typedef std::shared_ptr<media_buffer_samples> media_buffer_samples_t;
 class media_buffer_texture : public media_buffer
 {
 public:
-    // intermediate texture stores the real texture
-    // and texture is just a shared handle when using
-    // multiple devices
-    CComPtr<ID3D11Texture2D> intermediate_texture;
     CComPtr<ID3D11Texture2D> texture;
     virtual ~media_buffer_texture() {}
 };
