@@ -33,10 +33,12 @@ source_displaycapture5::source_displaycapture5(
     newest_pointer_buffer(new media_buffer_lockable_texture),
     context_mutex(context_mutex),
     output_index((UINT)-1),
-    same_device(false)
+    same_device(false),
+    last_timestamp2(std::numeric_limits<time_unit>::min())
 {
     this->pointer_position.Visible = FALSE;
     this->pointer_shape_info.Type = DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR;
+    this->last_timestamp.QuadPart = std::numeric_limits<LONGLONG>::min();
 }
 
 stream_displaycapture5_t source_displaycapture5::create_stream()
@@ -210,6 +212,7 @@ HRESULT source_displaycapture5::copy_between_adapters(
     // map the dst staging buffer for writing
     D3D11_MAPPED_SUBRESOURCE dst_sub_rsrc;
     {
+        // context mutex needs to be locked for the whole duration of map/unmap
         scoped_lock lock(*this->context_mutex);
         dst_dev_ctx->Map(this->stage_dst, 0, D3D11_MAP_WRITE, 0, &dst_sub_rsrc);
 
@@ -334,6 +337,15 @@ capture:
     CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
 
+#ifdef _DEBUG
+    if(frame_info.LastPresentTime.QuadPart != 0)
+    {
+        if(frame_info.LastPresentTime.QuadPart <= this->last_timestamp.QuadPart)
+            DebugBreak();
+        this->last_timestamp = frame_info.LastPresentTime;
+    }
+#endif
+
     if(!buffer->texture)
     {
         D3D11_TEXTURE2D_DESC screen_frame_desc;
@@ -437,13 +449,26 @@ void stream_displaycapture5::capture_frame_cb(void*)
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
     time_unit timestamp;
     presentation_clock_t clock;
+    request_packet rp;
+
+    {
+        scoped_lock lock(this->source->requests_mutex);
+        rp = this->source->requests.front();
+        this->source->requests.pop();
+    }
+
+#ifdef _DEBUG
+    if(rp.request_time <= this->source->last_timestamp2)
+        DebugBreak();
+    this->source->last_timestamp2 = rp.request_time;
+#endif
 
     // capture a frame
     // TODO: buffer parameter is redundant because the routine
     // updates the newest buffer field
 
     // clock is assumed to be valid
-    this->rp.get_clock(clock);
+    rp.get_clock(clock);
     try
     {
         frame_captured = this->source->capture_frame(
@@ -476,9 +501,6 @@ void stream_displaycapture5::capture_frame_cb(void*)
     else
         this->pointer_stream->buffer->unlock_write();
 
-    request_packet rp = this->rp;
-    this->rp = request_packet();
-
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
     if(sample.buffer->texture)
@@ -504,13 +526,14 @@ void stream_displaycapture5::capture_frame_cb(void*)
 
 media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp, const media_stream*)
 {
-    this->rp = rp;
+    {
+        scoped_lock lock(this->source->requests_mutex);
+        this->source->requests.push(rp);
+    }
 
     // dispatch the capture request
     const HRESULT hr = this->capture_frame_callback->mf_put_work_item(
         this->shared_from_this<stream_displaycapture5>());
-    if(FAILED(hr))
-        this->rp = request_packet();
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw std::exception();
     else if(hr == MF_E_SHUTDOWN)

@@ -35,7 +35,7 @@ public:
     static const UINT32 frame_width = 1280, frame_height = 720;
     static const UINT32 frame_rate_num = 60;
     static const UINT32 frame_rate_den = 1;
-    static const UINT32 avg_bitrate = 4500 * 1000;
+    static const UINT32 avg_bitrate = 10000/*4500*/ * 1000;
 private:
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -56,12 +56,17 @@ private:
 
     context_mutex_t context_mutex;
 
+    bool use_system_memory;
+
     // debug
-    time_unit last_time_stamp;
+    time_unit last_time_stamp, last_time_stamp2;
+    int last_packet;
 
     HRESULT set_input_stream_type();
     HRESULT set_output_stream_type();
     HRESULT set_encoder_parameters();
+
+    HRESULT feed_encoder(const request_t&);
 
     void events_cb(void*);
     void processing_cb(void*);
@@ -72,7 +77,8 @@ public:
 
     explicit transform_h264_encoder(const media_session_t& session, context_mutex_t context_mutex);
 
-    HRESULT initialize(const CComPtr<ID3D11Device>&);
+    // passing null d3d device implies that the system memory is used to feed the encoder
+    void initialize(const CComPtr<ID3D11Device>&);
     media_stream_t create_stream();
 };
 

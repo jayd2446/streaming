@@ -52,6 +52,14 @@ private:
     context_mutex_t context_mutex;
     bool same_device;
 
+    LARGE_INTEGER last_timestamp;
+    time_unit last_timestamp2;
+
+    // queue is used for requests so that the request time matches the
+    // fetched displaycapture image
+    std::recursive_mutex requests_mutex;
+    std::queue<request_packet> requests;
+
     HRESULT copy_between_adapters(
         ID3D11Device* dst_dev,
         ID3D11Texture2D* dst, 
@@ -107,7 +115,6 @@ private:
     CComPtr<async_callback_t> capture_frame_callback;
 
     stream_displaycapture5_pointer_t pointer_stream;
-    request_packet rp;
 
     void capture_frame_cb(void*);
 public:

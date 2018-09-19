@@ -7,7 +7,8 @@ sink_file::sink_file(const media_session_t& session) :
     media_sink(session),
     work_queue_id(0),
     video(false),
-    requests(0)
+    requests(0),
+    last_timestamp(std::numeric_limits<LONGLONG>::min())
 {
     this->write_callback.Attach(new async_callback_t(&sink_file::write_cb));
 }
@@ -60,6 +61,15 @@ void sink_file::write_cb(void*)
 
         if(!request.sample_view.buffer)
             return;
+
+#ifdef _DEBUG
+        LONGLONG timestamp;
+        CHECK_HR(hr = request.sample_view.buffer->sample->GetSampleTime(&timestamp));
+        if(timestamp <= this->last_timestamp)
+            DebugBreak();
+        this->last_timestamp = timestamp;
+#endif
+
         this->file_output->write_sample(true, request.sample_view.buffer->sample);
     }
     else
@@ -80,7 +90,17 @@ void sink_file::write_cb(void*)
         if(!request.sample_view.buffer || request.sample_view.buffer->samples.empty())
             return;
         for(auto&& item : request.sample_view.buffer->samples)
+        {
+#ifdef _DEBUG
+            LONGLONG timestamp;
+            CHECK_HR(hr = item->GetSampleTime(&timestamp));
+            if(timestamp <= this->last_timestamp)
+                DebugBreak();
+            this->last_timestamp = timestamp;
+#endif
+
             this->file_output->write_sample(false, item);
+        }
     }
 
 done:

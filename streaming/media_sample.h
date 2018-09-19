@@ -193,6 +193,9 @@ typedef std::shared_ptr<media_buffer_samples> media_buffer_samples_t;
 class media_buffer_texture : public media_buffer
 {
 public:
+    DWORD texture_buffer_length;
+    std::unique_ptr<BYTE[]> texture_buffer;
+
     CComPtr<ID3D11Texture2D> texture;
     virtual ~media_buffer_texture() {}
 };

@@ -28,6 +28,8 @@ private:
     bool video;
     int requests;
 
+    LONGLONG last_timestamp;
+
     CComPtr<async_callback_t> write_callback;
     void write_cb(void*);
 public:

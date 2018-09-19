@@ -135,9 +135,21 @@ transform_h264_encoder_t control_pipeline::create_h264_encoder(bool null_file)
     if(this->h264_encoder_transform)
         return this->h264_encoder_transform;
 
-    transform_h264_encoder_t h264_encoder_transform(
-        new transform_h264_encoder(this->session, this->context_mutex));
-    h264_encoder_transform->initialize(this->d3d11dev);
+    transform_h264_encoder_t h264_encoder_transform;
+    try
+    {
+        h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
+        h264_encoder_transform->initialize(this->d3d11dev);
+    }
+    catch(std::exception)
+    {
+        std::cout << "using system ram for video encoder" << std::endl;
+
+        // try to initialize the h264 encoder without utilizing vram
+        h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
+        h264_encoder_transform->initialize(NULL);
+    }
+
     return h264_encoder_transform;
 }
 
