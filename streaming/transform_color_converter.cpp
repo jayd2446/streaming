@@ -1,5 +1,6 @@
 #include "transform_color_converter.h"
 #include "transform_h264_encoder.h"
+#include <iostream>
 #include <mfapi.h>
 #include <Mferror.h>
 
@@ -10,10 +11,47 @@
 //        throw std::exception();
 //}
 
+media_buffer_pooled::media_buffer_pooled(
+    const samples_pool& available_samples,
+    const std::shared_ptr<std::recursive_mutex>& available_samples_mutex) :
+    available_samples(available_samples), available_samples_mutex(available_samples_mutex)
+{
+}
+
+void media_buffer_pooled::on_delete()
+{
+    // TODO: pushing to a container might introduce a cyclic dependency situation
+
+    // move the buffer back to sample pool
+    scoped_lock lock(*this->available_samples_mutex);
+    this->available_samples->push(this->shared_from_this<media_buffer_pooled>());
+}
+
+typename media_buffer_pooled::buffer_t media_buffer_pooled::create_pooled_buffer()
+{
+    return this->create_tracked_buffer();
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
 transform_color_converter::transform_color_converter(
     const media_session_t& session, context_mutex_t context_mutex) :
-    media_source(session), context_mutex(context_mutex)
+    media_source(session), context_mutex(context_mutex),
+    available_samples_mutex(new std::recursive_mutex),
+    available_samples(new std::stack<media_buffer_pooled_t>)
 {
+}
+
+transform_color_converter::~transform_color_converter()
+{
+    // clear the container so that the cyclic dependency between the container and its
+    // elements is broken
+    scoped_lock lock(*this->available_samples_mutex);
+    std::stack<media_buffer_pooled_t>().swap(*this->available_samples);
 }
 
 HRESULT transform_color_converter::initialize(
@@ -70,41 +108,64 @@ media_stream_t transform_color_converter::create_stream()
 
 
 stream_color_converter::stream_color_converter(const transform_color_converter_t& transform) :
-    transform(transform),
-    output_buffer(new media_buffer_texture)
+    transform(transform)
 {
     HRESULT hr = S_OK;
 
     CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessor(
         this->transform->enumerator, 0, &this->videoprocessor));
 
-    // create the output texture
-    {
-        // create output texture with nv12 color format
-        D3D11_TEXTURE2D_DESC desc;
-        desc.Width = transform_h264_encoder::frame_width;
-        desc.Height = transform_h264_encoder::frame_height;
-        desc.MipLevels = 1;
-        desc.ArraySize = 1;
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;
-        desc.CPUAccessFlags = 0;
-        desc.MiscFlags = 0;
-        desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.Format = DXGI_FORMAT_NV12;
-        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-            &desc, NULL, &this->output_buffer->texture));
-        /*CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));*/
+    //// create the output texture
+    //{
+    //    // create output texture with nv12 color format
+    //    D3D11_TEXTURE2D_DESC desc;
+    //    desc.Width = transform_h264_encoder::frame_width;
+    //    desc.Height = transform_h264_encoder::frame_height;
+    //    desc.MipLevels = 1;
+    //    desc.ArraySize = 1;
+    //    desc.SampleDesc.Count = 1;
+    //    desc.SampleDesc.Quality = 0;
+    //    desc.CPUAccessFlags = 0;
+    //    desc.MiscFlags = 0;
+    //    desc.Usage = D3D11_USAGE_DEFAULT;
+    //    desc.Format = DXGI_FORMAT_NV12;
+    //    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    //    CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
+    //        &desc, NULL, &this->output_buffer->texture));
+    //    /*CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));*/
 
-        // create output view
-        D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
-        view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-        view_desc.Texture2D.MipSlice = 0;
-        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-            this->output_buffer->texture, this->transform->enumerator,
-            &view_desc, &this->output_view));
-    }
+    //    // create output view
+    //    D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
+    //    view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+    //    view_desc.Texture2D.MipSlice = 0;
+    //    CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
+    //        this->output_buffer->texture, this->transform->enumerator,
+    //        &view_desc, &this->output_view));
+    //}
+
+done:
+    if(FAILED(hr))
+        throw std::exception();
+}
+
+void stream_color_converter::initialize_buffer(const media_buffer_texture_t& buffer)
+{
+    HRESULT hr = S_OK;
+
+    // create output texture with nv12 color format
+    D3D11_TEXTURE2D_DESC desc;
+    desc.Width = transform_h264_encoder::frame_width;
+    desc.Height = transform_h264_encoder::frame_height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.CPUAccessFlags = 0;
+    desc.MiscFlags = 0;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(&desc, NULL, &buffer->texture));
 
 done:
     if(FAILED(hr))
@@ -114,26 +175,50 @@ done:
 void stream_color_converter::processing_cb(void*)
 {
     HRESULT hr = S_OK;
+
+    // get output buffer from the pool or create a new one
+    media_buffer_texture_t output_buffer;
     {
-        // lock the output sample
-        /*media_sample_view_t sample_view;*/
+        scoped_lock lock(*this->transform->available_samples_mutex);
+        if(this->transform->available_samples->empty())
+        {
+            // create new buffer
+            media_buffer_pooled_t pooled_buffer(new media_buffer_pooled(
+                this->transform->available_samples,
+                this->transform->available_samples_mutex));
+            output_buffer = pooled_buffer->create_pooled_buffer();
+            this->initialize_buffer(output_buffer);
+            /*std::cout << "creating new..." << std::endl;*/
+        }
+        else
+        {
+            output_buffer = this->transform->available_samples->top()->create_pooled_buffer();
+            this->transform->available_samples->pop();
+            /*std::cout << "reusing..." << std::endl;*/
+        }
+    }
+    // create the output view
+    CComPtr<ID3D11VideoProcessorOutputView> output_view;
+    D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
+    view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+    view_desc.Texture2D.MipSlice = 0;
+    // TODO: include this outputview in the pool aswell
+    CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
+        output_buffer->texture, this->transform->enumerator, &view_desc, &output_view));
+
+    {
         media_sample_texture sample_view;
-
         CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample_view.buffer->texture;
-
         assert_(texture);
-        /*if(texture)*/
+
         // scope is important here so that the context mutex is unlocked;
         // failure to unlock it before proceeding to next component
         // introduces a deadlock scenario
         {
-            sample_view.buffer = this->output_buffer;
-            /*sample_view.attach(this->output_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
-            /*sample_view.reset(new media_sample_view(this->output_buffer));*/
+            sample_view.buffer = output_buffer;
 
             // create the input view for the sample to be converted
             CComPtr<ID3D11VideoProcessorInputView> input_view;
-
             D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
             desc.FourCC = 0; // uses the same format the input resource has
             desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
@@ -182,13 +267,9 @@ void stream_color_converter::processing_cb(void*)
             // blit
             const UINT stream_count = 1;
             CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
-                this->videoprocessor, this->output_view,
+                this->videoprocessor, output_view,
                 0, stream_count, &stream));
         }
-        //else
-        //    // TODO: read lock buffers is just a workaround for a deadlock bug
-        //    sample_view.attach(this->output_buffer_null, view_lock_t::READ_LOCK_BUFFERS);
-            /*sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));*/
 
         sample_view.timestamp = this->pending_packet.sample_view.timestamp;
         
@@ -196,7 +277,6 @@ void stream_color_converter::processing_cb(void*)
 
         // reset the sample view from the pending packet so it is unlocked
         this->pending_packet.sample_view.buffer = NULL;
-        /*this->pending_packet.sample_view.detach();*/
         // remove the rps so that there aren't any circular dependencies at shutdown
         this->pending_packet.rp = request_packet();
 
@@ -229,7 +309,4 @@ media_stream::result_t stream_color_converter::process_sample(
 
     this->processing_cb(NULL);
     return OK;
-done:
-    throw std::exception();
-    return FATAL_ERROR;
 }

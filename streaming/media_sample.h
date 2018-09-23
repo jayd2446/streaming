@@ -39,15 +39,46 @@ enum class buffer_lock_t
     LOCK
 };
 
-// TODO: lockable buffer should probably encapsulate the real buffer
 template<typename Buffer>
-class media_buffer_lockable : public Buffer, public enable_shared_from_this
+class media_buffer_trackable : public Buffer, public enable_shared_from_this
 {
 public:
     typedef Buffer buffer_raw_t;
     typedef std::shared_ptr<Buffer> buffer_t;
     // unique lock is the same as scoped lock
     typedef std::unique_lock<std::mutex> scoped_lock;
+private:
+    void deleter(buffer_raw_t*);
+protected:
+    virtual void on_delete() = 0;
+    buffer_t create_tracked_buffer();
+public:
+    virtual ~media_buffer_trackable() {}
+};
+
+template<typename T>
+void media_buffer_trackable<T>::deleter(buffer_raw_t* buffer)
+{
+    assert_(buffer == this);
+    this->on_delete();
+}
+
+template<typename T>
+typename media_buffer_trackable<T>::buffer_t
+media_buffer_trackable<T>::create_tracked_buffer()
+{
+    // media_buffer_trackable will stay alive at least as long as the wrapped buffer is alive
+    using std::placeholders::_1;
+    auto deleter_f = std::bind(&media_buffer_trackable::deleter,
+        this->shared_from_this<media_buffer_trackable>(), _1);
+
+    return buffer_t(this, deleter_f);
+}
+
+// TODO: lockable buffer should probably encapsulate the real buffer(not sure)
+template<typename Buffer>
+class media_buffer_lockable : public media_buffer_trackable<Buffer>
+{
 private:
     volatile int read_lock;
     volatile bool write_lock;
@@ -61,12 +92,13 @@ private:
     // unlocks the write and read lock
     void unlock();
 
-    // the deleter unlocks the Buffer
-    void deleter(buffer_raw_t*);
+    // unlocks the Buffer
+    void on_delete();
 public:
     media_buffer_lockable();
     virtual ~media_buffer_lockable();
 
+    // creates the trackable buffer
     buffer_t lock_buffer(buffer_lock_t = buffer_lock_t::LOCK);
 
     // unlocks the write lock
@@ -89,9 +121,8 @@ media_buffer_lockable<T>::~media_buffer_lockable()
 }
 
 template<typename T>
-void media_buffer_lockable<T>::deleter(buffer_raw_t* buffer)
+void media_buffer_lockable<T>::on_delete()
 {
-    assert_(buffer == this);
     this->unlock();
 }
 
@@ -104,11 +135,7 @@ media_buffer_lockable<T>::lock_buffer(buffer_lock_t lock_t)
     else
         this->lock_read();
 
-    // the lock buffer will stay alive at least as long as the wrapped buffer is alive
-    using std::placeholders::_1;
-    auto deleter_f = std::bind(&media_buffer_lockable::deleter, 
-        this->shared_from_this<media_buffer_lockable>(), _1);
-    return buffer_t(this, deleter_f);
+    return this->create_tracked_buffer();
 }
 
 template<typename T>
@@ -162,10 +189,12 @@ bool media_buffer_lockable<T>::is_locked() const
 
 
 // h264 memory buffer
+// TODO: just use media_buffer_samples and remove h264&aac buffers
 class media_buffer_h264 : public media_buffer
 {
 public:
-    CComPtr<IMFSample> sample;
+    std::deque<CComPtr<IMFSample>> samples;
+    /*CComPtr<IMFSample> sample;*/
     virtual ~media_buffer_h264() {}
 };
 

@@ -5,6 +5,7 @@
 #include <mfapi.h>
 #include <atlbase.h>
 #include <memory>
+#include <mutex>
 #include <atomic>
 #include "assert.h"
 
@@ -21,13 +22,20 @@ class async_callback : public IUnknownImpl
 public:
     typedef void (T::*invoke_fn)(void*);
     typedef T parent_t;
+    typedef std::lock_guard<std::mutex> scoped_lock;
 private:
+    std::mutex mutex;
     std::weak_ptr<T> parent;
     invoke_fn cb;
 
     HRESULT mf_cb(IMFAsyncResult* res)
     {
-        const std::shared_ptr<T> parent = this->parent.lock();
+        std::shared_ptr<T> parent;
+        {
+            scoped_lock lock(this->mutex);
+            parent = this->parent.lock();
+        }
+
         if(parent)
             (parent.get()->*cb)((void*)res);
         else
@@ -50,8 +58,11 @@ public:
         cb(cb), 
         native(this, &async_callback<T>::mf_cb, work_queue, flags) {}
 
-    // TODO: these should be atomic operations
-    void set_callback(const std::weak_ptr<T>& parent) {this->parent = parent;}
+    void set_callback(const std::weak_ptr<T>& parent) 
+    {
+        scoped_lock lock(this->mutex);
+        this->parent = parent;
+    }
     void set_callback(
         const std::weak_ptr<T>& parent,
         invoke_fn cb) {this->set_callback(parent); std::atomic_exchange(&this->cb, cb);}

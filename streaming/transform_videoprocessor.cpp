@@ -379,6 +379,9 @@ void stream_videoprocessor::processing_cb(void*)
         /*media_sample_view_t sample_view, temp_sample_view;*/
         time_unit timestamp = std::numeric_limits<time_unit>::max();
 
+        // rps are equivalent in every input stream
+        request_packet rp = this->input_streams[0].first.rp;
+
         UINT j = 0;
         bool blend_output = false;
         int output_index = 0;
@@ -403,7 +406,7 @@ void stream_videoprocessor::processing_cb(void*)
             // use the earliest timestamp;
             // actually, max must be used so that the timestamp stays incremental
             // (using max only applies to displaycapture where the buffers are shared between streams)
-            timestamp = std::min(timestamp, it->first.sample_view.timestamp);
+            timestamp = rp.request_time;//std::min(timestamp, it->first.sample_view.timestamp);
 
             if(blend_output)
             {
@@ -475,8 +478,6 @@ void stream_videoprocessor::processing_cb(void*)
         // set the timestamp
         /*sample_view->sample.timestamp = timestamp;*/
         sample_view.timestamp = timestamp;
-        // rps are equivalent in every input stream
-        request_packet rp = this->input_streams[0].first.rp;
 
         // reset the sample view from the input stream packets so it is unlocked;
         // reset the rps so that there aren't any circular dependencies at shutdown

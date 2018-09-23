@@ -63,6 +63,7 @@ public:
 private:
     sink_mpeg2_t sink;
     bool running;
+    bool discontinuity;
 
     std::recursive_mutex worker_streams_mutex;
     std::vector<stream_mpeg2_worker_t> worker_streams;

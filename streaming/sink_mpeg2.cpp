@@ -69,25 +69,20 @@ stream_mpeg2_worker_t sink_mpeg2::create_worker_stream()
 /////////////////////////////////////////////////////////////////
 
 
+extern DWORD capture_work_queue_id;
+
 stream_mpeg2::stream_mpeg2(
     const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream) : 
     sink(sink), unavailable(0), running(false),
     media_stream_clock_sink(sink.get()),
     audio_sink_stream(audio_sink_stream),
-    last_due_time(std::numeric_limits<time_unit>::min())
+    last_due_time(std::numeric_limits<time_unit>::min()),
+    discontinuity(false)
 {
-    HRESULT hr = S_OK;
-    DWORD task_id;
-    /*CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &this->work_queue_id));*/
-
-done:
-    if(FAILED(hr))
-        throw std::exception();
 }
 
 stream_mpeg2::~stream_mpeg2()
 {
-    /*MFUnlockWorkQueue(this->work_queue_id);*/
 }
 
 void stream_mpeg2::on_component_start(time_unit)
@@ -100,7 +95,7 @@ void stream_mpeg2::on_component_stop(time_unit)
 
 void stream_mpeg2::on_stream_start(time_unit t)
 {
-    /*this->set_schedule_cb_work_queue(this->work_queue_id);*/
+    /*this->set_schedule_cb_work_queue(capture_work_queue_id);*/
 
     // try to set the initial time for the output;
     // the output will modify the sample timestamps so that they start at 0
@@ -138,7 +133,10 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     request_packet rp, rp2;
     rp.request_time = due_time;
     rp.timestamp = due_time;
+    rp.flags = this->discontinuity ? FLAG_DISCONTINUITY : 0;
     rp2 = rp;
+
+    this->discontinuity = false;
 
     // the call order must be this way so that consecutive packet numbers
     // match consecutive request times
@@ -176,6 +174,7 @@ void stream_mpeg2::schedule_new(time_unit due_time)
             }
             else
             {
+                this->discontinuity = true;
                 do
                 {
                     const time_unit current_time = t->get_current_time();
@@ -210,6 +209,8 @@ void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
             return;
         }
     }
+
+    this->discontinuity = true;
 
     // TODO: remove no drop since clock start and clock stop requests cannot
     // be dropped anymore

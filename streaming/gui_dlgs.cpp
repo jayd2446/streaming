@@ -128,19 +128,27 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             {*/
             // video
             static int i = 0;
+
+            const LONG display_w = 
+                std::abs(dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.right - 
+                    dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.left),
+                display_h = 
+                std::abs(dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.bottom -
+                    dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.top);
+
             dlg.displaycaptures[dlg.cursel].video.source_rect = { 0 };
             dlg.displaycaptures[dlg.cursel].video.dest_rect = { 0 };
-            dlg.displaycaptures[dlg.cursel].video.source_rect.right = 1920 - i * 4;
-            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = 1080 - i * 4;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.right = display_w - i * 4;
+            dlg.displaycaptures[dlg.cursel].video.source_rect.bottom = display_h - i * 4;
             dlg.displaycaptures[dlg.cursel].video.source_rect.left = i * 4;
             dlg.displaycaptures[dlg.cursel].video.source_rect.top = i * 4;
 
             dlg.displaycaptures[dlg.cursel].video.dest_rect.left = i * 4;
             dlg.displaycaptures[dlg.cursel].video.dest_rect.top = i * 4;
             dlg.displaycaptures[dlg.cursel].video.dest_rect.right =
-                transform_videoprocessor::canvas_width - i * 4;
+                std::min((LONG)transform_videoprocessor::canvas_width, display_w) - i * 40;
             dlg.displaycaptures[dlg.cursel].video.dest_rect.bottom =
-                transform_videoprocessor::canvas_height - i * 4;
+                std::min((LONG)transform_videoprocessor::canvas_height, display_h) - i * 40;
             i++;
 
             scene->add_displaycapture_item(dlg.displaycaptures[dlg.cursel]);

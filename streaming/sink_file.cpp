@@ -59,18 +59,25 @@ void sink_file::write_cb(void*)
                     this->write_callback->mf_put_work_item(this->shared_from_this<sink_file>()));
         }
 
+        /*if(request.rp.flags & FLAG_DISCONTINUITY)
+            CHECK_HR(hr = this->file_output->writer->SendStreamTick(0, this->last_timestamp));*/
+
+        // TODO: the write_cb shouldn't be invoked when the buffer is empty
         if(!request.sample_view.buffer)
             return;
 
+        for(auto&& item : request.sample_view.buffer->samples)
+        {
 #ifdef _DEBUG
-        LONGLONG timestamp;
-        CHECK_HR(hr = request.sample_view.buffer->sample->GetSampleTime(&timestamp));
-        if(timestamp <= this->last_timestamp)
-            DebugBreak();
-        this->last_timestamp = timestamp;
+            /*LONGLONG timestamp;
+            CHECK_HR(hr = item->GetSampleTime(&timestamp));
+            if(timestamp <= this->last_timestamp)
+                DebugBreak();
+            this->last_timestamp = timestamp;*/
 #endif
 
-        this->file_output->write_sample(true, request.sample_view.buffer->sample);
+            this->file_output->write_sample(true, item);
+        }
     }
     else
     {
@@ -87,7 +94,8 @@ void sink_file::write_cb(void*)
                     this->write_callback->mf_put_work_item(this->shared_from_this<sink_file>()));
         }
 
-        if(!request.sample_view.buffer || request.sample_view.buffer->samples.empty())
+        // TODO: the write_cb shouldn't be invoked when the buffer is empty
+        if(!request.sample_view.buffer)
             return;
         for(auto&& item : request.sample_view.buffer->samples)
         {

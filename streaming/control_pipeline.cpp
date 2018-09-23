@@ -135,19 +135,33 @@ transform_h264_encoder_t control_pipeline::create_h264_encoder(bool null_file)
     if(this->h264_encoder_transform)
         return this->h264_encoder_transform;
 
+    // TODO: activating the encoder might fail for random reasons,
+    // so notify if the primary encoder cannot be used and use the software encoder as a
+    // fallback
+    // (signature error during activate call was fixed by a reboot)
     transform_h264_encoder_t h264_encoder_transform;
     try
     {
         h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
-        h264_encoder_transform->initialize(this->d3d11dev);
+        h264_encoder_transform->initialize(this->d3d11dev, false);
     }
     catch(std::exception)
     {
-        std::cout << "using system ram for video encoder" << std::endl;
+        std::cout << "using system ram for hardware video encoder" << std::endl;
 
-        // try to initialize the h264 encoder without utilizing vram
-        h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
-        h264_encoder_transform->initialize(NULL);
+        try
+        {
+            // try to initialize the h264 encoder without utilizing vram
+            h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
+            h264_encoder_transform->initialize(NULL);
+        }
+        catch(std::exception)
+        {
+            std::cout << "using software encoder" << std::endl;
+            // use software encoder
+            h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
+            h264_encoder_transform->initialize(NULL, true);
+        }
     }
 
     return h264_encoder_transform;
@@ -360,7 +374,8 @@ void control_pipeline::build_video_topology_branch(const media_topology_t& video
     }
     else
     {
-        media_stream_t encoder_stream = this->h264_encoder_transform->create_stream();
+        media_stream_t encoder_stream = 
+            this->h264_encoder_transform->create_stream(video_topology->get_clock());
         media_stream_t color_converter_stream = this->color_converter_transform->create_stream();
         media_stream_t mp4_stream = this->mp4_sink.first->create_stream(video_topology->get_clock());
 

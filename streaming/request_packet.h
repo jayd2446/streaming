@@ -18,6 +18,9 @@
 //// drains encoders and master audio mixer
 //#define STREAM_FINALIZE 0x4
 
+// indicates a gap in the stream
+#define FLAG_DISCONTINUITY 0x1
+
 // request packet has a reference to the topology it belongs to;
 // request packets allow for seamless topology switching;
 // the old topology stays alive for as long as the request packet
@@ -27,7 +30,7 @@
 struct request_packet
 {
     media_topology_t topology;
-    /*int flags;*/
+    int flags;
     time_unit request_time;
     time_unit timestamp;
     // cant be a negative number

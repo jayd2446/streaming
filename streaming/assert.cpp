@@ -2,5 +2,5 @@
 
 void maybe_assert(bool expr)
 {
-    /*assert_(expr);*/
+    assert_(expr);
 }

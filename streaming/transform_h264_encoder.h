@@ -27,12 +27,13 @@ class transform_h264_encoder : public media_source
 {
     friend class stream_h264_encoder;
 public:
+    struct packet {bool drain; media_sample_texture sample;};
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
-    typedef request_queue<media_sample_texture> request_queue;
+    typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;
 
-    static const UINT32 frame_width = 1280, frame_height = 720;
+    static const UINT32 frame_width = 1920, frame_height = 1080;
     static const UINT32 frame_rate_num = 60;
     static const UINT32 frame_rate_den = 1;
     static const UINT32 avg_bitrate = 10000/*4500*/ * 1000;
@@ -50,13 +51,13 @@ private:
     std::atomic_int32_t encoder_requests;
 
     request_queue requests;
+    request_t last_request;
+    std::atomic_bool draining;
 
-    std::recursive_mutex processed_samples_mutex;
-    std::queue<request_t> processed_samples;
-
+    media_buffer_h264_t out_buffer;
     context_mutex_t context_mutex;
 
-    bool use_system_memory;
+    bool use_system_memory, software;
 
     // debug
     time_unit last_time_stamp, last_time_stamp2;
@@ -68,6 +69,9 @@ private:
 
     HRESULT feed_encoder(const request_t&);
 
+    void process_request(const media_buffer_h264_t&, request_t&);
+    bool process_output(CComPtr<IMFSample>&);
+
     void events_cb(void*);
     void processing_cb(void*);
     void process_output_cb(void*);
@@ -76,20 +80,27 @@ public:
     CComPtr<IMFMediaType> output_type;
 
     explicit transform_h264_encoder(const media_session_t& session, context_mutex_t context_mutex);
+    ~transform_h264_encoder();
 
-    // passing null d3d device implies that the system memory is used to feed the encoder
-    void initialize(const CComPtr<ID3D11Device>&);
-    media_stream_t create_stream();
+    // passing null d3d device implies that the system memory is used to feed the encoder;
+    // software encoder flag overrides d3d device arg
+    void initialize(const CComPtr<ID3D11Device>&, bool software = false);
+    media_stream_t create_stream(presentation_clock_t&);
 };
 
 typedef std::shared_ptr<transform_h264_encoder> transform_h264_encoder_t;
 
-class stream_h264_encoder : public media_stream
+class stream_h264_encoder : public media_stream_clock_sink
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     transform_h264_encoder_t transform;
+
+    time_unit drain_point;
+
+    void on_component_start(time_unit);
+    void on_component_stop(time_unit);
 public:
     explicit stream_h264_encoder(const transform_h264_encoder_t& transform);
 

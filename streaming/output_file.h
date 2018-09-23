@@ -21,9 +21,10 @@ private:
     CComPtr<IMFMediaType> video_type;
     CComPtr<IMFMediaType> audio_type;
     CComPtr<IMFMediaSink> mpeg_media_sink;
-    CComPtr<IMFSinkWriter> writer;
     CComPtr<IMFByteStream> byte_stream;
 public:
+    CComPtr<IMFSinkWriter> writer;
+
     output_file();
     ~output_file();
 
