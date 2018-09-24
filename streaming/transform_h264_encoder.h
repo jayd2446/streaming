@@ -21,8 +21,6 @@ typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
 // the encoder currently acts as a sink;
 // the first packet must be 0
 
-// TODO: encoder must be drained so that it won't cause the driver to hang
-// and crash
 class transform_h264_encoder : public media_source
 {
     friend class stream_h264_encoder;
@@ -37,6 +35,8 @@ public:
     static const UINT32 frame_rate_num = 60;
     static const UINT32 frame_rate_den = 1;
     static const UINT32 avg_bitrate = 10000/*4500*/ * 1000;
+    // 0: low quality, 100: high quality
+    static const UINT32 quality_vs_speed = 50;
 private:
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;

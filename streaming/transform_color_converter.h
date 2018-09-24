@@ -12,34 +12,12 @@
 // color space converter;
 // also provides a pool for samples that are submitted to the encoder
 
-// queue<tracked_samples> samples_pool(the samples can store both vram and ram backed textures);
-// the queue and the mutex are shared ptrs that are referenced by the samples;
-// at the destructor of color converter the cyclic dependency between queue and samples are broken
-// by clearing the queue
-
-class media_buffer_pooled : public media_buffer_trackable<media_buffer_texture>
-{
-public:
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef std::shared_ptr<std::stack<std::shared_ptr<media_buffer_pooled>>> samples_pool;
-private:
-    std::shared_ptr<std::recursive_mutex> available_samples_mutex;
-    samples_pool available_samples;
-
-    void on_delete();
-public:
-    media_buffer_pooled(const samples_pool&, const std::shared_ptr<std::recursive_mutex>&);
-    buffer_t create_pooled_buffer();
-};
-
-typedef std::shared_ptr<media_buffer_pooled> media_buffer_pooled_t;
-
 class transform_color_converter : public media_source
 {
     friend class stream_color_converter;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef std::shared_ptr<std::stack<media_buffer_pooled_t>> samples_pool;
+    typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
 private:
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;

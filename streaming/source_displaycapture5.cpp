@@ -29,8 +29,12 @@ class displaycapture_exception : public std::exception {};
 source_displaycapture5::source_displaycapture5(
     const media_session_t& session, context_mutex_t context_mutex) : 
     media_source(session),
-    newest_buffer(new media_buffer_lockable_texture),
-    newest_pointer_buffer(new media_buffer_lockable_texture),
+    newest_buffer(new media_buffer_texture),
+    newest_pointer_buffer(new media_buffer_texture),
+    available_samples_mutex(new std::recursive_mutex),
+    available_pointer_samples_mutex(new std::recursive_mutex),
+    available_samples(new std::stack<media_buffer_pooled_texture_t>),
+    available_pointer_samples(new std::stack<media_buffer_pooled_texture_t>),
     context_mutex(context_mutex),
     output_index((UINT)-1),
     same_device(false),
@@ -39,6 +43,24 @@ source_displaycapture5::source_displaycapture5(
     this->pointer_position.Visible = FALSE;
     this->pointer_shape_info.Type = DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR;
     this->last_timestamp.QuadPart = std::numeric_limits<LONGLONG>::min();
+}
+
+source_displaycapture5::~source_displaycapture5()
+{
+    // clear the container so that the cyclic dependency between the container and its
+    // elements is broken
+    {
+        std::atomic_exchange(&this->newest_buffer, media_buffer_texture_t());
+
+        scoped_lock lock(*this->available_samples_mutex);
+        std::stack<media_buffer_pooled_texture_t>().swap(*this->available_samples);
+    }
+    {
+        std::atomic_exchange(&this->newest_pointer_buffer, media_buffer_texture_t());
+
+        scoped_lock lock(*this->available_pointer_samples_mutex);
+        std::stack<media_buffer_pooled_texture_t>().swap(*this->available_pointer_samples);
+    }
 }
 
 stream_displaycapture5_t source_displaycapture5::create_stream()
@@ -303,8 +325,8 @@ done:
 bool source_displaycapture5::capture_frame(
     bool& new_pointer_shape,
     DXGI_OUTDUPL_POINTER_POSITION& pointer_position,
-    media_buffer_lockable_texture_t& pointer,
-    media_buffer_lockable_texture_t& buffer,
+    media_buffer_texture_t& pointer,
+    media_buffer_texture_t& buffer,
     time_unit& timestamp, 
     const presentation_clock_t& clock)
 {
@@ -371,8 +393,7 @@ capture:
     if(new_pointer_shape)
     {
         CHECK_HR(hr = this->create_pointer_texture(frame_info, pointer));
-        this->newest_pointer_buffer = pointer;
-        /*std::atomic_exchange(&this->newest_pointer_buffer, pointer);*/
+        std::atomic_exchange(&this->newest_pointer_buffer, pointer);
     }
 
     // copy
@@ -384,14 +405,8 @@ capture:
             this->copy_between_adapters(
                 this->d3d11dev2, buffer->texture, this->d3d11dev, screen_frame);
 
-        /*this->d3d11devctx->Flush();*/
-
-        // TODO: the timestamp might not be consecutive
-        /*timestamp = clock->performance_counter_to_time_unit(frame_info.LastPresentTime);*/
-
         // update the newest sample
-        this->newest_buffer = buffer;
-        /*std::atomic_exchange(&this->newest_buffer, buffer);*/
+        std::atomic_exchange(&this->newest_buffer, buffer);
     }
     else
         /*timestamp = clock->get_current_time()*/;
@@ -427,8 +442,7 @@ done:
 
 
 stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source) : 
-    source(source),
-    buffer(new media_buffer_lockable_texture)
+    source(source)
 {
     this->capture_frame_callback.Attach(
         new async_callback_t(&stream_displaycapture5::capture_frame_cb));
@@ -436,14 +450,44 @@ stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& s
 
 void stream_displaycapture5::capture_frame_cb(void*)
 {
-    // there exists a possibility for dead lock if another thread tries to read
-    // the cached texture, and this thread has already locked the sample;
-    // unlocking the capture frame mutex must be ensured before trying to lock the
-    // cache texture
     std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);
-
-    media_sample_videoprocessor sample(this->buffer->lock_buffer());
-    media_sample_videoprocessor pointer_sample(this->pointer_stream->buffer->lock_buffer());
+    media_sample_videoprocessor sample;
+    media_sample_videoprocessor pointer_sample;
+    {
+        scoped_lock lock(*this->source->available_samples_mutex);
+        if(this->source->available_samples->empty())
+        {
+            media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
+                this->source->available_samples,
+                this->source->available_samples_mutex));
+            sample.buffer = pooled_buffer->create_pooled_buffer();
+            /*std::cout << "creating new..." << std::endl;*/
+        }
+        else
+        {
+            sample.buffer = this->source->available_samples->top()->create_pooled_buffer();
+            this->source->available_samples->pop();
+            /*std::cout << "reusing..." << std::endl;*/
+        }
+    }
+    {
+        scoped_lock lock(*this->source->available_pointer_samples_mutex);
+        if(this->source->available_pointer_samples->empty())
+        {
+            media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
+                this->source->available_pointer_samples,
+                this->source->available_pointer_samples_mutex));
+            pointer_sample.buffer = pooled_buffer->create_pooled_buffer();
+            /*std::cout << "creating new..." << std::endl;*/
+        }
+        else
+        {
+            pointer_sample.buffer = 
+                this->source->available_pointer_samples->top()->create_pooled_buffer();
+            this->source->available_pointer_samples->pop();
+            /*std::cout << "reusing..." << std::endl;*/
+        }
+    }
 
     bool frame_captured, new_pointer_shape;
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
@@ -472,8 +516,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     try
     {
         frame_captured = this->source->capture_frame(
-            new_pointer_shape, pointer_position, this->pointer_stream->buffer,
-            this->buffer, timestamp, clock);
+            new_pointer_shape, pointer_position, pointer_sample.buffer,
+            sample.buffer, timestamp, clock);
     }
     catch(displaycapture_exception)
     {
@@ -482,24 +526,10 @@ void stream_displaycapture5::capture_frame_cb(void*)
     }
 
     if(!frame_captured)
-    {
-        // sample view must be reset to null before assigning a new sample view,
-        // that is because the media_sample_view would lock the sample before
-        // sample_view releasing its own reference to another sample_view
-        sample.buffer = NULL;
-        sample.buffer = this->source->newest_buffer->lock_buffer(buffer_lock_t::READ_LOCK);
-    }
-    else
-        this->buffer->unlock_write();
+        sample.buffer = this->source->newest_buffer;
 
     if(!new_pointer_shape)
-    {
-        pointer_sample.buffer = NULL;
-        pointer_sample.buffer = 
-            this->source->newest_pointer_buffer->lock_buffer(buffer_lock_t::READ_LOCK);
-    }
-    else
-        this->pointer_stream->buffer->unlock_write();
+        pointer_sample.buffer = this->source->newest_pointer_buffer;
 
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
@@ -557,8 +587,7 @@ media_stream::result_t stream_displaycapture5::process_sample(
 
 stream_displaycapture5_pointer::stream_displaycapture5_pointer(const source_displaycapture5_t& source) :
     source(source),
-    buffer(new media_buffer_lockable_texture),
-    null_buffer(new media_buffer_lockable_texture)
+    null_buffer(new media_buffer_texture)
 {
 }
 

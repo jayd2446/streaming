@@ -29,6 +29,7 @@ class source_displaycapture5 : public media_source
     friend class stream_displaycapture5_pointer;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
 private:
     control_pipeline_t ctrl_pipeline;
 
@@ -42,8 +43,12 @@ private:
     CComPtr<ID3D11Texture2D> stage_src, stage_dst;
     UINT output_index;
 
+    std::shared_ptr<std::recursive_mutex> available_samples_mutex, available_pointer_samples_mutex;
+    samples_pool available_samples, available_pointer_samples;
+    media_buffer_texture_t newest_buffer, newest_pointer_buffer;
+
     std::recursive_mutex capture_frame_mutex;
-    media_buffer_lockable_texture_t newest_buffer, newest_pointer_buffer;
+    /*media_buffer_lockable_texture_t newest_buffer, newest_pointer_buffer;*/
     /*media_buffer_pointer_shape_t newest_pointer_buffer;*/
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
     std::vector<BYTE> pointer_buffer;
@@ -73,12 +78,13 @@ private:
     HRESULT reinitialize(UINT output_index);
 public:
     source_displaycapture5(const media_session_t& session, context_mutex_t context_mutex);
+    ~source_displaycapture5();
 
     bool capture_frame(
         bool& new_pointer_shape,
         DXGI_OUTDUPL_POINTER_POSITION&,
-        media_buffer_lockable_texture_t& pointer,
-        media_buffer_lockable_texture_t&,
+        media_buffer_texture_t& pointer,
+        media_buffer_texture_t&,
         time_unit& timestamp, 
         const presentation_clock_t&);
 
@@ -111,7 +117,6 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_displaycapture5_t source;
-    media_buffer_lockable_texture_t buffer;
     CComPtr<async_callback_t> capture_frame_callback;
 
     stream_displaycapture5_pointer_t pointer_stream;
@@ -135,7 +140,7 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     source_displaycapture5_t source;
-    media_buffer_lockable_texture_t buffer, null_buffer;
+    media_buffer_texture_t null_buffer;
 public:
     explicit stream_displaycapture5_pointer(const source_displaycapture5_t& source);
 

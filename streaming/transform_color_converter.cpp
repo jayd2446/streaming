@@ -11,38 +11,12 @@
 //        throw std::exception();
 //}
 
-media_buffer_pooled::media_buffer_pooled(
-    const samples_pool& available_samples,
-    const std::shared_ptr<std::recursive_mutex>& available_samples_mutex) :
-    available_samples(available_samples), available_samples_mutex(available_samples_mutex)
-{
-}
-
-void media_buffer_pooled::on_delete()
-{
-    // TODO: pushing to a container might introduce a cyclic dependency situation
-
-    // move the buffer back to sample pool
-    scoped_lock lock(*this->available_samples_mutex);
-    this->available_samples->push(this->shared_from_this<media_buffer_pooled>());
-}
-
-typename media_buffer_pooled::buffer_t media_buffer_pooled::create_pooled_buffer()
-{
-    return this->create_tracked_buffer();
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
 
 transform_color_converter::transform_color_converter(
     const media_session_t& session, context_mutex_t context_mutex) :
     media_source(session), context_mutex(context_mutex),
     available_samples_mutex(new std::recursive_mutex),
-    available_samples(new std::stack<media_buffer_pooled_t>)
+    available_samples(new std::stack<media_buffer_pooled_texture_t>)
 {
 }
 
@@ -51,7 +25,7 @@ transform_color_converter::~transform_color_converter()
     // clear the container so that the cyclic dependency between the container and its
     // elements is broken
     scoped_lock lock(*this->available_samples_mutex);
-    std::stack<media_buffer_pooled_t>().swap(*this->available_samples);
+    std::stack<media_buffer_pooled_texture_t>().swap(*this->available_samples);
 }
 
 HRESULT transform_color_converter::initialize(
@@ -183,7 +157,7 @@ void stream_color_converter::processing_cb(void*)
         if(this->transform->available_samples->empty())
         {
             // create new buffer
-            media_buffer_pooled_t pooled_buffer(new media_buffer_pooled(
+            media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
                 this->transform->available_samples,
                 this->transform->available_samples_mutex));
             output_buffer = pooled_buffer->create_pooled_buffer();

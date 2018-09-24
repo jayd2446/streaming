@@ -232,9 +232,15 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     v.vt = VT_UI4;
     v.ulVal = eAVEncCommonRateControlMode_CBR;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonRateControlMode, &v));
-    v.vt = VT_BOOL;
+    v.vt = VT_UI4;
+    v.ullVal = quality_vs_speed;
+    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonQualityVsSpeed, &v));
+    v.vt = VT_UI4;
+    v.ullVal = avg_bitrate;
+    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonBufferSize, &v));
+    /*v.vt = VT_BOOL;
     v.ulVal = VARIANT_FALSE;
-    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));
+    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));*/
     /*v.vt = VT_UI4;
     v.ulVal = 0;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncNumWorkerThreads, &v));*/
@@ -271,9 +277,6 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
             this->context_mutex, request.sample_view.sample, buffer2d));
     }
 
-    /*if(request.rp.flags & FLAG_DISCONTINUITY)
-        CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_TICK, this->last_time_stamp));*/
-
     const LONGLONG sample_duration = (LONGLONG)
         (SECOND_IN_TIME_UNIT / (double)(frame_rate_num / frame_rate_den));
 
@@ -284,8 +287,8 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     CHECK_HR(hr = sample->SetSampleDuration(sample_duration));
     // the amd encoder probably copies the discontinuity flag to output sample,
     // which might cause problems when the sample is passed to sinkwriter
-    /*if(request.rp.flags & FLAG_DISCONTINUITY)
-        CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, TRUE))*/
+    if(request.rp.flags & FLAG_DISCONTINUITY)
+        CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, TRUE))
     /*else
         CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, FALSE));*/
     // add the tracker attribute to the sample

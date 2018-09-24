@@ -4,7 +4,7 @@
 #include <mutex>
 #include <atomic>
 #include <deque>
-#include <list>
+#include <stack>
 #include <condition_variable>
 #include <functional>
 #include <stdint.h>
@@ -75,118 +75,45 @@ media_buffer_trackable<T>::create_tracked_buffer()
     return buffer_t(this, deleter_f);
 }
 
-// TODO: lockable buffer should probably encapsulate the real buffer(not sure)
 template<typename Buffer>
-class media_buffer_lockable : public media_buffer_trackable<Buffer>
+class media_buffer_pooled : public media_buffer_trackable<Buffer>
 {
+public:
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef std::shared_ptr<std::stack<std::shared_ptr<media_buffer_pooled>>> samples_pool;
 private:
-    volatile int read_lock;
-    volatile bool write_lock;
-    std::condition_variable cv;
-    mutable std::mutex mutex;
+    std::shared_ptr<std::recursive_mutex> available_samples_mutex;
+    samples_pool available_samples;
 
-    // waits for write and read to complete
-    void lock();
-    // waits only for the write to complete
-    void lock_read();
-    // unlocks the write and read lock
-    void unlock();
-
-    // unlocks the Buffer
     void on_delete();
 public:
-    media_buffer_lockable();
-    virtual ~media_buffer_lockable();
-
-    // creates the trackable buffer
-    buffer_t lock_buffer(buffer_lock_t = buffer_lock_t::LOCK);
-
-    // unlocks the write lock
-    void unlock_write();
-
-    bool is_locked() const;
+    media_buffer_pooled(const samples_pool&, const std::shared_ptr<std::recursive_mutex>&);
+    buffer_t create_pooled_buffer();
 };
 
 template<typename T>
-media_buffer_lockable<T>::media_buffer_lockable() :
-    read_lock(0),
-    write_lock(false)
+media_buffer_pooled<T>::media_buffer_pooled(
+    const samples_pool& available_samples,
+    const std::shared_ptr<std::recursive_mutex>& available_samples_mutex) :
+    available_samples(available_samples), available_samples_mutex(available_samples_mutex)
 {
 }
 
 template<typename T>
-media_buffer_lockable<T>::~media_buffer_lockable()
+void media_buffer_pooled<T>::on_delete()
 {
-    assert_(!this->is_locked());
+    // TODO: pushing to a container might introduce a cyclic dependency situation
+
+    // move the buffer back to sample pool
+    scoped_lock lock(*this->available_samples_mutex);
+    this->available_samples->push(this->shared_from_this<media_buffer_pooled>());
 }
 
 template<typename T>
-void media_buffer_lockable<T>::on_delete()
+typename media_buffer_pooled<T>::buffer_t media_buffer_pooled<T>::create_pooled_buffer()
 {
-    this->unlock();
-}
-
-template<typename T>
-typename media_buffer_lockable<T>::buffer_t 
-media_buffer_lockable<T>::lock_buffer(buffer_lock_t lock_t)
-{
-    if(lock_t == buffer_lock_t::LOCK)
-        this->lock();
-    else
-        this->lock_read();
-
     return this->create_tracked_buffer();
 }
-
-template<typename T>
-void media_buffer_lockable<T>::lock()
-{
-    scoped_lock lock(this->mutex);
-    while(this->read_lock > 0 || this->write_lock)
-        // wait unlocks the mutex and reacquires the lock when it is notified
-        this->cv.wait(lock);
-    this->read_lock = 1;
-    this->write_lock = true;
-}
-
-template<typename T>
-void media_buffer_lockable<T>::lock_read()
-{
-    scoped_lock lock(this->mutex);
-    while(this->write_lock)
-        this->cv.wait(lock);
-    this->read_lock++;
-}
-
-template<typename T>
-void media_buffer_lockable<T>::unlock_write()
-{
-    scoped_lock lock(this->mutex);
-    assert_(this->write_lock);
-    assert_(this->read_lock > 0);
-    this->write_lock = false;
-    this->cv.notify_all();
-}
-
-template<typename T>
-void media_buffer_lockable<T>::unlock()
-{
-    scoped_lock lock(this->mutex);
-    this->write_lock = false;
-    this->read_lock--;
-    assert_(this->read_lock >= 0);
-    this->cv.notify_all();
-}
-
-template<typename T>
-bool media_buffer_lockable<T>::is_locked() const
-{
-    scoped_lock lock(this->mutex);
-    return (this->write_lock || this->read_lock);
-}
-
-
-
 
 // h264 memory buffer
 // TODO: just use media_buffer_samples and remove h264&aac buffers
@@ -231,8 +158,8 @@ public:
 
 typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;
 
-typedef media_buffer_lockable<media_buffer_texture> media_buffer_lockable_texture;
-typedef std::shared_ptr<media_buffer_lockable_texture> media_buffer_lockable_texture_t;
+typedef media_buffer_pooled<media_buffer_texture> media_buffer_pooled_texture;
+typedef std::shared_ptr<media_buffer_pooled_texture> media_buffer_pooled_texture_t;
 
 // TODO: maybe change media samples to struct to indicate
 // that they must be copy constructable
