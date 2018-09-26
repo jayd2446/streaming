@@ -3,6 +3,7 @@
 #include "source_displaycapture5.h"
 #include "source_wasapi.h"
 #include <iostream>
+#include <d3d11_4.h>
 
 #ifdef _DEBUG
 #define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
@@ -10,7 +11,7 @@
 #define CREATE_DEVICE_DEBUG 0
 #endif
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 control_pipeline::control_pipeline() : 
     preview_wnd(NULL),
@@ -33,6 +34,8 @@ control_pipeline::control_pipeline() :
         D3D_FEATURE_LEVEL_9_1,
     };
     D3D_FEATURE_LEVEL feature_level;
+    CComPtr<ID3D11Multithread> multithread;
+    BOOL was_protected;
 
     CHECK_HR(hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&this->dxgifactory));
     CHECK_HR(hr = this->dxgifactory->EnumAdapters1(this->d3d11dev_adapter, &dxgiadapter));
@@ -42,13 +45,18 @@ control_pipeline::control_pipeline() :
         feature_levels, ARRAYSIZE(feature_levels), D3D11_SDK_VERSION, &this->d3d11dev, 
         &feature_level, &this->devctx));
 
+    // use implicit multithreading protection aswell so that the context cannot be
+    // accidentally corrupted
+    CHECK_HR(hr = this->devctx->QueryInterface(&multithread));
+    was_protected = multithread->SetMultithreadProtected(TRUE);
+
     this->item_mpeg_sink.null_file = true;
 
     std::cout << "adapter " << this->d3d11dev_adapter << std::endl;
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void control_pipeline::activate_components()
@@ -119,12 +127,14 @@ void control_pipeline::deactivate_components()
 
 transform_videoprocessor_t control_pipeline::create_videoprocessor()
 {
-    if(this->videoprocessor_transform)
+    if(this->videoprocessor_transform &&
+        this->videoprocessor_transform->get_instance_type() == media_component::INSTANCE_SHAREABLE)
         return this->videoprocessor_transform;
 
     transform_videoprocessor_t videoprocessor_transform(
         new transform_videoprocessor(this->session, this->context_mutex));
-    videoprocessor_transform->initialize(this->d3d11dev, this->devctx);
+    videoprocessor_transform->initialize(this->shared_from_this<control_pipeline>(),
+        this->d3d11dev, this->devctx);
     return videoprocessor_transform;
 }
 
@@ -171,12 +181,14 @@ transform_color_converter_t control_pipeline::create_color_converter(bool null_f
 {
     if(null_file)
         return NULL;
-    if(this->color_converter_transform)
+    if(this->color_converter_transform &&
+        this->color_converter_transform->get_instance_type() == media_component::INSTANCE_SHAREABLE)
         return this->color_converter_transform;
 
     transform_color_converter_t color_converter_transform(
         new transform_color_converter(this->session, this->context_mutex));
-    color_converter_transform->initialize(this->d3d11dev, this->devctx);
+    color_converter_transform->initialize(this->shared_from_this<control_pipeline>(),
+        this->d3d11dev, this->devctx);
     return color_converter_transform;
 }
 
@@ -341,6 +353,12 @@ source_displaycapture5_t control_pipeline::create_displaycapture_source(
             it != this->scene_active->displaycapture_sources.end();
             it++)
         {
+            if(!it->second)
+                continue;
+
+            if(it->second->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
+                continue;
+
             if(it->first.adapter_ordinal == adapter_ordinal && 
                 it->first.output_ordinal == output_ordinal)
                 return it->second;
@@ -477,6 +495,7 @@ void control_pipeline::shutdown()
 CHandle control_pipeline::start_recording(const std::wstring& filename, control_scene& scene)
 {
     assert_(!this->is_recording());
+    HRESULT hr = S_OK;
 
     mpeg_sink_item item;
     item.null_file = false;
@@ -486,7 +505,7 @@ CHandle control_pipeline::start_recording(const std::wstring& filename, control_
     assert_(!this->stopped_signal);
     this->stopped_signal.Attach(CreateEvent(NULL, TRUE, FALSE, NULL));
     if(!this->stopped_signal)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     this->recording_state_change = true;
     this->set_active(scene);

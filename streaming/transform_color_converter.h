@@ -19,6 +19,8 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
 private:
+    control_pipeline_t ctrl_pipeline;
+
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;
     CComPtr<ID3D11VideoContext> videocontext;
@@ -32,7 +34,8 @@ public:
     transform_color_converter(const media_session_t& session, context_mutex_t context_mutex);
     ~transform_color_converter();
 
-    HRESULT initialize(const CComPtr<ID3D11Device>&, ID3D11DeviceContext* devctx);
+    HRESULT initialize(const control_pipeline_t&,
+        const CComPtr<ID3D11Device>&, ID3D11DeviceContext* devctx);
     media_stream_t create_stream();
 };
 

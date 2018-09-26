@@ -43,7 +43,7 @@ void media_session::switch_topology_immediate(const media_topology_t& new_topolo
     scoped_lock lock(this->topology_switch_mutex);
 
     if(this->is_shutdown)
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     this->switch_topology(new_topology);
 
@@ -70,7 +70,7 @@ void media_session::switch_topology_immediate(const media_topology_t& new_topolo
     // acquire new clock
     presentation_clock_t new_clock;
     if(!this->get_current_clock(new_clock))
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     // the new topology will be active on clock events
     new_clock->clock_start(time_point, clock);
@@ -90,7 +90,7 @@ void media_session::stop_playback()
 
     presentation_clock_t clock;
     if(!this->get_current_clock(clock))
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     clock->clock_stop();
 }
@@ -101,7 +101,7 @@ void media_session::stop_playback(time_unit t)
 
     presentation_clock_t clock;
     if(!this->get_current_clock(clock))
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     clock->clock_stop(t);
 }

@@ -6,11 +6,11 @@
 #include <algorithm>
 #include <iostream>
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 //void CHECK_HR(HRESULT hr)
 //{
 //    if(FAILED(hr))
-//        throw std::exception();
+//        throw HR_EXCEPTION(hr);
 //}
 #ifdef min
 #undef min
@@ -25,11 +25,14 @@ transform_videoprocessor::transform_videoprocessor(
 {
 }
 
-void transform_videoprocessor::initialize(const CComPtr<ID3D11Device>& d3d11dev, 
+void transform_videoprocessor::initialize(
+    const control_pipeline_t& ctrl_pipeline,
+    const CComPtr<ID3D11Device>& d3d11dev, 
     const CComPtr<ID3D11DeviceContext>& devctx)
 {
     HRESULT hr = S_OK;
 
+    this->ctrl_pipeline = ctrl_pipeline;
     this->d3d11dev = d3d11dev;
     this->devctx = devctx;
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->videodevice));
@@ -55,23 +58,23 @@ void transform_videoprocessor::initialize(const CComPtr<ID3D11Device>& d3d11dev,
     // it must be also supported by texture2d for render target
     CHECK_HR(hr = this->enumerator->CheckVideoProcessorFormat(DXGI_FORMAT_B8G8R8A8_UNORM, &flags));
     if(!(flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     CHECK_HR(hr = this->enumerator->CheckVideoProcessorFormat(DXGI_FORMAT_NV12, &flags));
     if(!(flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     CHECK_HR(hr = this->enumerator->GetVideoProcessorCaps(&this->videoprocessor_caps));
     if(!(this->videoprocessor_caps.FeatureCaps & D3D11_VIDEO_PROCESSOR_FEATURE_CAPS_ALPHA_STREAM))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     // amd doesn't support alpha fill, which means that VideoProcessorSetOutputAlphaFillMode
     // is unavailable
     /*if(!(this->videoprocessor_caps.FeatureCaps & D3D11_VIDEO_PROCESSOR_FEATURE_CAPS_ALPHA_FILL))
-        throw std::exception();*/
+        throw HR_EXCEPTION(hr);*/
     if(this->videoprocessor_caps.FeatureCaps & D3D11_VIDEO_PROCESSOR_FEATURE_CAPS_LEGACY)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 stream_videoprocessor_t transform_videoprocessor::create_stream()
@@ -171,7 +174,7 @@ stream_videoprocessor::stream_videoprocessor(const transform_videoprocessor_t& t
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void stream_videoprocessor::release_input_streams(std::vector<D3D11_VIDEO_PROCESSOR_STREAM>& streams)
@@ -371,132 +374,126 @@ void stream_videoprocessor::processing_cb(void*)
     // where new parameters will apply
 
     HRESULT hr = S_OK;
-    
     bool blit = false;
+
+    // lock the output sample
+    media_sample_texture sample, temp_sample;
+    /*media_sample_view_t sample_view, temp_sample_view;*/
+    time_unit timestamp = std::numeric_limits<time_unit>::max();
+
+    // rps are equivalent in every input stream
+    request_packet rp = this->input_streams[0].first.rp;
+
+    UINT j = 0;
+    bool blend_output = false;
+    int output_index = 0;
+    // construct a list of streams that will be blit onto output surface;
+    // this must be used because for some reason atiumdva has a null pointer read violation
+    // if setting enabled state of a stream to false
+    for(auto it = this->input_streams.begin(); it != this->input_streams.end(); it++)
     {
-        // lock the output sample
-        media_sample_texture sample_view, temp_sample_view;
-        /*media_sample_view_t sample_view, temp_sample_view;*/
-        time_unit timestamp = std::numeric_limits<time_unit>::max();
+        bool blit_stream = false;
+        CComPtr<ID3D11VideoProcessorInputView> input_view;
+        CComPtr<ID3D11Texture2D> texture = it->first.sample_view.buffer->texture;
+        const media_sample_videoprocessor::params_t& params = 
+            it->first.sample_view.params;
+        media_sample_videoprocessor::params_t user_params;
+        D3D11_VIDEO_PROCESSOR_STREAM native_params;
 
-        // rps are equivalent in every input stream
-        request_packet rp = this->input_streams[0].first.rp;
+        if(it->first.user_params)
+            it->first.user_params->get_params(user_params);
+        else
+            user_params = params;
 
-        UINT j = 0;
-        bool blend_output = false;
-        int output_index = 0;
-        // construct a list of streams that will be blit onto output surface;
-        // this must be used because for some reason atiumdva has a null pointer read violation
-        // if setting enabled state of a stream to false
-        for(auto it = this->input_streams.begin(); it != this->input_streams.end(); it++)
+        // use the earliest timestamp;
+        // actually, max must be used so that the timestamp stays incremental
+        // (using max only applies to displaycapture where the buffers are shared between streams)
+        timestamp = rp.request_time;//std::min(timestamp, it->first.sample_view.timestamp);
+
+        if(blend_output)
         {
+            // add the blitted output to input
             bool blit_stream = false;
-            CComPtr<ID3D11VideoProcessorInputView> input_view;
-            CComPtr<ID3D11Texture2D> texture = it->first.sample_view.buffer->texture;
-            const media_sample_videoprocessor::params_t& params = 
-                it->first.sample_view.params;
-            media_sample_videoprocessor::params_t user_params;
+            media_sample_videoprocessor::params_t params;
             D3D11_VIDEO_PROCESSOR_STREAM native_params;
+            params.enable_alpha = false;
+            params.source_rect = this->output_target_rect;
+            params.dest_rect = this->output_target_rect;
+            temp_sample.buffer = this->output_buffer[output_index];
+            /*temp_sample_view.attach(this->output_buffer[output_index], view_lock_t::READ_LOCK_BUFFERS);*/
+            /*temp_sample_view.reset(new media_sample_view(this->output_buffer[output_index]));*/
+            CHECK_HR(hr = this->set_input_stream(
+                params, params, this->output_buffer[output_index]->texture,
+                native_params, j, blit_stream));
 
-            if(it->first.user_params)
-                it->first.user_params->get_params(user_params);
-            else
-                user_params = params;
-
-            // use the earliest timestamp;
-            // actually, max must be used so that the timestamp stays incremental
-            // (using max only applies to displaycapture where the buffers are shared between streams)
-            timestamp = rp.request_time;//std::min(timestamp, it->first.sample_view.timestamp);
-
-            if(blend_output)
-            {
-                // add the blitted output to input
-                bool blit_stream = false;
-                media_sample_videoprocessor::params_t params;
-                D3D11_VIDEO_PROCESSOR_STREAM native_params;
-                params.enable_alpha = false;
-                params.source_rect = this->output_target_rect;
-                params.dest_rect = this->output_target_rect;
-                temp_sample_view.buffer = this->output_buffer[output_index];
-                /*temp_sample_view.attach(this->output_buffer[output_index], view_lock_t::READ_LOCK_BUFFERS);*/
-                /*temp_sample_view.reset(new media_sample_view(this->output_buffer[output_index]));*/
-                CHECK_HR(hr = this->set_input_stream(
-                    params, params, this->output_buffer[output_index]->texture,
-                    native_params, j, blit_stream));
-
-                assert_(blit_stream);
-                this->streams.push_back(native_params);
-                j++;
-
-                blend_output = false;
-                output_index = (output_index + 1) % 2;
-            }
-
-            CHECK_HR(hr = 
-                this->set_input_stream(params, user_params, texture, native_params, j, blit_stream));
-            if(!blit_stream)
-                continue;
-
+            assert_(blit_stream);
             this->streams.push_back(native_params);
             j++;
 
-            if(this->streams.size() >= this->transform->max_input_streams()
-                && (it + 1) != this->input_streams.end())
-            {
-                assert_(this->streams.size() == this->transform->max_input_streams());
-
-                blit = true;
-                // temp lock for the output buffer
-                media_sample_texture sample_view(this->output_buffer[output_index]);
-                /*sample_view.attach(this->output_buffer[output_index], view_lock_t::READ_LOCK_BUFFERS);*/
-                /*media_sample_view_t sample_view(new media_sample_view(this->output_buffer[output_index]));*/
-                CHECK_HR(hr = this->blit(this->streams, this->output_view[output_index]));
-                /*temp_sample_view.detach();*/
-                /*temp_sample_view.reset();*/
-
-                blend_output = true;
-                this->release_input_streams(this->streams);
-                j = 0;
-            }
+            blend_output = false;
+            output_index = (output_index + 1) % 2;
         }
 
-        //if(!blit && streams.empty())
-        //    // TODO: read lock buffers is just a workaround for a deadlock bug
-        //    /*sample_view.reset(new media_sample_view(this->output_buffer_null, media_sample_view::READ_LOCK_BUFFERS));*/
-        //    sample_view.attach(this->output_buffer_null, view_lock_t::READ_LOCK_BUFFERS);
-        //else if(!streams.empty())
+        CHECK_HR(hr = 
+            this->set_input_stream(params, user_params, texture, native_params, j, blit_stream));
+        if(!blit_stream)
+            continue;
+
+        this->streams.push_back(native_params);
+        j++;
+
+        if(this->streams.size() >= this->transform->max_input_streams()
+            && (it + 1) != this->input_streams.end())
         {
-            /*sample_view.reset(new media_sample_view(this->output_buffer[output_index]));*/
-            sample_view.buffer = this->output_buffer[output_index];
+            assert_(this->streams.size() == this->transform->max_input_streams());
+
+            blit = true;
+            // temp lock for the output buffer
+            media_sample_texture sample_view(this->output_buffer[output_index]);
             /*sample_view.attach(this->output_buffer[output_index], view_lock_t::READ_LOCK_BUFFERS);*/
+            /*media_sample_view_t sample_view(new media_sample_view(this->output_buffer[output_index]));*/
             CHECK_HR(hr = this->blit(this->streams, this->output_view[output_index]));
-            /*temp_sample_view.reset();*/
             /*temp_sample_view.detach();*/
+            /*temp_sample_view.reset();*/
+
+            blend_output = true;
             this->release_input_streams(this->streams);
+            j = 0;
         }
-
-        // set the timestamp
-        /*sample_view->sample.timestamp = timestamp;*/
-        sample_view.timestamp = timestamp;
-
-        // reset the sample view from the input stream packets so it is unlocked;
-        // reset the rps so that there aren't any circular dependencies at shutdown
-        for(auto it = this->input_streams.begin(); it != this->input_streams.end(); it++)
-        {
-            it->first.sample_view.buffer = NULL;
-            /*it->first.sample_view.detach();*/
-            it->first.sample_view.timestamp = -1;
-            it->first.rp = request_packet();
-        }
-
-        this->transform->session->give_sample(this, sample_view, rp, false);
-        return;
     }
 
+    CHECK_HR(hr = this->blit(this->streams, this->output_view[output_index]));
+
+    // on failure the videoprocessor sends the sample and requests a reinitialization
 done:
-    this->release_input_streams(this->streams);
     if(FAILED(hr))
-        throw std::exception();
+    {
+        PRINT_ERROR(hr);
+        this->transform->request_reinitialization(this->transform->ctrl_pipeline);
+    }
+
+    sample.buffer = this->output_buffer[output_index];
+    sample.timestamp = timestamp;
+
+    this->release_input_streams(this->streams);
+
+    // reset the sample view from the input stream packets so it is unlocked;
+    // reset the rps so that there aren't any circular dependencies at shutdown
+    for(auto it = this->input_streams.begin(); it != this->input_streams.end(); it++)
+    {
+        it->first.sample_view.buffer = NULL;
+        /*it->first.sample_view.detach();*/
+        it->first.sample_view.timestamp = -1;
+        it->first.rp = request_packet();
+    }
+
+    this->transform->session->give_sample(this, sample, rp, false);
+    /*return;*/
+
+//done:
+//    this->release_input_streams(this->streams);
+//    if(FAILED(hr))
+//        throw HR_EXCEPTION(hr);
 }
 
 void stream_videoprocessor::add_input_stream(

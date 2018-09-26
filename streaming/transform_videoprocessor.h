@@ -68,6 +68,8 @@ public:
     static const UINT32 canvas_width = transform_h264_encoder::frame_width;
     static const UINT32 canvas_height = transform_h264_encoder::frame_height;
 private:
+    control_pipeline_t ctrl_pipeline;
+
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
@@ -79,7 +81,8 @@ private:
 public:
     transform_videoprocessor(const media_session_t& session, context_mutex_t context_mutex);
 
-    void initialize(const CComPtr<ID3D11Device>&, const CComPtr<ID3D11DeviceContext>&);
+    void initialize(const control_pipeline_t&,
+        const CComPtr<ID3D11Device>&, const CComPtr<ID3D11DeviceContext>&);
     stream_videoprocessor_t create_stream();
 
     UINT max_input_streams() const;

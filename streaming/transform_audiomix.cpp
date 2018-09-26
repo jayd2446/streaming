@@ -3,7 +3,7 @@
 #include <Mferror.h>
 #include <iostream>
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 #undef min
 #undef max
 
@@ -41,7 +41,7 @@ CComPtr<IMFMediaBuffer> transform_audiomix::copy(
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     return out_buffer;
 }
@@ -116,7 +116,7 @@ CComPtr<IMFMediaBuffer> transform_audiomix::mix(
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     return out_buffer;
 }
@@ -296,7 +296,7 @@ skip:
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 media_stream::result_t stream_audiomix::request_sample(request_packet& rp, const media_stream*)

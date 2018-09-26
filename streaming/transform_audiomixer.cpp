@@ -4,7 +4,7 @@
 #include <Mferror.h>
 #include <iostream>
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 #undef min
 #undef max
 
@@ -176,7 +176,7 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     return fully_mixed;
 }
@@ -263,7 +263,7 @@ void transform_audiomixer::process(
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void transform_audiomixer::process()
@@ -315,7 +315,7 @@ void stream_audiomixer::on_component_stop(time_unit t)
 void stream_audiomixer::on_stream_start(time_unit)
 {
     if(this->input_stream_count == 0)
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
     this->audios.reserve(this->input_stream_count);
 }
 

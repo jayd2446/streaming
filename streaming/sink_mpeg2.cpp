@@ -8,7 +8,7 @@
 #undef max
 #undef min
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& audio_session) : 
     media_sink(session),

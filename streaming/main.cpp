@@ -10,7 +10,7 @@
 
 #define WINDOW_WIDTH 750
 #define WINDOW_HEIGHT 700
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 // defined in project settings
 //#define WORKER_STREAMS 3
@@ -90,7 +90,7 @@ int main()
     //// register all media foundation standard work queues as playback
     /*DWORD taskgroup_id = 0;
     if(FAILED(MFRegisterPlatformWithMMCSS(L"Capture", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
-        throw std::exception();*/
+        throw HR_EXCEPTION(hr);*/
 
     // make atl/wtl asserts to break immediately
 #ifdef _DEBUG
@@ -106,7 +106,7 @@ int main()
             RECT r = {CW_USEDEFAULT, CW_USEDEFAULT, 
                 CW_USEDEFAULT + WINDOW_WIDTH, CW_USEDEFAULT + WINDOW_HEIGHT};
             if(wnd.CreateEx(NULL, &r) == NULL)
-                throw std::exception();
+                throw HR_EXCEPTION(hr);
             wnd.ShowWindow(SW_SHOW);
             wnd.UpdateWindow();
             int ret = msgloop.Run();
@@ -117,7 +117,7 @@ int main()
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     // unlocking the work queue might crash ongoing async operations,
     // so it is safer just to call mfshutdown

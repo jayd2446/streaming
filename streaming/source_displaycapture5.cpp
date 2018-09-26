@@ -6,7 +6,7 @@
 #include <Mferror.h>
 
 #pragma comment(lib, "D3D11.lib")
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 #ifdef _DEBUG
 #define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
 #else
@@ -78,7 +78,7 @@ stream_displaycapture5_pointer_t source_displaycapture5::create_pointer_stream()
 HRESULT source_displaycapture5::reinitialize(UINT output_index)
 {
     if(output_index == (UINT)-1)
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     static const DXGI_FORMAT supported_formats[] =
     {
@@ -149,7 +149,7 @@ done:
         /*return hr;*/
     }
     /*else if(FAILED(hr))
-        throw std::exception();*/
+        throw HR_EXCEPTION(hr);*/
 }
 
 void source_displaycapture5::initialize(
@@ -195,7 +195,7 @@ done:
         std::cerr << "maximum number of desktop duplication api applications running" << std::endl;
     }
     else if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 HRESULT source_displaycapture5::copy_between_adapters(
@@ -359,14 +359,15 @@ capture:
     CHECK_HR(hr = this->output_duplication->AcquireNextFrame(0, &frame_info, &frame));
     CHECK_HR(hr = frame->QueryInterface(&screen_frame));
 
-#ifdef _DEBUG
     if(frame_info.LastPresentTime.QuadPart != 0)
     {
         if(frame_info.LastPresentTime.QuadPart <= this->last_timestamp.QuadPart)
-            DebugBreak();
+        {
+            std::cout << "timestamp error in source_displaycapture5::capture_frame" << std::endl;
+            assert_(false);
+        }
         this->last_timestamp = frame_info.LastPresentTime;
     }
-#endif
 
     if(!buffer->texture)
     {
@@ -501,11 +502,12 @@ void stream_displaycapture5::capture_frame_cb(void*)
         this->source->requests.pop();
     }
 
-#ifdef _DEBUG
     if(rp.request_time <= this->source->last_timestamp2)
-        DebugBreak();
+    {
+        std::cout << "timestamp error in stream_displaycapture5::capture_frame_cb" << std::endl;
+        assert_(false);
+    }
     this->source->last_timestamp2 = rp.request_time;
-#endif
 
     // capture a frame
     // TODO: buffer parameter is redundant because the routine
@@ -523,6 +525,10 @@ void stream_displaycapture5::capture_frame_cb(void*)
     {
         frame_captured = false;
         new_pointer_shape = false;
+
+        // reset the scene to recreate this component
+        // TODO: make sure that no deadlocks occur
+        this->source->request_reinitialization(this->source->ctrl_pipeline);
     }
 
     if(!frame_captured)
@@ -565,7 +571,7 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
     const HRESULT hr = this->capture_frame_callback->mf_put_work_item(
         this->shared_from_this<stream_displaycapture5>());
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     else if(hr == MF_E_SHUTDOWN)
         return FATAL_ERROR;
 

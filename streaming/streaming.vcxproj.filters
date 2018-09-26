@@ -111,6 +111,12 @@
     <ClCompile Include="sink_file.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="async_callback.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="media_component.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">

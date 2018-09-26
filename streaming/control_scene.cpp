@@ -6,7 +6,7 @@
 #include <functiondiscoverykeys_devpkey.h>
 #include <queue>
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 control_scene::control_scene(control_pipeline& pipeline) : pipeline(pipeline)
 {
@@ -38,7 +38,7 @@ bool control_scene::list_available_displaycapture_items(std::vector<displaycaptu
 
 done:
     if(hr != DXGI_ERROR_NOT_FOUND && FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     return !displaycaptures.empty();
 }
@@ -84,7 +84,7 @@ bool control_scene::list_available_audio_items(std::vector<audio_item>& audios, 
 done:
     // TODO: memory is leaked if this fails
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     return !audios.empty();
 }
@@ -197,7 +197,7 @@ void control_scene::build_topology(bool reset)
                         // the reference must point to earlier displaycapture_item
                         // for topology building to work
                         if(reference >= displaycapture_streams.size())
-                            throw std::exception();
+                            throw HR_EXCEPTION(E_UNEXPECTED);
                         
                         /*const source_displaycapture5_t source = 
                             this->displaycapture_sources[reference].second;*/
@@ -218,7 +218,7 @@ void control_scene::build_topology(bool reset)
                     displaycapture_index++;
                     break;
                 default:
-                    throw std::exception();
+                    throw HR_EXCEPTION(E_UNEXPECTED);
                 }
             }
             if(this->video_items.empty())
@@ -266,7 +266,7 @@ void control_scene::build_topology(bool reset)
                     const int reference = this->audio_sources[i].first.reference;
 
                     if(reference >= audioprocessor_streams.size())
-                        throw std::exception();
+                        throw HR_EXCEPTION(E_UNEXPECTED);
 
                     audiomixer_stream->connect_streams(
                         audioprocessor_streams[reference], this->audio_topology);
@@ -354,7 +354,7 @@ void control_scene::deactivate_scene()
 void control_scene::add_displaycapture_item(const displaycapture_item& item, bool force_new_instance)
 {
     if(item.video.type != DISPLAYCAPTURE_ITEM)
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     this->video_items.push_back(item.video);
     this->displaycapture_items.push_back(item);

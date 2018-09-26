@@ -2,7 +2,7 @@
 #include <Mferror.h>
 #include <iostream>
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 #undef min
 #undef max
 
@@ -79,11 +79,12 @@ void transform_aac_encoder::processing_cb(void*)
             CHECK_HR(hr = (*it)->GetSampleTime(&ts));
             CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
 
-#ifdef _DEBUG
             if(ts < this->last_time_stamp)
-                DebugBreak();
+            {
+                std::cout << "timestamp error in transform_aac_encoder::processing_cb" << std::endl;
+                assert_(false);
+            }
             this->last_time_stamp = ts + dur;
-#endif
 
             ts = (time_unit)(ts * sample_duration);
             dur = (time_unit)(dur * sample_duration);
@@ -115,7 +116,7 @@ void transform_aac_encoder::processing_cb(void*)
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 bool transform_aac_encoder::process_output(IMFSample* sample)
@@ -129,9 +130,9 @@ bool transform_aac_encoder::process_output(IMFSample* sample)
     DWORD status = 0;
 
     if(mft_provides_samples)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     if(this->output_stream_info.cbAlignment)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     output.dwStreamID = this->output_id;
     output.dwStatus = 0;
@@ -142,7 +143,7 @@ bool transform_aac_encoder::process_output(IMFSample* sample)
 
 done:
     if(hr != MF_E_TRANSFORM_NEED_MORE_INPUT && FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     return SUCCEEDED(hr);
 }
 
@@ -218,7 +219,7 @@ done:
     }
 
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 media_stream_t transform_aac_encoder::create_stream(presentation_clock_t& clock)

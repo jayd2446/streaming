@@ -12,7 +12,7 @@ EXTERN_GUID(CLSID_CResamplerMediaObject, 0xf447b69e, 0x1884, 0x4a7e, 0x80, 0x55,
 #define HALF_FILTER_LENGTH 30 /* 60 is max, but wmp and groove music uses 30 */
 #define MILLISECOND_IN_TIMEUNIT (SECOND_IN_TIME_UNIT / 1000)
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 #undef max
 #undef min
 
@@ -36,7 +36,7 @@ void transform_audioprocessor::reset_input_type(UINT channels, UINT sample_rate,
 
     // source_wasapi is always float
     if(bit_depth != (sizeof(float) * 8))
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     HRESULT hr = S_OK;
 
@@ -71,7 +71,7 @@ void transform_audioprocessor::reset_input_type(UINT channels, UINT sample_rate,
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 bool transform_audioprocessor::resampler_process_output(IMFSample* sample)
@@ -95,11 +95,11 @@ bool transform_audioprocessor::resampler_process_output(IMFSample* sample)
     CHECK_HR(hr = buffer->GetMaxLength(&buflen));
 
     if(mft_provides_samples)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     if(buflen < min_size)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     if(buflen % alignment != 0)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     output.dwStreamID = 0;
     output.dwStatus = 0;
@@ -110,7 +110,7 @@ bool transform_audioprocessor::resampler_process_output(IMFSample* sample)
 
 done:
     if(hr != MF_E_TRANSFORM_NEED_MORE_INPUT && FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     return SUCCEEDED(hr);
 }
 
@@ -121,7 +121,7 @@ void transform_audioprocessor::resample(
     std::unique_lock<std::recursive_mutex> lock(this->resample_mutex, std::try_to_lock);
     assert_(lock.owns_lock());
     if(!lock.owns_lock())
-        throw std::exception();
+        throw HR_EXCEPTION(E_UNEXPECTED);
     // stream is assumed to have provided a buffer
     assert_(out_audio.buffer && out_audio.buffer->samples.size() == 1);
 
@@ -170,7 +170,7 @@ void transform_audioprocessor::resample(
 
     done:
         if(FAILED(hr))
-            throw std::exception();
+            throw HR_EXCEPTION(hr);
     };
     auto process_sample = [&, this]()
     {
@@ -284,7 +284,7 @@ void transform_audioprocessor::resample(
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void transform_audioprocessor::initialize(/*UINT32 sample_rate*/)
@@ -317,7 +317,7 @@ void transform_audioprocessor::initialize(/*UINT32 sample_rate*/)
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 media_stream_t transform_audioprocessor::create_stream(presentation_clock_t& clock)
@@ -375,7 +375,7 @@ stream_audioprocessor::stream_audioprocessor(const transform_audioprocessor_t& t
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void stream_audioprocessor::on_component_start(time_unit)
@@ -414,7 +414,7 @@ media_stream::result_t stream_audioprocessor::process_sample(
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     return OK;
 }

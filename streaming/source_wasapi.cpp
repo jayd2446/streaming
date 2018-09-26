@@ -14,11 +14,11 @@
 #define AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM 0x80000000
 #define AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY 0x08000000
 #define AUTOCONVERT_PCM (0)
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 //static void CHECK_HR(HRESULT hr)
 //{
 //    if(FAILED(hr))
-//        throw std::exception();
+//        throw HR_EXCEPTION(hr);
 //}
 
 extern DWORD capture_work_queue_id;
@@ -41,7 +41,7 @@ source_wasapi::source_wasapi(const media_session_t& session) :
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 source_wasapi::~source_wasapi()
@@ -242,7 +242,7 @@ void source_wasapi::serve_cb(void*)
 
 done:
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void source_wasapi::process_cb(void*)
@@ -367,13 +367,13 @@ done:
             // because serve requests is asynchronous
         }
         else
-            throw std::exception();
+            throw HR_EXCEPTION(hr);
     }
 
     this->serve_cb(NULL);
 
     if(FAILED(hr = this->add_event_to_wait_queue()) && hr != MF_E_SHUTDOWN)
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 HRESULT source_wasapi::play_silence()
@@ -489,7 +489,7 @@ done:
     if(engine_format)
         CoTaskMemFree(engine_format);
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 media_stream_t source_wasapi::create_stream()

@@ -45,8 +45,6 @@ class media_buffer_trackable : public Buffer, public enable_shared_from_this
 public:
     typedef Buffer buffer_raw_t;
     typedef std::shared_ptr<Buffer> buffer_t;
-    // unique lock is the same as scoped lock
-    typedef std::unique_lock<std::mutex> scoped_lock;
 private:
     void deleter(buffer_raw_t*);
 protected:
@@ -187,6 +185,8 @@ class media_sample_h264 : public media_sample
 public:
     typedef media_buffer_h264_t buffer_t;
 public:
+    // for debugging
+    bool software;
     media_buffer_h264_t buffer;
     media_sample_h264() {}
     explicit media_sample_h264(const media_buffer_h264_t& buffer);

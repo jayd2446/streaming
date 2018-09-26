@@ -91,21 +91,23 @@ presentation_clock_sink::presentation_clock_sink() :
     fps_num(0),
     fps_den(0)
 {
+    HRESULT hr = S_OK;
+
     this->callback.Attach(new async_callback_t(&presentation_clock_sink::callback_cb));
     // TODO: make the work queue static
     DWORD work_queue = wait_work_queue;
     if(!wait_work_queue)
-        if(FAILED(MFAllocateWorkQueue(&work_queue)))
-            throw std::exception();
+        if(FAILED(hr = MFAllocateWorkQueue(&work_queue)))
+            throw HR_EXCEPTION(hr);
     this->callback->native.work_queue = work_queue;
     /*if(!wait_work_queue)
         if(FAILED(MFBeginRegisterWorkQueueWithMMCSS(
             this->callback.work_queue, L"Capture", AVRT_PRIORITY_NORMAL, &this->callback2, NULL)))
-            throw std::exception();*/
+            throw HR_EXCEPTION(hr);*/
     wait_work_queue = work_queue;
 
     if(!this->wait_timer)
-        throw std::exception();
+        throw HR_EXCEPTION(hr = E_UNEXPECTED);
 }
 
 presentation_clock_sink::~presentation_clock_sink()
@@ -117,6 +119,7 @@ presentation_clock_sink::~presentation_clock_sink()
 bool presentation_clock_sink::schedule_callback(time_unit due_time)
 {
     scoped_lock lock(this->mutex_callbacks);
+    HRESULT hr = S_OK;
 
     // return if there's no callbacks
     if(this->callbacks.empty())
@@ -147,7 +150,7 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
         LARGE_INTEGER due_time2;
         due_time2.QuadPart = current_time - due_time;
         if(SetWaitableTimer(this->wait_timer, &due_time2, 0, NULL, NULL, FALSE) == 0)
-            throw std::exception();
+            throw HR_EXCEPTION(hr = E_UNEXPECTED);
 
         // create a new waiting work item if the old one expired
         if(this->callback_key == 0)
@@ -160,7 +163,7 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
             {
                 if(hr == MF_E_SHUTDOWN)
                     return true;
-                throw std::exception();
+                throw HR_EXCEPTION(hr);
             }
             if(FAILED(hr = this->callback->mf_put_waiting_work_item(
                 this->shared_from_this<presentation_clock_sink>(),
@@ -168,7 +171,7 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
             {
                 if(hr == MF_E_SHUTDOWN)
                     return true;
-                throw std::exception();
+                throw HR_EXCEPTION(hr);
             }
         }
     }

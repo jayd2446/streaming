@@ -12,9 +12,9 @@
 //void CHECK_HR(HRESULT hr)
 //{
 //    if(FAILED(hr))
-//        throw std::exception();
+//        throw HR_EXCEPTION(hr);
 //}
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 #undef max
 #undef min
 
@@ -62,7 +62,7 @@ public:
 
     done:
         if(FAILED(hr))
-            throw std::exception();
+            throw HR_EXCEPTION(hr);
     }
     virtual ~media_buffer_wrapper()
     {
@@ -213,7 +213,10 @@ HRESULT transform_h264_encoder::set_output_stream_type()
     CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, frame_rate_num, frame_rate_den));
     CHECK_HR(hr = MFSetAttributeSize(this->output_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
+    // intel mft only supports main profile
+    // (There is no support for Baseline, Extended, or High-10 Profiles.)
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_Main));
+    /*CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));*/
     CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
     CHECK_HR(hr = this->encoder->SetOutputType(this->output_id, this->output_type, 0));
@@ -237,7 +240,7 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonQualityVsSpeed, &v));
     v.vt = VT_UI4;
     v.ullVal = avg_bitrate;
-    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonBufferSize, &v));
+    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v));
     /*v.vt = VT_BOOL;
     v.ulVal = VARIANT_FALSE;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));*/
@@ -328,7 +331,7 @@ void transform_h264_encoder::events_cb(void* unk)
         const HRESULT hr = this->process_input_callback->mf_put_work_item(
             this->shared_from_this<transform_h264_encoder>());
         if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw std::exception();
+            throw HR_EXCEPTION(hr);
         else if(hr == MF_E_SHUTDOWN)
             return;
     }
@@ -337,7 +340,7 @@ void transform_h264_encoder::events_cb(void* unk)
         const HRESULT hr = this->process_output_callback->mf_put_work_item(
             this->shared_from_this<transform_h264_encoder>());
         if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw std::exception();
+            throw HR_EXCEPTION(hr);
         else if(hr == MF_E_SHUTDOWN)
             return;
     }
@@ -356,7 +359,7 @@ void transform_h264_encoder::events_cb(void* unk)
     else if(type == MEError)
     {
         // status has the error code
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     }
     else
         assert_(false);
@@ -366,7 +369,7 @@ void transform_h264_encoder::events_cb(void* unk)
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void transform_h264_encoder::processing_cb(void*)
@@ -382,17 +385,17 @@ void transform_h264_encoder::processing_cb(void*)
     {
         assert_(request.sample_view.sample.buffer->texture);
         const time_unit timestamp = request.sample_view.sample.timestamp;
-#ifdef _DEBUG
+
         if(timestamp <= this->last_time_stamp)
-            DebugBreak();
-#endif
+        {
+            std::cout << "timestamp error in transform_h264_encoder::processing_cb" << std::endl;
+            assert_(false);
+        }
 
     back:
         hr = this->feed_encoder(request);
 
-#ifdef _DEBUG
         this->last_time_stamp = timestamp;
-#endif
 
         if(!this->software)
             this->encoder_requests--;
@@ -435,7 +438,7 @@ void transform_h264_encoder::processing_cb(void*)
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, request_t& request)
@@ -456,22 +459,26 @@ void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, 
     else
         sample.timestamp = std::numeric_limits<LONGLONG>::min();
 
+    //if(buffer)
+    //{
+    //    /*std::cout << buffer->samples.size() << ", " << sample.timestamp << ", " << duration << std::endl;*/
 
-#ifdef _DEBUG
-    if(buffer)
-    {
-        /*std::cout << buffer->samples.size() << ", " << sample.timestamp << ", " << duration << std::endl;*/
-
-        /*if(sample.timestamp <= this->last_time_stamp2)
-            DebugBreak();
-        this->last_time_stamp2 = sample.timestamp;*/
-    }
-    /*if(rp.packet_number <= this->last_packet)
-        DebugBreak();
-    this->last_packet = rp.packet_number;*/
-#endif
+    //    if(sample.timestamp <= this->last_time_stamp2)
+    //    {
+    //        std::cout << "timestamp error in transform_h264_encoder::process_request" << std::endl;
+    //        assert_(false);
+    //    }
+    //    this->last_time_stamp2 = sample.timestamp;
+    //}
+    //if(rp.packet_number <= this->last_packet)
+    //{
+    //    std::cout << "packet number error in transform_h264_encoder::process_request" << std::endl;
+    //    assert_(false);
+    //}
+    this->last_packet = rp.packet_number;
 
     sample.buffer = buffer;
+    sample.software = this->software;
 
     // reset the sample so that the contained buffer can be reused
     request.sample_view.sample = media_sample_texture();
@@ -480,7 +487,7 @@ void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, 
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 bool transform_h264_encoder::process_output(CComPtr<IMFSample>& sample)
@@ -530,7 +537,7 @@ done:
         sample.Attach(output.pSample);
 
     if(hr != MF_E_TRANSFORM_NEED_MORE_INPUT && FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     return (SUCCEEDED(hr) && sample);
 }
 
@@ -564,7 +571,7 @@ done:
     if(FAILED(hr))
     {
         // TODO: psample is leaked on audio pipeline
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
     }
 }
 
@@ -600,7 +607,7 @@ void transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev, b
         CHECK_HR(hr = MF_E_TOPO_CODEC_NOT_FOUND);
 
     // activate the first encoder
-    CHECK_HR(hr = activate[0]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
+    CHECK_HR(hr = activate[1]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
 
     // check if the encoder supports d3d11
     CHECK_HR(hr = this->encoder->GetAttributes(&attributes));
@@ -698,7 +705,7 @@ done:
     }
 
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 media_stream_t transform_h264_encoder::create_stream(presentation_clock_t& clock)

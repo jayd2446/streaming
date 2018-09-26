@@ -1,7 +1,7 @@
 #include "sink_preview2.h"
 #include "assert.h"
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 #undef max
 #undef min
@@ -95,7 +95,7 @@ void sink_preview2::initialize(
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet&)
@@ -159,7 +159,7 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 media_stream_t sink_preview2::create_stream()
@@ -197,7 +197,7 @@ void sink_preview2::update_size()
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 

@@ -1,7 +1,7 @@
 #include "sink_file.h"
 #include <iostream>
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 sink_file::sink_file(const media_session_t& session) :
     media_sink(session),
@@ -30,7 +30,7 @@ void sink_file::initialize(const output_file_t& file_output, bool video)
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 media_stream_t sink_file::create_stream(presentation_clock_t& clock)
@@ -68,13 +68,17 @@ void sink_file::write_cb(void*)
 
         for(auto&& item : request.sample_view.buffer->samples)
         {
-#ifdef _DEBUG
-            /*LONGLONG timestamp;
+            LONGLONG timestamp;
             CHECK_HR(hr = item->GetSampleTime(&timestamp));
-            if(timestamp <= this->last_timestamp)
-                DebugBreak();
-            this->last_timestamp = timestamp;*/
-#endif
+
+            // (software encoder returns frames slightly in wrong order,
+            // but mediawriter seems to deal with it)
+            if(timestamp <= this->last_timestamp && !request.sample_view.software)
+            {
+                std::cout << "timestamp error in sink_file::write_cb video" << std::endl;
+                assert_(false);
+            }
+            this->last_timestamp = timestamp;
 
             this->file_output->write_sample(true, item);
         }
@@ -99,13 +103,14 @@ void sink_file::write_cb(void*)
             return;
         for(auto&& item : request.sample_view.buffer->samples)
         {
-#ifdef _DEBUG
             LONGLONG timestamp;
             CHECK_HR(hr = item->GetSampleTime(&timestamp));
             if(timestamp <= this->last_timestamp)
-                DebugBreak();
+            {
+                std::cout << "timestamp error in sink_file::write_cb audio" << std::endl;
+                assert_(false);
+            }
             this->last_timestamp = timestamp;
-#endif
 
             this->file_output->write_sample(false, item);
         }
@@ -113,7 +118,7 @@ void sink_file::write_cb(void*)
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 
@@ -203,7 +208,7 @@ media_stream::result_t stream_file::process_sample(
 
 done:
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 
     return OK;
 }

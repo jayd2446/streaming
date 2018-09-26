@@ -6,7 +6,7 @@
 #pragma comment(lib, "Mf.lib")
 #pragma comment(lib, "Mfreadwrite.lib")
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 output_file::output_file() : stopped_signal(NULL), stopped(false), initial_time(-1)
 {
@@ -56,7 +56,7 @@ void output_file::initialize(
     
     done:
         if(FAILED(hr))
-            throw std::exception();
+            throw HR_EXCEPTION(hr);
     }
     else
         this->stopped = true;
@@ -91,7 +91,7 @@ void output_file::write_sample(bool video, const CComPtr<IMFSample>& sample)
 
 done:
     if(!this->stopped && FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }
 
 void output_file::force_stop()
@@ -113,5 +113,5 @@ done:
 
     // TODO: failure should be signaled through the stopped signal
     if(FAILED(hr))
-        throw std::exception();
+        throw HR_EXCEPTION(hr);
 }

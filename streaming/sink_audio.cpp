@@ -5,7 +5,7 @@
 #pragma comment(lib, "Mf.lib")
 #pragma comment(lib, "Mfreadwrite.lib")
 
-#define CHECK_HR(hr_) {if(FAILED(hr_)) goto done;}
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 sink_audio::sink_audio(const media_session_t& session) : media_sink(session)
 {

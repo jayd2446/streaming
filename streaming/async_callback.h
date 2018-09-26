@@ -7,9 +7,13 @@
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <iostream>
 #include "assert.h"
 
 #pragma comment(lib, "Mfplat.lib")
+
+extern std::atomic_bool async_callback_error;
+extern std::mutex async_callback_error_mutex;
 
 // wrapper for the com async callback
 
@@ -37,7 +41,31 @@ private:
         }
 
         if(parent)
-            (parent.get()->*cb)((void*)res);
+        {
+            // wait until the error is processed
+            if(::async_callback_error)
+            {
+                ::async_callback_error_mutex.lock();
+                ::async_callback_error_mutex.unlock();
+                /*scoped_lock(::async_callback_error_mutex);*/
+            }
+
+            try
+            {
+                (parent.get()->*cb)((void*)res);
+            }
+            catch(streaming::exception e)
+            {
+                scoped_lock lock(::async_callback_error_mutex);
+                ::async_callback_error = true;
+
+                std::cout << e.what();
+                system("pause");
+
+                /*::async_callback_error = false;*/
+                abort();
+            }
+        }
         else
             // this assert_ might fail when the parent is currently @ the destructor;
             // the locking of the parent isn't possible anymore, but

@@ -5,8 +5,12 @@
 #include "enable_shared_from_this.h"
 #include <memory>
 #include <mutex>
+#include <atomic>
 
 typedef std::shared_ptr<std::recursive_mutex> context_mutex_t;
+
+class control_pipeline;
+typedef std::shared_ptr<control_pipeline> control_pipeline_t;
 
 // TODO: sink and source component type classes probably useless
 class media_component : public virtual enable_shared_from_this
@@ -18,13 +22,19 @@ public:
         INSTANCE_SHAREABLE,
         INSTANCE_NOT_SHAREABLE
     };
+private:
+    std::atomic_bool reset;
 protected:
     instance_t instance_type;
+    // subsequent calls to this are dismissed;
+    // also sets the instance_type as not shareable;
+    // make sure that all locks are unlocked before calling this(so no deadlocks occur);
+    // multithreading safe
+    void request_reinitialization(control_pipeline_t&);
 public:
     media_session_t session;
 
-    media_component(const media_session_t& session, instance_t instance_type = INSTANCE_SHAREABLE) :
-        session(session), instance_type(instance_type) {}
+    media_component(const media_session_t& session, instance_t instance_type = INSTANCE_SHAREABLE);
     virtual ~media_component() {}
 
     // cache the result because the component might change the type
