@@ -126,6 +126,8 @@ bool transform_audiomixer::mix(media_buffer_samples& out, const media_sample_aud
             // the leftover audio is assumed to be mixed to out on every request call;
             // this assume indicates a bug
             assert_(&in != &this->leftover_audio);
+            if(&in == &this->leftover_audio)
+                throw HR_EXCEPTION(E_UNEXPECTED);
 
             fully_mixed = false;
 

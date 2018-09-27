@@ -128,6 +128,7 @@ public:
     bool is_running() const {return this->scene_active != NULL;}
     bool is_recording() const {return this->is_running() && !this->item_mpeg_sink.null_file;}
 
+    void set_preview_state(bool render) {this->preview_sink->set_state(render);}
     void update_preview_size() {this->preview_sink->update_size();}
     void initialize(HWND preview_wnd);
 

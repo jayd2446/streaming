@@ -28,7 +28,7 @@ source_wasapi::source_wasapi(const media_session_t& session) :
     media_source(session), started(false), 
     consumed_samples_end(std::numeric_limits<frame_unit>::min()),
     next_frame_position(std::numeric_limits<frame_unit>::min()),
-    capture(false), broken(false), wait_queue(false), reset(false),
+    capture(false), broken(false), wait_queue(false),
     frame_base(std::numeric_limits<frame_unit>::min()),
     devposition_base(std::numeric_limits<frame_unit>::min()),
     work_queue_id(::capture_work_queue_id)
@@ -105,23 +105,8 @@ done:
 void source_wasapi::serve_cb(void*)
 {
     // reset the scene to recreate this component
-    if(this->broken && !this->reset)
-    {
-        this->reset = true;
-
-        // set this component as not shareable so that it is recreated when resetting
-        // the active scene
-        this->instance_type = INSTANCE_NOT_SHAREABLE;
-
-        // all component locks(those that keep locking)
-        // should be unlocked before calling any pipeline functions
-        // to prevent possible deadlock scenarios
-        control_pipeline::scoped_lock pipeline_lock(this->ctrl_pipeline->mutex);
-
-        // scene activation isn't possible anymore if the pipeline has been shutdown
-        if(this->ctrl_pipeline->is_running())
-            this->ctrl_pipeline->set_active(*this->ctrl_pipeline->get_active_scene());
-    }
+    if(this->broken)
+        this->request_reinitialization(this->ctrl_pipeline);
 
     // try to serve
     HRESULT hr = S_OK;

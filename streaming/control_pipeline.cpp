@@ -46,7 +46,9 @@ control_pipeline::control_pipeline() :
         &feature_level, &this->devctx));
 
     // use implicit multithreading protection aswell so that the context cannot be
-    // accidentally corrupted
+    // accidentally corrupted;
+    // amd h264 encoder probably caused encoding artifacts because the
+    // context was being corrupted
     CHECK_HR(hr = this->devctx->QueryInterface(&multithread));
     was_protected = multithread->SetMultithreadProtected(TRUE);
 
@@ -142,7 +144,8 @@ transform_h264_encoder_t control_pipeline::create_h264_encoder(bool null_file)
 {
     if(null_file)
         return NULL;
-    if(this->h264_encoder_transform)
+    if(this->h264_encoder_transform &&
+        this->h264_encoder_transform->get_instance_type() == media_component::INSTANCE_SHAREABLE)
         return this->h264_encoder_transform;
 
     // TODO: activating the encoder might fail for random reasons,
@@ -153,7 +156,8 @@ transform_h264_encoder_t control_pipeline::create_h264_encoder(bool null_file)
     try
     {
         h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
-        h264_encoder_transform->initialize(this->d3d11dev, false);
+        h264_encoder_transform->initialize(this->shared_from_this<control_pipeline>(),
+            this->d3d11dev, false);
     }
     catch(std::exception)
     {
@@ -163,14 +167,16 @@ transform_h264_encoder_t control_pipeline::create_h264_encoder(bool null_file)
         {
             // try to initialize the h264 encoder without utilizing vram
             h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
-            h264_encoder_transform->initialize(NULL);
+            h264_encoder_transform->initialize(this->shared_from_this<control_pipeline>(),
+                NULL);
         }
         catch(std::exception)
         {
             std::cout << "using software encoder" << std::endl;
             // use software encoder
             h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
-            h264_encoder_transform->initialize(NULL, true);
+            h264_encoder_transform->initialize(this->shared_from_this<control_pipeline>(),
+                NULL, true);
         }
     }
 

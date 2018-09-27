@@ -9,11 +9,10 @@
 #include <memory>
 #include <queue>
 #include <mutex>
+#include <atomic>
 
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
-
-
 
 class sink_preview2 : public media_sink
 {
@@ -22,6 +21,8 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     context_mutex_t context_mutex;
+
+    std::atomic_bool render;
 
     HWND hwnd;
     UINT width, height;
@@ -44,6 +45,7 @@ public:
     void initialize(HWND, CComPtr<ID3D11Device>&);
     media_stream_t create_stream();
 
+    void set_state(bool render) {this->render = render;}
     void update_size();
 };
 

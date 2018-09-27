@@ -50,6 +50,7 @@ public:
 private:
     control_pipeline_t ctrl_pipeline;
 
+    BOOL was_minimized;
     CSplitterWindow wnd_splitter;
     gui_previewwnd wnd_preview;
     gui_controlwnd wnd_control;

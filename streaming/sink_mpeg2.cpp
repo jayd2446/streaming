@@ -95,7 +95,7 @@ void stream_mpeg2::on_component_stop(time_unit)
 
 void stream_mpeg2::on_stream_start(time_unit t)
 {
-    /*this->set_schedule_cb_work_queue(capture_work_queue_id);*/
+    this->set_schedule_cb_work_queue(capture_work_queue_id);
 
     // try to set the initial time for the output;
     // the output will modify the sample timestamps so that they start at 0

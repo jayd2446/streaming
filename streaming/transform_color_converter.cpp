@@ -91,33 +91,12 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
     CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessor(
         this->transform->enumerator, 0, &this->videoprocessor));
 
-    //// create the output texture
-    //{
-    //    // create output texture with nv12 color format
-    //    D3D11_TEXTURE2D_DESC desc;
-    //    desc.Width = transform_h264_encoder::frame_width;
-    //    desc.Height = transform_h264_encoder::frame_height;
-    //    desc.MipLevels = 1;
-    //    desc.ArraySize = 1;
-    //    desc.SampleDesc.Count = 1;
-    //    desc.SampleDesc.Quality = 0;
-    //    desc.CPUAccessFlags = 0;
-    //    desc.MiscFlags = 0;
-    //    desc.Usage = D3D11_USAGE_DEFAULT;
-    //    desc.Format = DXGI_FORMAT_NV12;
-    //    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    //    CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-    //        &desc, NULL, &this->output_buffer->texture));
-    //    /*CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&this->output_buffer->resource));*/
-
-    //    // create output view
-    //    D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
-    //    view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-    //    view_desc.Texture2D.MipSlice = 0;
-    //    CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-    //        this->output_buffer->texture, this->transform->enumerator,
-    //        &view_desc, &this->output_view));
-    //}
+    // Auto stream processing(the default) can hurt power consumption
+    {
+        scoped_lock lock(*this->transform->context_mutex);
+        this->transform->videocontext->VideoProcessorSetStreamAutoProcessingMode(
+            this->videoprocessor, 0, FALSE);
+    }
 
 done:
     if(FAILED(hr))

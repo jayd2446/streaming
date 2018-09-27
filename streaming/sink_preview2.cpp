@@ -7,7 +7,7 @@
 #undef min
 
 sink_preview2::sink_preview2(const media_session_t& session, context_mutex_t context_mutex) : 
-    media_sink(session), context_mutex(context_mutex)
+    media_sink(session), context_mutex(context_mutex), render(true)
 {
 }
 
@@ -100,6 +100,9 @@ done:
 
 void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet&)
 {
+    if(!this->render)
+        return;
+
     HRESULT hr = S_OK;
 
     const media_sample_texture& sample_view =

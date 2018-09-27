@@ -331,9 +331,10 @@ bool source_displaycapture5::capture_frame(
     const presentation_clock_t& clock)
 {
     // dxgi functions need to be synchronized with the context mutex
-    std::unique_lock<std::recursive_mutex> lock(*this->context_mutex, std::defer_lock);
-    if(this->same_device)
-        lock.lock();
+    // just lock always, because the output duplication seems to deadlock otherwise
+    std::unique_lock<std::recursive_mutex> lock(*this->context_mutex/*, std::defer_lock*/);
+    /*if(this->same_device)
+        lock.lock();*/
 
     CComPtr<IDXGIResource> frame;
     CComPtr<ID3D11Texture2D> screen_frame;

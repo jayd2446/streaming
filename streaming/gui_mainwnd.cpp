@@ -85,7 +85,8 @@ gui_mainwnd::gui_mainwnd() :
     wnd_preview(this->ctrl_pipeline),
     wnd_control(this->ctrl_pipeline),
     // use this class' messagemap(=this) and use map section 1
-    wnd_statusbar(this, 1)
+    wnd_statusbar(this, 1),
+    was_minimized(FALSE)
 {
     // this failed previously because for some reason
     // the debug version of this exe had the dpi setting overridden in the
@@ -190,6 +191,15 @@ void gui_mainwnd::OnSetFocus(CWindow /*old*/)
 
 void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
 {
+    if(bMinimized != this->was_minimized)
+    {
+        this->was_minimized = bMinimized;
+
+        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+        if(this->ctrl_pipeline->is_running())
+            this->ctrl_pipeline->set_preview_state(!bMinimized);
+    }
+
     if(!bMinimized)
     {
         if(nState == WA_INACTIVE)
@@ -207,7 +217,11 @@ void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
         }
     }
     else
+    {
+
+
         this->SetMsgHandled(FALSE);
+    }
 }
 
 void gui_mainwnd::OnStatusBarSize(UINT nType, CSize size)

@@ -66,7 +66,7 @@ private:
     frame_unit next_frame_position;
     frame_unit frame_base, devposition_base;
 
-    bool started, capture, broken, wait_queue, reset;
+    bool started, capture, broken, wait_queue;
 
     media_buffer_samples buffer;
 

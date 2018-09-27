@@ -165,7 +165,8 @@ transform_h264_encoder::transform_h264_encoder(const media_session_t& session,
     context_mutex(context_mutex),
     use_system_memory(false),
     software(false),
-    draining(false)
+    draining(false),
+    first_sample(true)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
     this->process_output_callback.Attach(
@@ -241,6 +242,9 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     v.vt = VT_UI4;
     v.ullVal = avg_bitrate;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v));
+    v.vt = VT_UI4;
+    v.ullVal = 1;
+    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncVideoForceKeyFrame, &v));
     /*v.vt = VT_BOOL;
     v.ulVal = VARIANT_FALSE;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));*/
@@ -290,8 +294,11 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     CHECK_HR(hr = sample->SetSampleDuration(sample_duration));
     // the amd encoder probably copies the discontinuity flag to output sample,
     // which might cause problems when the sample is passed to sinkwriter
-    if(request.rp.flags & FLAG_DISCONTINUITY)
-        CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, TRUE))
+    if((request.rp.flags & FLAG_DISCONTINUITY) || this->first_sample)
+    {
+        CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, TRUE));
+        this->first_sample = false;
+    }
     /*else
         CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, FALSE));*/
     // add the tracker attribute to the sample
@@ -300,9 +307,9 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
 
     // feed the encoder
     {
-        std::unique_lock<std::recursive_mutex> lock(*this->context_mutex, std::defer_lock);
+        /*std::unique_lock<std::recursive_mutex> lock(*this->context_mutex, std::defer_lock);
         if(!this->use_system_memory)
-            lock.lock();
+            lock.lock();*/
         CHECK_HR(hr = this->encoder->ProcessInput(this->input_id, sample, 0));
     }
 
@@ -459,22 +466,6 @@ void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, 
     else
         sample.timestamp = std::numeric_limits<LONGLONG>::min();
 
-    //if(buffer)
-    //{
-    //    /*std::cout << buffer->samples.size() << ", " << sample.timestamp << ", " << duration << std::endl;*/
-
-    //    if(sample.timestamp <= this->last_time_stamp2)
-    //    {
-    //        std::cout << "timestamp error in transform_h264_encoder::process_request" << std::endl;
-    //        assert_(false);
-    //    }
-    //    this->last_time_stamp2 = sample.timestamp;
-    //}
-    //if(rp.packet_number <= this->last_packet)
-    //{
-    //    std::cout << "packet number error in transform_h264_encoder::process_request" << std::endl;
-    //    assert_(false);
-    //}
     this->last_packet = rp.packet_number;
 
     sample.buffer = buffer;
@@ -519,9 +510,9 @@ bool transform_h264_encoder::process_output(CComPtr<IMFSample>& sample)
 
     {
         // TODO: decide if context mutex is really needed here
-        std::unique_lock<std::recursive_mutex> lock(*this->context_mutex, std::defer_lock);
+        /*std::unique_lock<std::recursive_mutex> lock(*this->context_mutex, std::defer_lock);
         if(!this->use_system_memory)
-            lock.lock();
+            lock.lock();*/
         hr = this->encoder->ProcessOutput(0, 1, &output, &status);
     }
 
@@ -580,10 +571,12 @@ void transform_h264_encoder::process_input_cb(void*)
     this->processing_cb(NULL);
 }
 
-void transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev, bool software)
+void transform_h264_encoder::initialize(const control_pipeline_t& ctrl_pipeline,
+    const CComPtr<ID3D11Device>& d3d11dev, bool software)
 {
     HRESULT hr = S_OK;
 
+    this->ctrl_pipeline = ctrl_pipeline;
     this->use_system_memory = !d3d11dev || software;
     this->software = software;
 
@@ -607,7 +600,7 @@ void transform_h264_encoder::initialize(const CComPtr<ID3D11Device>& d3d11dev, b
         CHECK_HR(hr = MF_E_TOPO_CODEC_NOT_FOUND);
 
     // activate the first encoder
-    CHECK_HR(hr = activate[1]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
+    CHECK_HR(hr = activate[0]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
 
     // check if the encoder supports d3d11
     CHECK_HR(hr = this->encoder->GetAttributes(&attributes));
@@ -758,6 +751,12 @@ media_stream::result_t stream_h264_encoder::process_sample(
     this->transform->requests.push(request);
 
     /*std::cout << rp.packet_number << std::endl;*/
+
+    // reinitialization seems to work only if the same encoder is reused
+    /*static int count = 0;
+    if(count == 100)
+        this->transform->request_reinitialization(this->transform->ctrl_pipeline);
+    count++;*/
 
     this->transform->processing_cb(NULL);
     return OK;
