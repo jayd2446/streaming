@@ -38,7 +38,7 @@ public:
     // 0: low quality, 100: high quality
     static const UINT32 quality_vs_speed = 50;
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
 
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -87,7 +87,7 @@ public:
 
     // passing null d3d device implies that the system memory is used to feed the encoder;
     // software encoder flag overrides d3d device arg
-    void initialize(const control_pipeline_t&,
+    void initialize(const control_pipeline2_t&,
         const CComPtr<ID3D11Device>&, bool software = false);
     media_stream_t create_stream(presentation_clock_t&);
 };

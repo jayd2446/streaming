@@ -1,8 +1,7 @@
 #include "gui_newdlg.h"
-#include "control_scene.h"
 #include <sstream>
 
-gui_newdlg::gui_newdlg(control_scene* scene) : scene(scene)
+gui_newdlg::gui_newdlg(const control_pipeline2_t& pipeline) : ctrl_pipeline(pipeline)
 {
 }
 
@@ -11,8 +10,6 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
     this->new_item = (new_item_t)lParam;
     this->combobox.Attach(this->GetDlgItem(IDC_COMBO_NEW));
     this->editbox.Attach(this->GetDlgItem(IDC_EDIT_NEW));
-
-    std::vector<control_scene::audio_item> audio_items;
 
     switch(new_item)
     {
@@ -27,7 +24,8 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
         // video
         {
-            this->scene->list_available_displaycapture_items(this->displaycaptures);
+            control_displaycapture::list_available_displaycapture_params(this->ctrl_pipeline,
+                this->displaycaptures);
 
             for(auto it = this->displaycaptures.begin(); it != this->displaycaptures.end(); it++)
             {
@@ -51,7 +49,7 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
         // audio
         {
-            this->scene->list_available_audio_items(this->audios);
+            control_wasapi::list_available_wasapi_params(this->audios);
 
             for(auto it = this->audios.begin(); it != this->audios.end(); it++)
             {

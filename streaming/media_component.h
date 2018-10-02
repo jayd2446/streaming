@@ -9,8 +9,8 @@
 
 typedef std::shared_ptr<std::recursive_mutex> context_mutex_t;
 
-class control_pipeline;
-typedef std::shared_ptr<control_pipeline> control_pipeline_t;
+class control_pipeline2;
+typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 
 // TODO: sink and source component type classes probably useless
 class media_component : public virtual enable_shared_from_this
@@ -30,7 +30,7 @@ protected:
     // also sets the instance_type as not shareable;
     // make sure that all locks are unlocked before calling this(so no deadlocks occur);
     // multithreading safe
-    void request_reinitialization(control_pipeline_t&);
+    void request_reinitialization(control_pipeline2_t&);
 public:
     media_session_t session;
 

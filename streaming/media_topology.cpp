@@ -7,6 +7,8 @@ media_topology::media_topology(const presentation_time_source_t& time_source) :
 
 void media_topology::connect_streams(const media_stream_t& stream, const media_stream_t& stream2)
 {
+    assert_(stream && stream2);
+
     int request_streams = 0;
     for(auto&& item : this->topology[stream.get()].next)
         if(item->get_stream_type() == media_stream::PROCESS_REQUEST)

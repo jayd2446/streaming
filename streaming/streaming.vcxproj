@@ -171,8 +171,23 @@
   <ItemGroup>
     <ClCompile Include="assert.cpp" />
     <ClCompile Include="async_callback.cpp" />
-    <ClCompile Include="control_pipeline.cpp" />
-    <ClCompile Include="control_scene.cpp" />
+    <ClCompile Include="control_class.cpp" />
+    <ClCompile Include="control_displaycapture5.cpp" />
+    <ClCompile Include="control_pipeline.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="control_pipeline2.cpp" />
+    <ClCompile Include="control_scene.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="control_scene2.cpp" />
+    <ClCompile Include="control_wasapi.cpp" />
     <ClCompile Include="gui_mainwnd.cpp" />
     <ClCompile Include="gui_newdlg.cpp" />
     <ClCompile Include="gui_previewwnd.cpp" />
@@ -211,8 +226,23 @@
     <ClInclude Include="assert.h" />
     <ClInclude Include="AsyncCallback.h" />
     <ClInclude Include="async_callback.h" />
-    <ClInclude Include="control_pipeline.h" />
-    <ClInclude Include="control_scene.h" />
+    <ClInclude Include="control_class.h" />
+    <ClInclude Include="control_displaycapture5.h" />
+    <ClInclude Include="control_pipeline.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClInclude>
+    <ClInclude Include="control_pipeline2.h" />
+    <ClInclude Include="control_scene.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClInclude>
+    <ClInclude Include="control_scene2.h" />
+    <ClInclude Include="control_wasapi.h" />
     <ClInclude Include="gui_mainwnd.h" />
     <ClInclude Include="gui_newdlg.h" />
     <ClInclude Include="gui_previewwnd.h" />

@@ -3,7 +3,7 @@
 #include "wtl.h"
 #include "gui_previewwnd.h"
 #include "gui_dlgs.h"
-#include "control_pipeline.h"
+#include "control_pipeline2.h"
 #include <atlsplit.h>
 
 class gui_mainwnd;
@@ -14,7 +14,7 @@ class gui_controlwnd :
     public CMessageFilter
 {
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
     gui_scenedlg dlg_scenes;
     gui_sourcedlg dlg_sources;
     gui_controldlg dlg_controls;
@@ -23,7 +23,7 @@ private:
 public:
     DECLARE_WND_CLASS(L"control")
 
-    explicit gui_controlwnd(const control_pipeline_t&);
+    explicit gui_controlwnd(const control_pipeline2_t&);
 
     BOOL PreTranslateMessage(MSG* pMsg);
 
@@ -48,7 +48,7 @@ class gui_mainwnd :
 {
 public:
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
 
     BOOL was_minimized;
     CSplitterWindow wnd_splitter;

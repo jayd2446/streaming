@@ -5,7 +5,6 @@
 #include "presentation_clock.h"
 #include "transform_aac_encoder.h"
 #include "transform_audioprocessor.h"
-#include "control_pipeline.h"
 #include <Audioclient.h>
 #include <mfapi.h>
 #include <memory>
@@ -21,6 +20,8 @@
 
 class source_wasapi;
 typedef std::shared_ptr<source_wasapi> source_wasapi_t;
+class control_pipeline2;
+typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 
 struct IMMDevice;
 
@@ -47,7 +48,7 @@ public:
     typedef request_queue<empty> request_queue;
     typedef request_queue::request_t request_t;
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
 
     CComPtr<IAudioClient> audio_client, audio_client_render;
     CComPtr<IAudioCaptureClient> audio_capture_client;
@@ -94,7 +95,7 @@ public:
     ~source_wasapi();
 
     void initialize(
-        const control_pipeline_t&, 
+        const control_pipeline2_t&,
         const std::wstring& device_id, bool capture);
     media_stream_t create_stream();
 };

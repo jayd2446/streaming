@@ -78,6 +78,8 @@ private:
     std::pair<mpeg_sink_item, sink_mpeg2_t> mpeg_sink;
     std::pair<mpeg_sink_item, sink_audio_t> audio_sink;
 
+    // std::list<scene_t> scenes;
+
     control_scene* scene_active;
     // use list so that the pointer stays valid when adding/erasing scenes
     std::list<control_scene> scenes;

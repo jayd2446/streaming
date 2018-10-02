@@ -117,6 +117,21 @@
     <ClCompile Include="media_component.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="control_pipeline2.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_scene2.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_displaycapture5.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_wasapi.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_class.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -232,6 +247,21 @@
     </ClInclude>
     <ClInclude Include="sink_file.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="control_class.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_displaycapture5.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_scene2.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_wasapi.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_pipeline2.h">
+      <Filter>control</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -4,7 +4,7 @@ extern CAppModule module_;
 
 #undef max
 
-gui_controlwnd::gui_controlwnd(const control_pipeline_t& ctrl_pipeline) :
+gui_controlwnd::gui_controlwnd(const control_pipeline2_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
     dlg_scenes(dlg_sources, ctrl_pipeline),
     dlg_sources(dlg_scenes, ctrl_pipeline),
@@ -36,7 +36,7 @@ int gui_controlwnd::OnCreate(LPCREATESTRUCT)
 
 void gui_controlwnd::OnDestroy()
 {
-    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
 
     if(this->ctrl_pipeline->is_running())
         this->ctrl_pipeline->shutdown();
@@ -81,7 +81,7 @@ LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM wParam, LPARAM lParam
 
 
 gui_mainwnd::gui_mainwnd() : 
-    ctrl_pipeline(new control_pipeline),
+    ctrl_pipeline(new control_pipeline2),
     wnd_preview(this->ctrl_pipeline),
     wnd_control(this->ctrl_pipeline),
     // use this class' messagemap(=this) and use map section 1
@@ -168,9 +168,8 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT createstruct)
     this->wnd_preview.ShowWindow(SW_SHOW);
     this->wnd_control.ShowWindow(SW_SHOW);
 
-    // initialize the pipeline
-    // TODO: rename initialize to set_preview or similar
-    this->ctrl_pipeline->initialize(this->wnd_preview);
+    // set the preview window
+    this->ctrl_pipeline->set_preview_window(this->wnd_preview);
 
     return 0;
 }
@@ -195,7 +194,7 @@ void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
     {
         this->was_minimized = bMinimized;
 
-        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
         if(this->ctrl_pipeline->is_running())
             this->ctrl_pipeline->set_preview_state(!bMinimized);
     }

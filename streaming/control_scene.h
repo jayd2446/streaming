@@ -12,6 +12,7 @@
 // control_scene needs to maintain a link between the component and the name of the item;
 // components are shared between scenes
 
+
 class control_scene
 {
     friend class control_pipeline;

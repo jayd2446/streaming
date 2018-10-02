@@ -3,7 +3,6 @@
 #include "media_stream.h"
 #include "media_sample.h"
 #include "transform_videoprocessor.h"
-#include "control_pipeline.h"
 #include "async_callback.h"
 #include <d3d11.h>
 #include <dxgi.h>
@@ -19,7 +18,8 @@
 
 class stream_displaycapture5;
 class stream_displaycapture5_pointer;
-class control_pipeline;
+class control_pipeline2;
+typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 typedef std::shared_ptr<stream_displaycapture5> stream_displaycapture5_t;
 typedef std::shared_ptr<stream_displaycapture5_pointer> stream_displaycapture5_pointer_t;
 
@@ -31,7 +31,7 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
 
     CComPtr<IDXGIOutput5> output;
     CComPtr<IDXGIOutputDuplication> output_duplication;
@@ -94,13 +94,13 @@ public:
     // currently displaycapture initialization never fails;
     // uses the d3d11 device for capturing that is used in the pipeline
     void initialize(
-        const control_pipeline_t&,
+        const control_pipeline2_t&,
         UINT output_index, 
         const CComPtr<ID3D11Device>&,
         const CComPtr<ID3D11DeviceContext>&);
     // creates a d3d11 device that is bound to the adapter index
     void initialize(
-        const control_pipeline_t&,
+        const control_pipeline2_t&,
         UINT adapter_index,
         UINT output_index, 
         const CComPtr<IDXGIFactory1>&,

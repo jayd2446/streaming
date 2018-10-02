@@ -1,8 +1,10 @@
 #pragma once
 
 #include "wtl.h"
-#include "control_scene.h"
-#include "control_pipeline.h"
+#include "control_scene2.h"
+#include "control_pipeline2.h"
+#include "control_displaycapture5.h"
+#include "control_wasapi.h"
 #include <string>
 #include <vector>
 
@@ -16,19 +18,19 @@ public:
         NEW_SCENE, NEW_VIDEO, NEW_AUDIO
     };
 private:
-    control_scene* scene;
+    control_pipeline2_t ctrl_pipeline;
     CComboBox combobox;
     CEdit editbox;
 public:
     enum {IDD = IDD_DIALOG_NEW};
 
-    std::vector<control_scene::displaycapture_item> displaycaptures;
-    std::vector<control_scene::audio_item> audios;
+    std::vector<control_displaycapture::displaycapture_params> displaycaptures;
+    std::vector<control_wasapi::wasapi_params> audios;
     std::wstring new_scene_name;
     int cursel, audio_sel_offset;
     int new_item;
 
-    explicit gui_newdlg(control_scene*);
+    explicit gui_newdlg(const control_pipeline2_t&);
 
     BEGIN_MSG_MAP(gui_newdlg)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)

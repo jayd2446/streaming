@@ -1,7 +1,7 @@
 #pragma once
 
 #include "wtl.h"
-#include "control_pipeline.h"
+#include "control_pipeline2.h"
 #include <string>
 
 class gui_sourcedlg;
@@ -11,14 +11,14 @@ class gui_scenedlg :
     public CDialogResize<gui_scenedlg>
 {
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
     gui_sourcedlg& dlg_sources;
     CButton btn_addscene, btn_removescene;
     CListBox wnd_scenelist;
 public:
     enum {IDD = IDD_SCENEDLG};
 
-    gui_scenedlg(gui_sourcedlg&, const control_pipeline_t&);
+    gui_scenedlg(gui_sourcedlg&, const control_pipeline2_t&);
 
     void add_scene(const std::wstring& scene_name);
 
@@ -50,16 +50,16 @@ class gui_sourcedlg :
     public CDialogResize<gui_sourcedlg>
 {
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
     gui_scenedlg& dlg_scenes;
     CButton btn_addsource, btn_removesource;
     CTreeViewCtrlEx wnd_sourcetree;
 public:
     enum {IDD = IDD_SOURCEDLG};
 
-    gui_sourcedlg(gui_scenedlg&, const control_pipeline_t&);
+    gui_sourcedlg(gui_scenedlg&, const control_pipeline2_t&);
 
-    void set_source_tree(const control_scene&);
+    void set_source_tree(const control_scene2&);
 
     BEGIN_MSG_MAP(gui_sourcedlg)
         COMMAND_HANDLER(IDC_ADDSRC, BN_CLICKED, OnBnClickedAddsrc)
@@ -86,13 +86,13 @@ class gui_controldlg :
     public CDialogResize<gui_controldlg>
 {
 private:
-    control_pipeline_t ctrl_pipeline;
+    control_pipeline2_t ctrl_pipeline;
     CButton btn_start_recording;
     CHandle stop_recording_event;
 public:
     enum {IDD = IDD_CTRLDLG};
 
-    explicit gui_controldlg(const control_pipeline_t&);
+    explicit gui_controldlg(const control_pipeline2_t&);
 
     BEGIN_MSG_MAP(gui_controldlg)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)

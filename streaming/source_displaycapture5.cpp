@@ -1,5 +1,6 @@
 #include "source_displaycapture5.h"
 #include "presentation_clock.h"
+#include "control_pipeline2.h"
 #include <iostream>
 #include <atomic>
 #include <dxgi1_5.h>
@@ -126,7 +127,7 @@ done:
 }
 
 void source_displaycapture5::initialize(
-    const control_pipeline_t& ctrl_pipeline,
+    const control_pipeline2_t& ctrl_pipeline,
     UINT output_index, 
     const CComPtr<ID3D11Device>& d3d11dev, 
     const CComPtr<ID3D11DeviceContext>& devctx)
@@ -153,7 +154,7 @@ done:
 }
 
 void source_displaycapture5::initialize(
-    const control_pipeline_t& ctrl_pipeline,
+    const control_pipeline2_t& ctrl_pipeline,
     UINT adapter_index,
     UINT output_index, 
     const CComPtr<IDXGIFactory1>& factory,

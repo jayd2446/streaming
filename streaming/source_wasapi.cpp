@@ -1,5 +1,6 @@
 #include "source_wasapi.h"
 #include "assert.h"
+#include "control_pipeline2.h"
 #include <initguid.h>
 #include <mmdeviceapi.h>
 #include <audiopolicy.h>
@@ -398,7 +399,7 @@ done:
     return hr;
 }
 
-void source_wasapi::initialize(const control_pipeline_t& ctrl_pipeline, 
+void source_wasapi::initialize(const control_pipeline2_t& ctrl_pipeline,
     const std::wstring& device_id, bool capture)
 {
     HRESULT hr = S_OK;
