@@ -37,7 +37,7 @@ public:
     ~sink_file();
 
     void initialize(const output_file_t& file_output, bool video);
-    media_stream_t create_stream(presentation_clock_t&);
+    media_stream_t create_stream(presentation_clock_t&&);
 };
 
 typedef std::shared_ptr<sink_file> sink_file_t;

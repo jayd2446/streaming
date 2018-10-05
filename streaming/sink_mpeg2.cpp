@@ -31,7 +31,6 @@ void sink_mpeg2::switch_topologies(
     scoped_lock lock(this->topology_switch_mutex);
     this->session->switch_topology(video_topology);
     this->pending_audio_topology = audio_topology;
-    /*this->audio_session->switch_topology(audio_topology);*/
 }
 
 void sink_mpeg2::start_topologies(
@@ -41,15 +40,15 @@ void sink_mpeg2::start_topologies(
 {
     scoped_lock lock(this->topology_switch_mutex);
 
-    assert_(!this->session->started());
-    assert_(!this->audio_session->started());
+    /*assert_(!this->session->started());
+    assert_(!this->audio_session->started());*/
 
     this->session->start_playback(video_topology, t);
     this->audio_session->start_playback(audio_topology, t);
 }
 
 stream_mpeg2_t sink_mpeg2::create_stream(
-    presentation_clock_t& clock, const stream_audio_t& audio_stream)
+    presentation_clock_t&& clock, const stream_audio_t& audio_stream)
 {
     stream_mpeg2_t stream(
         new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream));
@@ -112,12 +111,12 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     this->clear_queue();
 
     // the audio topology will be switched in this call
-    assert_(this->sink->pending_audio_topology || !this->sink->session->started());
+    assert_(this->sink->pending_audio_topology/* || !this->sink->session->started()*/);
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
     this->sink->pending_audio_topology = NULL;
 
     // do not bother requesting the last sample if the session is shutting down
-    if(this->sink->session->started())
+    /*if(this->sink->session->started())*/
         this->audio_sink_stream->request_sample_last(t);
 }
 
@@ -227,7 +226,7 @@ void stream_mpeg2::add_worker_stream(const stream_mpeg2_worker_t& worker_stream)
 }
 
 media_stream::result_t stream_mpeg2::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
+    const media_sample&, request_packet&, const media_stream*)
 {
     return OK;
 }

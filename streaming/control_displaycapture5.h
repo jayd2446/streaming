@@ -10,7 +10,6 @@ class control_displaycapture : public control_class
 {
     friend class control_scene2;
 public:
-    static const std::wstring displaycapture_type_name;
     struct displaycapture_params
     {
         UINT adapter_ordinal, output_ordinal;

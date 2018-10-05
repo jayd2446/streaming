@@ -37,7 +37,7 @@ public:
 
     void initialize();
 
-    stream_audio_t create_stream(presentation_clock_t&);
+    stream_audio_t create_stream(presentation_clock_t&&);
     // worker streams duplicate the topology so that individual branches can be
     // multithreaded
     stream_audio_worker_t create_worker_stream();

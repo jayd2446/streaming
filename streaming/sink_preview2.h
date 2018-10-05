@@ -2,6 +2,7 @@
 #include "async_callback.h"
 #include "media_sink.h"
 #include "media_stream.h"
+#include "transform_videoprocessor.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <d2d1_1.h>
@@ -23,6 +24,7 @@ private:
     context_mutex_t context_mutex;
 
     std::atomic_bool render;
+    stream_videoprocessor_controller_t size_box;
 
     HWND hwnd;
     UINT width, height;
@@ -36,6 +38,7 @@ private:
     CComPtr<IDXGIOutput> dxgioutput;
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
+    CComPtr<ID2D1SolidColorBrush> box_brush;
 
     void draw_sample(const media_sample& sample_view, request_packet& rp);
 public:
@@ -46,6 +49,8 @@ public:
     media_stream_t create_stream();
 
     void set_state(bool render) {this->render = render;}
+    void set_size_box(const stream_videoprocessor_controller_t& new_box);
+    stream_videoprocessor_controller_t get_size_box() const {return std::atomic_load(&this->size_box);}
     void update_size();
 };
 

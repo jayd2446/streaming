@@ -53,7 +53,7 @@ public:
     explicit transform_audiomixer(const media_session_t& session);
 
     void initialize();
-    stream_audiomixer_t create_stream(presentation_clock_t&);
+    stream_audiomixer_t create_stream(presentation_clock_t&&);
 };
 
 typedef std::shared_ptr<transform_audiomixer> transform_audiomixer_t;

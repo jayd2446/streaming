@@ -16,6 +16,7 @@ sink_file::sink_file(const media_session_t& session) :
 sink_file::~sink_file()
 {
     HRESULT hr = MFUnlockWorkQueue(this->work_queue_id);
+    hr;
 }
 
 void sink_file::initialize(const output_file_t& file_output, bool video)
@@ -33,7 +34,7 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-media_stream_t sink_file::create_stream(presentation_clock_t& clock)
+media_stream_t sink_file::create_stream(presentation_clock_t&& clock)
 {
     stream_file_t stream(new stream_file(this->shared_from_this<sink_file>()));
     stream->register_sink(clock);

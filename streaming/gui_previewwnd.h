@@ -10,6 +10,8 @@ class gui_previewwnd : public CWindowImpl<gui_previewwnd>
 {
 private:
     control_pipeline2_t ctrl_pipeline;
+    bool dragging;
+    CPoint last_pos;
 public:
     DECLARE_WND_CLASS(L"preview")
 
@@ -17,7 +19,13 @@ public:
 
     BEGIN_MSG_MAP(gui_previewwnd)
         MSG_WM_SIZE(OnSize)
+        MSG_WM_LBUTTONDOWN(OnLButtonDown)
+        MSG_WM_LBUTTONUP(OnLButtonUp)
+        MSG_WM_MOUSEMOVE(OnMouseMove)
     END_MSG_MAP()
 
     LRESULT OnSize(UINT nType, CSize Extent);
+    void OnLButtonDown(UINT nFlags, CPoint point);
+    void OnLButtonUp(UINT nFlags, CPoint point);
+    void OnMouseMove(UINT nFlags, CPoint point);
 };

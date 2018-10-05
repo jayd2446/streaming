@@ -8,7 +8,6 @@ class control_wasapi : public control_class
 {
     friend class control_scene2;
 public:
-    static const std::wstring wasapi_type_name;
     struct wasapi_params
     {
         bool capture;

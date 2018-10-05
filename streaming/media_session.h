@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <queue>
+#include <atomic>
 
 // orchestrates the data flow between components in the media pipeline;
 // translates the source's media time to the presentation time
@@ -47,7 +48,7 @@ class media_session : public enable_shared_from_this
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    volatile bool is_shutdown, is_started;
+    /*volatile bool is_started;*/
     presentation_time_source_t time_source;
 
     std::recursive_mutex topology_switch_mutex;
@@ -69,16 +70,22 @@ public:
     // create a cyclic dependency between clock and components;
     // returns false if the clock is NULL
     bool get_current_clock(presentation_clock_t&) const;
-    bool started() const {return this->is_started;}
-
+    /*bool started() const {return this->is_started;}*/
     const presentation_time_source_t& get_time_source() const {return this->time_source;}
 
     void switch_topology(const media_topology_t& new_topology);
-
     // throws if the topology doesn't include a clock
     void start_playback(const media_topology_t& topology, time_unit time_point);
-    void stop_playback();
-    void stop_playback(time_unit);
+    // even though media session provides stop playback functions,
+    // they generally shouldn't be used since the components assume that
+    // start/stop time points match the request time points(that assumption
+    // is the basis for component draining)
+    /*void stop_playback();
+    void stop_playback(time_unit);*/
+
+    // playback is stopped by switching to an empty topology
+    /*void stop_playback();
+    void stop_playback(time_unit);*/
 
     // TODO: make request_sample call that's coming from sink
     // its own function
@@ -105,7 +112,7 @@ public:
     // breaks the circular dependency between components and the session;
     // the session is considered invalid after calling this;
     // the components bound to this session must be reinitialized aswell
-    void shutdown();
+    /*void shutdown();*/
 };
 
 typedef std::shared_ptr<media_session> media_session_t;

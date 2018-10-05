@@ -128,7 +128,7 @@ public:
     // notifies all sinks
     void clock_stop(time_unit time_point);
     // calls sinks with the current time source's time as the time point parameter
-    void clock_stop() {this->clock_stop(this->get_current_time());}
+    /*void clock_stop() {this->clock_stop(this->get_current_time());}*/
 
     void clear_clock_sinks();
 };

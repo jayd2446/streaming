@@ -34,15 +34,9 @@ source_wasapi::source_wasapi(const media_session_t& session) :
     devposition_base(std::numeric_limits<frame_unit>::min()),
     work_queue_id(::capture_work_queue_id)
 {
-    HRESULT hr = S_OK;
-
     // the process callback really cannot be in higher priority mode,
     // because it can cause problems with the work queue under a high load
     this->process_callback.Attach(new async_callback_t(&source_wasapi::process_cb/*, this->work_queue_id*/));
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 }
 
 source_wasapi::~source_wasapi()

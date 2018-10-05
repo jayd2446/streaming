@@ -10,10 +10,8 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-const std::wstring control_pipeline2::pipeline_type_name = L"pipeline";
-
 control_pipeline2::control_pipeline2() :
-    control_class(controls, pipeline_type_name, CONTROL_VIDEO_AUDIO_TYPE),
+    control_class(controls),
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
     root_scene(controls, *this),
@@ -82,7 +80,7 @@ void control_pipeline2::activate(const control_set_t& last_set, control_set_t& n
 
 void control_pipeline2::activate_components()
 {
-    this->running = true;
+    /*this->running = true;*/
 
     if(!this->time_source)
     {
@@ -113,18 +111,41 @@ void control_pipeline2::activate_components()
     if(this->recording && (!this->h264_encoder_transform ||
         this->h264_encoder_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
-        // TODO: handle h264 initialization failures
+        // TODO: activating the encoder might fail for random reasons,
+        // so notify if the primary encoder cannot be used and use the software encoder as a
+        // fallback
+        // (signature error during activate call was fixed by a reboot)
         transform_h264_encoder_t h264_encoder_transform;
         try
         {
-            h264_encoder_transform.reset(new transform_h264_encoder(this->session, this->context_mutex));
+            h264_encoder_transform.reset(new transform_h264_encoder(
+                this->session, this->context_mutex));
             h264_encoder_transform->initialize(this->shared_from_this<control_pipeline2>(),
                 this->d3d11dev, false);
         }
         catch(std::exception)
         {
-            assert_(false);
+            std::cout << "using system ram for hardware video encoder" << std::endl;
+
+            try
+            {
+                // try to initialize the h264 encoder without utilizing vram
+                h264_encoder_transform.reset(new transform_h264_encoder(
+                    this->session, this->context_mutex));
+                h264_encoder_transform->initialize(this->shared_from_this<control_pipeline2>(),
+                    NULL);
+            }
+            catch(std::exception)
+            {
+                std::cout << "using software encoder" << std::endl;
+                // use software encoder
+                h264_encoder_transform.reset(new transform_h264_encoder(
+                    this->session, this->context_mutex));
+                h264_encoder_transform->initialize(this->shared_from_this<control_pipeline2>(),
+                    NULL, true);
+            }
         }
+
         this->h264_encoder_transform = h264_encoder_transform;
     }
     else if(!this->recording)
@@ -163,7 +184,7 @@ void control_pipeline2::activate_components()
         this->aac_encoder_transform = aac_encoder_transform;
     }
     else if(!this->recording)
-        this->color_converter_transform = NULL;
+        this->aac_encoder_transform = NULL;
 
     // create audiomixer transform
     if(!this->audiomixer_transform || 
@@ -240,6 +261,11 @@ void control_pipeline2::deactivate_components()
 {
     this->running = false;
 
+    // stop the playback by switching to empty topologies
+    this->video_topology.reset(new media_topology(this->time_source));
+    this->audio_topology.reset(new media_topology(this->time_source));
+    this->mpeg_sink->switch_topologies(this->video_topology, this->audio_topology);
+
     this->videoprocessor_transform = NULL;
     this->h264_encoder_transform = NULL;
     this->color_converter_transform = NULL;
@@ -251,22 +277,24 @@ void control_pipeline2::deactivate_components()
     this->audio_sink = NULL;
 
     // shutdown specific
-    this->video_topology = NULL;
+    /*this->video_topology = NULL;
     this->audio_topology = NULL;
 
     this->session->stop_playback();
     this->session->shutdown();
     this->audio_session->stop_playback();
-    this->audio_session->shutdown();
+    this->audio_session->shutdown();*/
 
     this->session = NULL;
     this->audio_session = NULL;
     this->time_source = NULL;
+
+    /*Sleep(INFINITE);*/
 }
 
 void control_pipeline2::build_and_switch_topology()
 {
-    if(this->disabled || !this->running)
+    if(this->disabled)
         return;
 
     this->video_topology.reset(new media_topology(this->time_source));
@@ -333,15 +361,18 @@ void control_pipeline2::build_and_switch_topology()
     }
 
     // mpeg sink ensures atomic topology starting/switching for audio and video
-    if(!this->session->started())
+    if(!this->running/*this->session->started()*/)
+    {
+        this->running = true;
         // start the media session with the topology;
         // it's ok to start with time point of 0 because the time source starts at 0
         this->mpeg_sink->start_topologies(0, this->video_topology, this->audio_topology);
+    }
     else
         this->mpeg_sink->switch_topologies(this->video_topology, this->audio_topology);
 }
 
-CHandle control_pipeline2::start_recording(const std::wstring& filename)
+CHandle control_pipeline2::start_recording(const std::wstring& /*filename*/)
 {
     assert_(!this->is_recording());
     assert_(!this->stopped_signal);

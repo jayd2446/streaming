@@ -42,7 +42,7 @@ public:
     // TODO: initialize fps
     void initialize();
 
-    // this function makes sure that the both topologies are switched at the same time
+    // these functions make sure that the both topologies are switched at the same time
     void switch_topologies(
         const media_topology_t& video_topology,
         const media_topology_t& audio_topology);
@@ -51,7 +51,7 @@ public:
         const media_topology_t& video_topology,
         const media_topology_t& audio_topology);
 
-    stream_mpeg2_t create_stream(presentation_clock_t&, const stream_audio_t&);
+    stream_mpeg2_t create_stream(presentation_clock_t&&, const stream_audio_t&);
     stream_mpeg2_worker_t create_worker_stream();
 };
 

@@ -5,10 +5,8 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-const std::wstring control_wasapi::wasapi_type_name = L"wasapi";
-
 control_wasapi::control_wasapi(control_set_t& active_controls, control_pipeline2& pipeline) :
-    control_class(active_controls, wasapi_type_name, CONTROL_AUDIO_TYPE),
+    control_class(active_controls),
     pipeline(pipeline),
     reference(NULL)
 {

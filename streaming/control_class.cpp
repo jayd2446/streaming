@@ -1,9 +1,8 @@
 #include "control_class.h"
 #include "control_pipeline2.h"
 
-control_class::control_class(control_set_t& active_controls,
-    const std::wstring& type_name, control_common_type type) :
-    type_name(type_name), type(type), parent(NULL), disabled(false),
+control_class::control_class(control_set_t& active_controls) :
+    parent(NULL), disabled(false),
     active_controls(active_controls)
 {
 }

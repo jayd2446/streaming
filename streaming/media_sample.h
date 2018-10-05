@@ -58,6 +58,7 @@ template<typename T>
 void media_buffer_trackable<T>::deleter(buffer_raw_t* buffer)
 {
     assert_(buffer == this);
+    buffer;
     this->on_delete();
 }
 

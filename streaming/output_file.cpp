@@ -109,9 +109,9 @@ void output_file::force_stop()
 done:
     this->writer.Release();
     this->mpeg_media_sink->Shutdown();
+    /*Sleep(5000);*/
     SetEvent(this->stopped_signal);
 
-    // TODO: failure should be signaled through the stopped signal
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
 }

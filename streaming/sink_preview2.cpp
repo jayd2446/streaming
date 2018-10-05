@@ -29,6 +29,8 @@ void sink_preview2::initialize(
     DXGI_SWAP_CHAIN_DESC1 swapchain_desc = {0};
     RECT r;
 
+    scoped_lock lock(*this->context_mutex);
+
     // create d2d factory
     CHECK_HR(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &this->d2d1factory));
 
@@ -93,6 +95,11 @@ void sink_preview2::initialize(
     this->width = std::abs(r.right - r.left);
     this->height = std::abs(r.bottom - r.top);
 
+    // create the brush for the sizing box
+    CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
+        D2D1::ColorF(D2D1::ColorF::Red),
+        &this->box_brush));
+
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
@@ -107,6 +114,10 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 
     const media_sample_texture& sample_view =
         reinterpret_cast<const media_sample_texture&>(sample_view_);
+    stream_videoprocessor_controller_t size_box = std::atomic_load(&this->size_box);
+    stream_videoprocessor_controller::params_t params = {0};
+    if(size_box)
+        size_box->get_params(params);
 
     CComPtr<ID3D11Texture2D> texture = sample_view.buffer->texture;
     if(texture)
@@ -127,10 +138,30 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
         else
             padding = (width - padding) / 2;
 
-        D2D1_RECT_F rect;
+        D2D1_RECT_F rect, box_rect = {0};
         rect.top = rect.left = 20 / scale;
         rect.right = (FLOAT)desc.Width - 20 / scale;
         rect.bottom = (FLOAT)desc.Height - 20 / scale;
+        if(size_box)
+        {
+            box_rect.left = (FLOAT)params.dest_rect.left *
+                (rect.right - rect.left) /
+                (FLOAT)transform_videoprocessor::canvas_width;
+            box_rect.top = (FLOAT)params.dest_rect.top *
+                (rect.bottom - rect.top) /
+                (FLOAT)transform_videoprocessor::canvas_height;
+            box_rect.right = (FLOAT)params.dest_rect.right *
+                (rect.right - rect.left) /
+                (FLOAT)transform_videoprocessor::canvas_width;
+            box_rect.bottom = (FLOAT)params.dest_rect.bottom *
+                (rect.bottom - rect.top) /
+                (FLOAT)transform_videoprocessor::canvas_height;
+
+            box_rect.left += rect.left;
+            box_rect.top += rect.top;
+            box_rect.right += rect.left;
+            box_rect.bottom += rect.top;
+        }
 
         Matrix3x2F scale_mtx = Matrix3x2F::Scale(scale, scale);
         Matrix3x2F translation_mtx = use_scale_w ?
@@ -148,12 +179,16 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
             PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
             &bitmap));
         this->d2d1devctx->BeginDraw();
+
         this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
         if(rect.top < rect.bottom && rect.left < rect.right)
         {
             this->d2d1devctx->SetTransform(scale_mtx * translation_mtx);
             this->d2d1devctx->DrawBitmap(bitmap, &rect);
         }
+        if(box_rect.top < box_rect.bottom && box_rect.left < box_rect.right)
+            this->d2d1devctx->DrawRectangle(box_rect, this->box_brush, 2.f);
+
         this->d2d1devctx->EndDraw();
 
         // dxgi functions need to be synchronized with the context mutex
@@ -168,6 +203,11 @@ done:
 media_stream_t sink_preview2::create_stream()
 {
     return stream_preview2_t(new stream_preview2(this->shared_from_this<sink_preview2>()));
+}
+
+void sink_preview2::set_size_box(const stream_videoprocessor_controller_t& new_box)
+{
+    std::atomic_exchange(&this->size_box, new_box);
 }
 
 void sink_preview2::update_size()

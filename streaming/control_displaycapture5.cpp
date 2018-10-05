@@ -3,11 +3,9 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-const std::wstring control_displaycapture::displaycapture_type_name = L"displaycapture";
-
 control_displaycapture::control_displaycapture(control_set_t& active_controls, 
     control_pipeline2& pipeline) :
-    control_class(active_controls, displaycapture_type_name, CONTROL_VIDEO_TYPE),
+    control_class(active_controls),
     pipeline(pipeline),
     reference(NULL)
 {

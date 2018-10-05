@@ -15,7 +15,7 @@ void sink_audio::initialize()
 {
 }
 
-stream_audio_t sink_audio::create_stream(presentation_clock_t& clock)
+stream_audio_t sink_audio::create_stream(presentation_clock_t&& clock)
 {
     stream_audio_t stream(new stream_audio(this->shared_from_this<sink_audio>()));
     stream->register_sink(clock);
@@ -40,13 +40,13 @@ stream_audio::stream_audio(const sink_audio_t& sink) :
 {
 }
 
-void stream_audio::on_stream_start(time_unit t)
+void stream_audio::on_stream_start(time_unit)
 {
     this->running = true;
     this->ran_once = true;
 }
 
-void stream_audio::on_stream_stop(time_unit t)
+void stream_audio::on_stream_stop(time_unit)
 {
     this->running = false;
     this->stopped = true;
@@ -104,7 +104,7 @@ media_stream::result_t stream_audio::request_sample(
 }
 
 media_stream::result_t stream_audio::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
+    const media_sample&, request_packet&, const media_stream*)
 {
     return OK;
 }

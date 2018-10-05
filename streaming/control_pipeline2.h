@@ -31,7 +31,6 @@ class control_pipeline2 : public control_class, public enable_shared_from_this
     friend class control_scene2;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    static const std::wstring pipeline_type_name;
 private:
     bool running;
     bool recording;
@@ -80,6 +79,8 @@ public:
     bool is_recording() const {return this->recording;}
 
     void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
+    const sink_preview2_t& get_preview_window() const {return this->preview_sink;}
+    // TODO: these functions are obsolete
     void set_preview_state(bool render) {this->preview_sink->set_state(render);}
     void update_preview_size() {this->preview_sink->update_size();}
 

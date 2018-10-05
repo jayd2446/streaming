@@ -320,7 +320,7 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-media_stream_t transform_audioprocessor::create_stream(presentation_clock_t& clock)
+media_stream_t transform_audioprocessor::create_stream(presentation_clock_t&& clock)
 {
     media_stream_clock_sink_t stream(
         new stream_audioprocessor(this->shared_from_this<transform_audioprocessor>()));

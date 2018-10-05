@@ -68,7 +68,7 @@ void gui_controlwnd::OnSize(UINT /*nType*/, CSize size)
     this->dlg_controls.SetWindowPos(NULL, &rc, SWP_NOACTIVATE | SWP_NOZORDER);
 }
 
-LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM wParam, LPARAM lParam, BOOL& /*bHandled*/)
+LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
 {
     this->dpi_changed = true;
     return 0;
@@ -123,7 +123,7 @@ BOOL gui_mainwnd::OnIdle()
     return FALSE;
 }
 
-int gui_mainwnd::OnCreate(LPCREATESTRUCT createstruct)
+int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
 {
     CMessageLoop* loop = module_.GetMessageLoop();
     loop->AddMessageFilter(this);
@@ -223,7 +223,7 @@ void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
     }
 }
 
-void gui_mainwnd::OnStatusBarSize(UINT nType, CSize size)
+void gui_mainwnd::OnStatusBarSize(UINT /*nType*/, CSize size)
 {
     if(size.cx != 0 || size.cy != 0)
         this->set_statusbar_parts(size);

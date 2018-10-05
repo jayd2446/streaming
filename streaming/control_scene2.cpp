@@ -6,10 +6,8 @@
 
 #define INVALID_CONTROL_INDEX -1
 
-const std::wstring control_scene2::scene_type_name = L"scene";
-
 control_scene2::control_scene2(control_set_t& active_controls, control_pipeline2& pipeline) :
-    control_class(active_controls, scene_type_name, CONTROL_VIDEO_AUDIO_TYPE),
+    control_class(active_controls),
     pipeline(pipeline),
     current_control_video(true),
     current_control(INVALID_CONTROL_INDEX)
@@ -29,17 +27,22 @@ void control_scene2::build_video_topology_branch(
     if(!videoprocessor_stream)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
-    if(this->video_controls.empty())
+    bool no_video = true;
+    for(auto&& elem : this->video_controls)
+    {
+        if(elem->disabled)
+            continue;
+
+        no_video = false;
+        elem->build_video_topology_branch(videoprocessor_stream, topology);
+    }
+
+    if(no_video)
     {
         source_empty_video_t empty_source(new source_empty_video(this->pipeline.session));
         media_stream_t empty_stream = empty_source->create_stream();
         videoprocessor_stream->add_input_stream(empty_stream.get(), NULL);
         videoprocessor_stream->connect_streams(empty_stream, topology);
-    }
-    else
-    {
-        for(auto&& elem : this->video_controls)
-            elem.second->build_video_topology_branch(videoprocessor_stream, topology);
     }
 }
 
@@ -49,31 +52,33 @@ void control_scene2::build_audio_topology_branch(
     if(this->disabled)
         return;
 
+    bool no_audio = true;
+
     // build the subscene audio topology
-    bool no_subscene_audio = true;
-    if(!this->video_controls.empty())
+    for(auto&& elem : this->video_controls)
     {
-        for(auto&& elem : this->video_controls)
+        control_scene2* scene = dynamic_cast<control_scene2*>(elem.get());
+        if(scene && !scene->disabled)
         {
-            control_scene2* scene = dynamic_cast<control_scene2*>(elem.second.get());
-            if(scene)
-            {
-                no_subscene_audio = false;
-                scene->build_audio_topology_branch(to, topology);
-            }
+            no_audio = false;
+            scene->build_audio_topology_branch(to, topology);
         }
     }
 
-    if(this->audio_controls.empty() && no_subscene_audio)
+    for(auto&& elem : this->audio_controls)
+    {
+        if(elem->disabled)
+            continue;
+
+        no_audio = false;
+        elem->build_audio_topology_branch(to, topology);
+    }
+
+    if(no_audio)
     {
         source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
         media_stream_t empty_stream = empty_source->create_stream();
         to->connect_streams(empty_stream, topology);
-    }
-    else if(!this->audio_controls.empty())
-    {
-        for(auto&& elem : this->audio_controls)
-            elem.second->build_audio_topology_branch(to, topology);
     }
 }
 
@@ -87,10 +92,10 @@ void control_scene2::activate(const control_set_t& last_set, control_set_t& new_
         {
             for(auto&& elem : controls)
             {
-                const bool old_disabled = elem.second->disabled;
-                elem.second->disabled = true;
-                elem.second->activate(last_set, new_set);
-                elem.second->disabled = old_disabled;
+                const bool old_disabled = elem->disabled;
+                elem->disabled = true;
+                elem->activate(last_set, new_set);
+                elem->disabled = old_disabled;
             }
         };
         f(this->video_controls);
@@ -106,41 +111,56 @@ void control_scene2::activate(const control_set_t& last_set, control_set_t& new_
 
     // activate all video/scene controls
     for(auto&& elem : this->video_controls)
-        elem.second->activate(last_set, new_set);
+        elem->activate(last_set, new_set);
     // activate all audio controls
     for(auto&& elem : this->audio_controls)
-        elem.second->activate(last_set, new_set);
+        elem->activate(last_set, new_set);
 }
 
-control_displaycapture& control_scene2::add_displaycapture()
+control_displaycapture* control_scene2::add_displaycapture(const std::wstring& name)
 {
+    bool is_video_control, found;
+    this->find_control_iterator(name, is_video_control, found);
+    if(found)
+        return NULL;
+
     control_displaycapture* ptr;
     control_class_t displaycapture_control(ptr = 
         new control_displaycapture(this->active_controls, this->pipeline));
     displaycapture_control->parent = this;
-    this->video_controls.push_back(std::make_pair(control_displaycapture::displaycapture_type_name,
-        std::move(displaycapture_control)));
-    return *ptr;
+    displaycapture_control->name = name;
+    this->video_controls.push_back(std::move(displaycapture_control));
+    return ptr;
 }
 
-control_wasapi& control_scene2::add_wasapi()
+control_wasapi* control_scene2::add_wasapi(const std::wstring& name)
 {
+    bool is_video_control, found;
+    this->find_control_iterator(name, is_video_control, found);
+    if(found)
+        return NULL;
+
     control_wasapi* ptr;
     control_class_t wasapi_control(ptr = new control_wasapi(this->active_controls, this->pipeline));
     wasapi_control->parent = this;
-    this->audio_controls.push_back(std::make_pair(control_wasapi::wasapi_type_name,
-        std::move(wasapi_control)));
-    return *ptr;
+    wasapi_control->name = name;
+    this->audio_controls.push_back(std::move(wasapi_control));
+    return ptr;
 }
 
-control_scene2& control_scene2::add_scene()
+control_scene2* control_scene2::add_scene(const std::wstring& name)
 {
+    bool is_video_control, found;
+    this->find_control_iterator(name, is_video_control, found);
+    if(found)
+        return NULL;
+
     control_scene2* ptr;
     control_class_t scene_control(ptr = new control_scene2(this->active_controls, this->pipeline));
     scene_control->parent = this;
-    this->video_controls.push_back(std::make_pair(control_scene2::scene_type_name,
-        std::move(scene_control)));
-    return *ptr;
+    scene_control->name = name;
+    this->video_controls.push_back(std::move(scene_control));
+    return ptr;
 }
 
 control_class* control_scene2::find_control(bool is_control_video, int control_index) const
@@ -149,9 +169,9 @@ control_class* control_scene2::find_control(bool is_control_video, int control_i
         return NULL;
 
     if(is_control_video)
-        return this->video_controls[control_index].second.get();
+        return this->video_controls[control_index].get();
     else
-        return this->audio_controls[control_index].second.get();
+        return this->audio_controls[control_index].get();
 }
 
 void control_scene2::switch_scene(bool is_video_control, int control_index)
@@ -161,24 +181,6 @@ void control_scene2::switch_scene(bool is_video_control, int control_index)
 
     if(new_control == old_control)
         return;
-
-    /*
-
-    switch scene:
-    for referencing to work:
-
-    new control disabled = false;
-    activate(old set, new set);
-
-    old control disabled = true;
-    activate(new set, new set 2);
-
-    build and switch topology();
-
-    if the control is disabled or initialization fails,
-    it won't be added to the new set
-
-    */
 
     control_class* root = this->get_root();
 
@@ -200,31 +202,7 @@ void control_scene2::switch_scene(bool is_video_control, int control_index)
     this->current_control_video = is_video_control;
     this->current_control = control_index;
 
-    /*this->active_controls = std::move(new_set);*/
-
     this->build_and_switch_topology();
-
-
-    //control_set_t add_set = this->active_controls, sub_set;
-    //new_control->disabled = false;
-    //new_control->activate(this->active_controls, add_set);
-
-    //old_control->disabled = true;
-    //old_control->activate(this->active_controls, sub_set);
-
-    //this->current_control_video = is_video_control;
-    //this->current_control = control_index;
-
-    //// remove subtracted set from the add set
-    //control_set_t diff_set;
-    //std::set_difference(add_set.begin(), add_set.end(),
-    //    sub_set.begin(), sub_set.end(), std::inserter(diff_set, diff_set.begin()));
-
-    //// set the diff set as the new current set
-    //this->pipeline.active_controls = std::move(diff_set);
-
-    //// build the topology
-    //this->pipeline.build_and_switch_topology();
 }
 
 void control_scene2::switch_scene(const control_scene2& new_scene)
@@ -232,7 +210,7 @@ void control_scene2::switch_scene(const control_scene2& new_scene)
     int control_index = 0;
     for(auto&& elem : this->video_controls)
     {
-        if(elem.second.get() == &new_scene)
+        if(elem.get() == &new_scene)
             break;
         control_index++;
     }
@@ -246,4 +224,27 @@ control_scene2* control_scene2::get_active_scene() const
 {
     return dynamic_cast<control_scene2*>(this->find_control(
         this->current_control_video, this->current_control));
+}
+
+control_scene2::controls_t::iterator control_scene2::find_control_iterator(
+    const std::wstring& control_name, bool& is_video_control, bool& found)
+{
+    found = true;
+
+    is_video_control = true;
+    for(auto jt = this->video_controls.begin(); jt != this->video_controls.end(); jt++)
+    {
+        if((*jt)->name == control_name)
+            return jt;
+    }
+
+    is_video_control = false;
+    for(auto jt = this->audio_controls.begin(); jt != this->audio_controls.end(); jt++)
+    {
+        if((*jt)->name == control_name)
+            return jt;
+    }
+
+    found = false;
+    return this->audio_controls.end();
 }

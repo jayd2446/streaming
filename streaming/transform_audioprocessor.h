@@ -58,7 +58,7 @@ public:
     explicit transform_audioprocessor(const media_session_t& session);
 
     void initialize(/*UINT32 sample_rate*/);
-    media_stream_t create_stream(presentation_clock_t&);
+    media_stream_t create_stream(presentation_clock_t&&);
 };
 
 typedef std::shared_ptr<transform_audioprocessor> transform_audioprocessor_t;

@@ -25,7 +25,7 @@ void transform_audiomixer::initialize()
     this->leftover_audio.sample_rate = transform_aac_encoder::sample_rate;
 }
 
-stream_audiomixer_t transform_audiomixer::create_stream(presentation_clock_t& clock)
+stream_audiomixer_t transform_audiomixer::create_stream(presentation_clock_t&& clock)
 {
     stream_audiomixer_t stream(new stream_audiomixer(this->shared_from_this<transform_audiomixer>()));
     stream->register_sink(clock);
@@ -335,7 +335,7 @@ media_stream::result_t stream_audiomixer::request_sample(request_packet& rp, con
 }
 
 media_stream::result_t stream_audiomixer::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream* prev_stream)
+    const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
     std::unique_lock<std::mutex> lock(this->mutex);
 

@@ -89,7 +89,7 @@ public:
     // software encoder flag overrides d3d device arg
     void initialize(const control_pipeline2_t&,
         const CComPtr<ID3D11Device>&, bool software = false);
-    media_stream_t create_stream(presentation_clock_t&);
+    media_stream_t create_stream(presentation_clock_t&&);
 };
 
 typedef std::shared_ptr<transform_h264_encoder> transform_h264_encoder_t;

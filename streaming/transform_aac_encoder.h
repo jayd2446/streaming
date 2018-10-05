@@ -60,7 +60,7 @@ public:
     explicit transform_aac_encoder(const media_session_t& session);
 
     void initialize(bitrate_t bitrate = rate_128);
-    media_stream_t create_stream(presentation_clock_t&);
+    media_stream_t create_stream(presentation_clock_t&&);
 };
 
 typedef std::shared_ptr<transform_aac_encoder> transform_aac_encoder_t;

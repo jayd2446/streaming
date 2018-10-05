@@ -5,12 +5,15 @@
 #include <string>
 
 class gui_sourcedlg;
+class gui_previewwnd;
 
 class gui_scenedlg :
     public CDialogImpl<gui_scenedlg>,
     public CDialogResize<gui_scenedlg>
 {
 private:
+    int scene_counter;
+
     control_pipeline2_t ctrl_pipeline;
     gui_sourcedlg& dlg_sources;
     CButton btn_addscene, btn_removescene;
@@ -50,6 +53,8 @@ class gui_sourcedlg :
     public CDialogResize<gui_sourcedlg>
 {
 private:
+    int video_counter, audio_counter;
+
     control_pipeline2_t ctrl_pipeline;
     gui_scenedlg& dlg_scenes;
     CButton btn_addsource, btn_removesource;
@@ -60,12 +65,16 @@ public:
     gui_sourcedlg(gui_scenedlg&, const control_pipeline2_t&);
 
     void set_source_tree(const control_scene2&);
+    void set_sizing_box(CTreeItem&& item);
 
     BEGIN_MSG_MAP(gui_sourcedlg)
         COMMAND_HANDLER(IDC_ADDSRC, BN_CLICKED, OnBnClickedAddsrc)
         COMMAND_HANDLER(IDC_REMOVESRC, BN_CLICKED, OnBnClickedRemovesrc)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         CHAIN_MSG_MAP(CDialogResize<gui_sourcedlg>)
+        NOTIFY_HANDLER(IDC_SOURCETREE, TVN_SELCHANGED, OnTvnSelchangedSourcetree)
+        NOTIFY_HANDLER(IDC_SOURCETREE, NM_KILLFOCUS, OnKillFocus)
+        NOTIFY_HANDLER(IDC_SOURCETREE, NM_SETFOCUS, OnSetFocus)
     END_MSG_MAP()
 
     BEGIN_DLGRESIZE_MAP(gui_scenedlg)
@@ -79,22 +88,28 @@ public:
     LRESULT OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnBnClickedRemovesrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnTvnSelchangedSourcetree(int /*idCtrl*/, LPNMHDR pNMHDR, BOOL& /*bHandled*/);
+    LRESULT OnKillFocus(int /*idCtrl*/, LPNMHDR pNMHDR, BOOL& /*bHandled*/);
+    LRESULT OnSetFocus(int /*idCtrl*/, LPNMHDR pNMHDR, BOOL& /*bHandled*/);
 };
 
 class gui_controldlg :
     public CDialogImpl<gui_controldlg>,
-    public CDialogResize<gui_controldlg>
+    public CDialogResize<gui_controldlg>,
+    public CIdleHandler
 {
 private:
     control_pipeline2_t ctrl_pipeline;
     CButton btn_start_recording;
     CHandle stop_recording_event;
+    bool stop_recording;
 public:
     enum {IDD = IDD_CTRLDLG};
 
     explicit gui_controldlg(const control_pipeline2_t&);
 
     BEGIN_MSG_MAP(gui_controldlg)
+        MSG_WM_DESTROY(OnDestroy)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         COMMAND_HANDLER(IDC_START_RECORDING, BN_CLICKED, OnBnClickedStartRecording)
         CHAIN_MSG_MAP(CDialogResize<gui_controldlg>)
@@ -104,6 +119,9 @@ public:
         DLGRESIZE_CONTROL(IDC_START_RECORDING, DLSZ_SIZE_X | DLSZ_MOVE_Y)
     END_DLGRESIZE_MAP()
 
+    void OnDestroy();
     LRESULT OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+
+    BOOL OnIdle();
 };
