@@ -12,6 +12,8 @@ typedef std::shared_ptr<std::recursive_mutex> context_mutex_t;
 class control_pipeline2;
 typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 
+// TODO: media component shouldn't know about control pipeline
+
 // TODO: sink and source component type classes probably useless
 class media_component : public virtual enable_shared_from_this
 {

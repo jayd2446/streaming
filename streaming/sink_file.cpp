@@ -122,6 +122,74 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
+void sink_file::process()
+{
+    std::unique_lock<std::mutex> lock(this->process_mutex);
+    HRESULT hr = S_OK;
+
+    if(this->video)
+    {
+        request_video_t request;
+        while(this->requests_video.pop(request))
+        {
+            if(request.sample_view.buffer)
+            {
+                for(auto&& item : request.sample_view.buffer->samples)
+                {
+                    LONGLONG timestamp;
+                    CHECK_HR(hr = item->GetSampleTime(&timestamp));
+
+                    // (software encoder returns frames slightly in wrong order,
+                    // but mediawriter seems to deal with it)
+                    if(timestamp <= this->last_timestamp && !request.sample_view.software)
+                    {
+                        std::cout << "timestamp error in sink_file::write_cb video" << std::endl;
+                        assert_(false);
+                    }
+                    this->last_timestamp = timestamp;
+
+                    this->file_output->write_sample(true, item);
+                }
+            }
+
+            lock.unlock();
+            this->session->give_sample(request.stream, request.sample_view, request.rp, false);
+            lock.lock();
+        }
+    }
+    else
+    {
+        request_audio_t request;
+        while(this->requests_audio.pop(request))
+        {
+            if(request.sample_view.buffer)
+            {
+                for(auto&& item : request.sample_view.buffer->samples)
+                {
+                    LONGLONG timestamp;
+                    CHECK_HR(hr = item->GetSampleTime(&timestamp));
+                    if(timestamp <= this->last_timestamp)
+                    {
+                        std::cout << "timestamp error in sink_file::write_cb audio" << std::endl;
+                        assert_(false);
+                    }
+                    this->last_timestamp = timestamp;
+
+                    this->file_output->write_sample(false, item);
+                }
+            }
+
+            lock.unlock();
+            this->session->give_sample(request.stream, request.sample_view, request.rp, false);
+            lock.lock();
+        }
+    }
+
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
+}
+
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
@@ -163,19 +231,19 @@ media_stream::result_t stream_file::process_sample(
         // add the new sample to queue and drop oldest sample if the queue is full
         sink_file::scoped_lock lock(this->sink->requests_mutex);
         this->sink->requests_video.push(request);
-        this->sink->requests++;
-        while(this->sink->requests > sink_file::max_queue_depth)
-        {
-            sink_file::request_video_t request;
-            if(!this->sink->requests_video.pop(request))
-                break;
-            this->sink->requests--;
-            std::cout << "------video output sample dropped------" << std::endl;
-        }
+        //this->sink->requests++;
+        //while(this->sink->requests > sink_file::max_queue_depth)
+        //{
+        //    sink_file::request_video_t request;
+        //    if(!this->sink->requests_video.pop(request))
+        //        break;
+        //    this->sink->requests--;
+        //    std::cout << "------video output sample dropped------" << std::endl;
+        //}
 
-        // add to work queue if the max queue depth isn't exceeded
-        if(this->sink->requests <= sink_file::max_queue_depth)
-            CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
+        //// add to work queue if the max queue depth isn't exceeded
+        //if(this->sink->requests <= sink_file::max_queue_depth)
+        //    CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
     }
     else
     {
@@ -190,22 +258,24 @@ media_stream::result_t stream_file::process_sample(
         // add the new sample to queue and drop oldest sample if the queue is full
         sink_file::scoped_lock lock(this->sink->requests_mutex);
         this->sink->requests_audio.push(request);
-        this->sink->requests++;
-        while(this->sink->requests > sink_file::max_queue_depth)
-        {
-            sink_file::request_audio_t request;
-            if(!this->sink->requests_audio.pop(request))
-                break;
-            this->sink->requests--;
-            std::cout << "------audio output sample dropped------" << std::endl;
-        }
+        //this->sink->requests++;
+        //while(this->sink->requests > sink_file::max_queue_depth)
+        //{
+        //    sink_file::request_audio_t request;
+        //    if(!this->sink->requests_audio.pop(request))
+        //        break;
+        //    this->sink->requests--;
+        //    std::cout << "------audio output sample dropped------" << std::endl;
+        //}
 
-        // add to work queue if the max queue depth isn't exceeded
-        if(this->sink->requests <= sink_file::max_queue_depth)
-            CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
+        //// add to work queue if the max queue depth isn't exceeded
+        //if(this->sink->requests <= sink_file::max_queue_depth)
+        //    CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
     }
 
-    this->sink->session->give_sample(this, sample, rp, false);
+    this->sink->process();
+
+    /*this->sink->session->give_sample(this, sample, rp, false);*/
 
 done:
     if(FAILED(hr))

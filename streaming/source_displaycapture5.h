@@ -29,7 +29,7 @@ class source_displaycapture5 : public media_source
     friend class stream_displaycapture5_pointer;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
+    typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
 private:
     control_pipeline2_t ctrl_pipeline;
 
@@ -43,13 +43,10 @@ private:
     CComPtr<ID3D11Texture2D> stage_src, stage_dst;
     UINT output_index;
 
-    std::shared_ptr<std::recursive_mutex> available_samples_mutex, available_pointer_samples_mutex;
-    samples_pool available_samples, available_pointer_samples;
+    std::shared_ptr<buffer_pool> available_samples, available_pointer_samples;
     media_buffer_texture_t newest_buffer, newest_pointer_buffer;
 
     std::recursive_mutex capture_frame_mutex;
-    /*media_buffer_lockable_texture_t newest_buffer, newest_pointer_buffer;*/
-    /*media_buffer_pointer_shape_t newest_pointer_buffer;*/
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
     std::vector<BYTE> pointer_buffer;
     DXGI_OUTDUPL_POINTER_SHAPE_INFO pointer_shape_info;

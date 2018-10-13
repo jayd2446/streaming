@@ -18,6 +18,7 @@ class transform_color_converter : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
+    typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
 private:
     control_pipeline2_t ctrl_pipeline;
 
@@ -26,8 +27,7 @@ private:
     CComPtr<ID3D11VideoContext> videocontext;
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
 
-    std::shared_ptr<std::recursive_mutex> available_samples_mutex;
-    samples_pool available_samples;
+    std::shared_ptr<buffer_pool> texture_pool;
 
     context_mutex_t context_mutex;
 public:

@@ -32,10 +32,8 @@ source_displaycapture5::source_displaycapture5(
     media_source(session),
     newest_buffer(new media_buffer_texture),
     newest_pointer_buffer(new media_buffer_texture),
-    available_samples_mutex(new std::recursive_mutex),
-    available_pointer_samples_mutex(new std::recursive_mutex),
-    available_samples(new std::stack<media_buffer_pooled_texture_t>),
-    available_pointer_samples(new std::stack<media_buffer_pooled_texture_t>),
+    available_samples(new buffer_pool),
+    available_pointer_samples(new buffer_pool),
     context_mutex(context_mutex),
     output_index((UINT)-1),
     same_device(false),
@@ -53,14 +51,14 @@ source_displaycapture5::~source_displaycapture5()
     {
         std::atomic_exchange(&this->newest_buffer, media_buffer_texture_t());
 
-        scoped_lock lock(*this->available_samples_mutex);
-        std::stack<media_buffer_pooled_texture_t>().swap(*this->available_samples);
+        buffer_pool::scoped_lock lock(this->available_samples->mutex);
+        this->available_samples->dispose();
     }
     {
         std::atomic_exchange(&this->newest_pointer_buffer, media_buffer_texture_t());
 
-        scoped_lock lock(*this->available_pointer_samples_mutex);
-        std::stack<media_buffer_pooled_texture_t>().swap(*this->available_pointer_samples);
+        buffer_pool::scoped_lock lock(this->available_pointer_samples->mutex);
+        this->available_pointer_samples->dispose();
     }
 }
 
@@ -457,37 +455,36 @@ void stream_displaycapture5::capture_frame_cb(void*)
     media_sample_videoprocessor sample;
     media_sample_videoprocessor pointer_sample;
     {
-        scoped_lock lock(*this->source->available_samples_mutex);
-        if(this->source->available_samples->empty())
+        source_displaycapture5::buffer_pool::scoped_lock lock(this->source->available_samples->mutex);
+        if(this->source->available_samples->container.empty())
         {
             media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
-                this->source->available_samples,
-                this->source->available_samples_mutex));
+                this->source->available_samples));
             sample.buffer = pooled_buffer->create_pooled_buffer();
             /*std::cout << "creating new..." << std::endl;*/
         }
         else
         {
-            sample.buffer = this->source->available_samples->top()->create_pooled_buffer();
-            this->source->available_samples->pop();
+            sample.buffer = this->source->available_samples->container.top()->create_pooled_buffer();
+            this->source->available_samples->container.pop();
             /*std::cout << "reusing..." << std::endl;*/
         }
     }
     {
-        scoped_lock lock(*this->source->available_pointer_samples_mutex);
-        if(this->source->available_pointer_samples->empty())
+        source_displaycapture5::buffer_pool::scoped_lock 
+            lock(this->source->available_pointer_samples->mutex);
+        if(this->source->available_pointer_samples->container.empty())
         {
             media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
-                this->source->available_pointer_samples,
-                this->source->available_pointer_samples_mutex));
+                this->source->available_pointer_samples));
             pointer_sample.buffer = pooled_buffer->create_pooled_buffer();
             /*std::cout << "creating new..." << std::endl;*/
         }
         else
         {
             pointer_sample.buffer = 
-                this->source->available_pointer_samples->top()->create_pooled_buffer();
-            this->source->available_pointer_samples->pop();
+                this->source->available_pointer_samples->container.top()->create_pooled_buffer();
+            this->source->available_pointer_samples->container.pop();
             /*std::cout << "reusing..." << std::endl;*/
         }
     }

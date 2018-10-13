@@ -31,6 +31,8 @@ void gui_previewwnd::OnLButtonUp(UINT nFlags, CPoint point)
 
 void gui_previewwnd::OnMouseMove(UINT nFlags, CPoint point)
 {
+    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+
     if(!this->ctrl_pipeline->get_preview_window())
         return;
 

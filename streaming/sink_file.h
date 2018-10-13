@@ -23,7 +23,7 @@ private:
     output_file_t file_output;
     request_queue_video requests_video;
     request_queue_audio requests_audio;
-    std::mutex requests_mutex;
+    std::mutex requests_mutex, process_mutex;
     DWORD work_queue_id;
     bool video;
     int requests;
@@ -32,6 +32,7 @@ private:
 
     CComPtr<async_callback_t> write_callback;
     void write_cb(void*);
+    void process();
 public:
     explicit sink_file(const media_session_t& session);
     ~sink_file();

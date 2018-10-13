@@ -116,11 +116,12 @@ void gui_sourcedlg::set_source_tree(const control_scene2& scene)
 
 void gui_sourcedlg::set_sizing_box(CTreeItem&& item)
 {
+    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+
     if(!item.IsNull())
     {
         CString str;
         item.GetText(str);
-        std::wcout << str.GetBuffer() << std::endl;
 
         bool is_video_control, found;
         control_scene2* active_scene = this->ctrl_pipeline->root_scene.get_active_scene();

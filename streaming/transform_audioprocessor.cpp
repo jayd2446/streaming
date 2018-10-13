@@ -137,7 +137,7 @@ void transform_audioprocessor::resample(
     HRESULT hr = S_OK;
     CComPtr<IMFSample> out_sample;
     CComPtr<IMFMediaBuffer> out_buffer;
-    auto reset_sample = [&, this]()
+    auto reset_sample = [&]()
     {
         HRESULT hr = S_OK;
         DWORD buflen, max_len;
@@ -172,7 +172,7 @@ void transform_audioprocessor::resample(
         if(FAILED(hr))
             throw HR_EXCEPTION(hr);
     };
-    auto process_sample = [&, this]()
+    auto process_sample = [&]()
     {
         // set the new duration and timestamp for the out sample
         CComPtr<IMFMediaBuffer> buffer;
@@ -200,7 +200,7 @@ void transform_audioprocessor::resample(
     done:
         return hr;
     };
-    auto drain_all = [&, this]()
+    auto drain_all = [&]()
     {
         std::cout << "drain on audioprocessor" << std::endl;
 

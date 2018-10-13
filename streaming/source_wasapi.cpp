@@ -225,6 +225,7 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
+// TODO: the buffer of source wasapi shouldn't just grow indefinitely
 void source_wasapi::process_cb(void*)
 {
     HRESULT hr = S_OK;

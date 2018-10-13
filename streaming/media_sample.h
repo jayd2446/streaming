@@ -40,7 +40,7 @@ enum class buffer_lock_t
 };
 
 template<typename Buffer>
-class media_buffer_trackable : public Buffer, public enable_shared_from_this
+class media_buffer_trackable : public Buffer, public virtual enable_shared_from_this
 {
 public:
     typedef Buffer buffer_raw_t;
@@ -74,38 +74,69 @@ media_buffer_trackable<T>::create_tracked_buffer()
     return buffer_t(this, deleter_f);
 }
 
+template<typename PooledBuffer>
+class buffer_pool
+{
+public:
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef PooledBuffer pooled_buffer_t;
+    typedef std::stack<std::shared_ptr<pooled_buffer_t>> buffer_pool_t;
+private:
+    volatile bool disposed;
+public:
+    buffer_pool();
+
+    // mutex must be locked when using buffer_pool methods
+    std::recursive_mutex mutex;
+    buffer_pool_t container;
+
+    // the pool must be manually disposed;
+    // it breaks the circular dependency between the pool and its objects;
+    // failure to dispose causes memory leak
+    void dispose();
+    bool is_disposed() const {return this->disposed;}
+};
+
+template<typename T>
+buffer_pool<T>::buffer_pool() : disposed(false)
+{
+}
+
+template<typename T>
+void buffer_pool<T>::dispose()
+{
+    assert_(!this->disposed);
+    this->disposed = true;
+    buffer_pool_t().swap(this->container);
+}
+
 template<typename Buffer>
 class media_buffer_pooled : public media_buffer_trackable<Buffer>
 {
 public:
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef std::shared_ptr<std::stack<std::shared_ptr<media_buffer_pooled>>> samples_pool;
+    typedef buffer_pool<media_buffer_pooled> buffer_pool;
 private:
-    std::shared_ptr<std::recursive_mutex> available_samples_mutex;
-    samples_pool available_samples;
-
+    std::shared_ptr<buffer_pool> pool;
     void on_delete();
 public:
-    media_buffer_pooled(const samples_pool&, const std::shared_ptr<std::recursive_mutex>&);
+    explicit media_buffer_pooled(const std::shared_ptr<buffer_pool>& pool);
     buffer_t create_pooled_buffer();
 };
 
 template<typename T>
-media_buffer_pooled<T>::media_buffer_pooled(
-    const samples_pool& available_samples,
-    const std::shared_ptr<std::recursive_mutex>& available_samples_mutex) :
-    available_samples(available_samples), available_samples_mutex(available_samples_mutex)
+media_buffer_pooled<T>::media_buffer_pooled(const std::shared_ptr<buffer_pool>& pool) :
+    pool(pool)
 {
 }
 
 template<typename T>
 void media_buffer_pooled<T>::on_delete()
 {
-    // TODO: pushing to a container might introduce a cyclic dependency situation
-
-    // move the buffer back to sample pool
-    scoped_lock lock(*this->available_samples_mutex);
-    this->available_samples->push(this->shared_from_this<media_buffer_pooled>());
+    // move the buffer back to sample pool if the pool isn't disposed yet;
+    // otherwise, this object will be destroyed after the std bind releases the last reference
+    buffer_pool::scoped_lock lock(this->pool->mutex);
+    if(!this->pool->is_disposed())
+        this->pool->container.push(this->shared_from_this<media_buffer_pooled>());
 }
 
 template<typename T>

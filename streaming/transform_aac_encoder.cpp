@@ -58,7 +58,7 @@ void transform_aac_encoder::processing_cb(void*)
         done:
             return hr;
         };
-        auto drain_all = [&, this]()
+        auto drain_all = [&]()
         {
             std::cout << "drain on aac encoder" << std::endl;
 

@@ -14,18 +14,18 @@
 
 transform_color_converter::transform_color_converter(
     const media_session_t& session, context_mutex_t context_mutex) :
-    media_source(session), context_mutex(context_mutex),
-    available_samples_mutex(new std::recursive_mutex),
-    available_samples(new std::stack<media_buffer_pooled_texture_t>)
+    media_source(session),
+    texture_pool(new buffer_pool),
+    context_mutex(context_mutex)
 {
 }
 
 transform_color_converter::~transform_color_converter()
 {
-    // clear the container so that the cyclic dependency between the container and its
+    // dispose the pool so that the cyclic dependency between the wrapped container and its
     // elements is broken
-    scoped_lock lock(*this->available_samples_mutex);
-    std::stack<media_buffer_pooled_texture_t>().swap(*this->available_samples);
+    buffer_pool::scoped_lock lock(this->texture_pool->mutex);
+    this->texture_pool->dispose();
 }
 
 HRESULT transform_color_converter::initialize(
@@ -145,21 +145,20 @@ void stream_color_converter::processing_cb(void*)
     // get output buffer from the pool or create a new one
     media_buffer_texture_t output_buffer;
     {
-        scoped_lock lock(*this->transform->available_samples_mutex);
-        if(this->transform->available_samples->empty())
+        transform_color_converter::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
+        if(this->transform->texture_pool->container.empty())
         {
             // create new buffer
             media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
-                this->transform->available_samples,
-                this->transform->available_samples_mutex));
+                this->transform->texture_pool));
             output_buffer = pooled_buffer->create_pooled_buffer();
             this->initialize_buffer(output_buffer);
             /*std::cout << "creating new..." << std::endl;*/
         }
         else
         {
-            output_buffer = this->transform->available_samples->top()->create_pooled_buffer();
-            this->transform->available_samples->pop();
+            output_buffer = this->transform->texture_pool->container.top()->create_pooled_buffer();
+            this->transform->texture_pool->container.pop();
             /*std::cout << "reusing..." << std::endl;*/
         }
     }
