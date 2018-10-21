@@ -56,7 +56,4 @@ public:
         const std::wstring& control_name,
         bool& is_video_control,
         bool& found);
-
-    /*void reactivate();*/
-    /*bool is_activated() const;*/
 };

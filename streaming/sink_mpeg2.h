@@ -32,6 +32,7 @@ public:
     typedef async_callback<sink_mpeg2> async_callback_t;
 private:
     std::recursive_mutex topology_switch_mutex;
+    bool started;
 
     media_session_t audio_session;
     media_topology_t pending_audio_topology;
@@ -53,6 +54,8 @@ public:
 
     stream_mpeg2_t create_stream(presentation_clock_t&&, const stream_audio_t&);
     stream_mpeg2_worker_t create_worker_stream();
+
+    bool is_started() const {return this->started;}
 };
 
 class stream_mpeg2 : public media_stream_clock_sink, public presentation_clock_sink

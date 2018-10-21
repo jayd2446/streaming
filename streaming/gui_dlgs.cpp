@@ -349,7 +349,8 @@ LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*w
 
         if(!this->ctrl_pipeline->is_recording())
         {
-            this->stop_recording_event = this->ctrl_pipeline->start_recording(L"test.mp4");
+            this->stop_recording_event.Close();
+            this->stop_recording_event.Attach(this->ctrl_pipeline->start_recording(L"test.mp4"));
             this->btn_start_recording.SetWindowTextW(L"Stop Recording");
         }
         else

@@ -7,17 +7,6 @@
 
 #define INVALID_PACKET_NUMBER -1
 
-// TODO: audio discard might not be needed anymore because
-// the audio mixer takes care of consecutive audio samples
-
-//// used to set source_loopback to discard all samples that have timestamp
-//// below the request_time
-//#define AUDIO_DISCARD_PREVIOUS_SAMPLES 0x1
-//// drains audio mixer, resampler and source wasapi
-//#define STREAM_DRAIN 0x2
-//// drains encoders and master audio mixer
-//#define STREAM_FINALIZE 0x4
-
 // indicates a gap in the stream
 #define FLAG_DISCONTINUITY 0x1
 
@@ -25,8 +14,6 @@
 // request packets allow for seamless topology switching;
 // the old topology stays alive for as long as the request packet
 // is alive
-// TODO: remove flags field because it's not usable at the current state;
-// for flags to be viable, the topology switching mechanism needs to be reworked
 struct request_packet
 {
     media_topology_t topology;

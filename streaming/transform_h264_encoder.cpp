@@ -571,7 +571,7 @@ void transform_h264_encoder::process_input_cb(void*)
     this->processing_cb(NULL);
 }
 
-void transform_h264_encoder::initialize(const control_pipeline2_t& ctrl_pipeline,
+void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
     const CComPtr<ID3D11Device>& d3d11dev, bool software)
 {
     HRESULT hr = S_OK;

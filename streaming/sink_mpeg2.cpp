@@ -12,7 +12,8 @@
 
 sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& audio_session) : 
     media_sink(session),
-    audio_session(audio_session)
+    audio_session(audio_session),
+    started(false)
 {
 }
 
@@ -29,6 +30,9 @@ void sink_mpeg2::switch_topologies(
     const media_topology_t& audio_topology)
 {
     scoped_lock lock(this->topology_switch_mutex);
+
+    assert_(this->is_started());
+
     this->session->switch_topology(video_topology);
     this->pending_audio_topology = audio_topology;
 }
@@ -40,11 +44,12 @@ void sink_mpeg2::start_topologies(
 {
     scoped_lock lock(this->topology_switch_mutex);
 
-    /*assert_(!this->session->started());
-    assert_(!this->audio_session->started());*/
+    assert_(!this->is_started());
 
     this->session->start_playback(video_topology, t);
     this->audio_session->start_playback(audio_topology, t);
+
+    this->started = true;
 }
 
 stream_mpeg2_t sink_mpeg2::create_stream(

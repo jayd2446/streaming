@@ -48,7 +48,7 @@ public:
     typedef request_queue<empty> request_queue;
     typedef request_queue::request_t request_t;
 private:
-    control_pipeline2_t ctrl_pipeline;
+    control_class_t ctrl_pipeline;
 
     CComPtr<IAudioClient> audio_client, audio_client_render;
     CComPtr<IAudioCaptureClient> audio_capture_client;
@@ -95,7 +95,7 @@ public:
     ~source_wasapi();
 
     void initialize(
-        const control_pipeline2_t&,
+        const control_class_t&,
         const std::wstring& device_id, bool capture);
     media_stream_t create_stream();
 };

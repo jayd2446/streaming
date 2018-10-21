@@ -4,6 +4,7 @@
 
 void maybe_assert(bool expr)
 {
+    expr;
     /*assert_(expr);*/
 }
 

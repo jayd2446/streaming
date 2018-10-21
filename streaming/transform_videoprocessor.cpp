@@ -26,7 +26,7 @@ transform_videoprocessor::transform_videoprocessor(
 }
 
 void transform_videoprocessor::initialize(
-    const control_pipeline2_t& ctrl_pipeline,
+    const control_class_t& ctrl_pipeline,
     const CComPtr<ID3D11Device>& d3d11dev, 
     const CComPtr<ID3D11DeviceContext>& devctx)
 {

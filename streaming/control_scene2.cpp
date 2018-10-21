@@ -7,7 +7,7 @@
 #define INVALID_CONTROL_INDEX -1
 
 control_scene2::control_scene2(control_set_t& active_controls, control_pipeline2& pipeline) :
-    control_class(active_controls),
+    control_class(active_controls, pipeline.mutex),
     pipeline(pipeline),
     current_control_video(true),
     current_control(INVALID_CONTROL_INDEX)

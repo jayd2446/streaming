@@ -31,7 +31,7 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
 private:
-    control_pipeline2_t ctrl_pipeline;
+    control_class_t ctrl_pipeline;
 
     CComPtr<IDXGIOutput5> output;
     CComPtr<IDXGIOutputDuplication> output_duplication;
@@ -91,13 +91,13 @@ public:
     // currently displaycapture initialization never fails;
     // uses the d3d11 device for capturing that is used in the pipeline
     void initialize(
-        const control_pipeline2_t&,
+        const control_class_t&,
         UINT output_index, 
         const CComPtr<ID3D11Device>&,
         const CComPtr<ID3D11DeviceContext>&);
     // creates a d3d11 device that is bound to the adapter index
     void initialize(
-        const control_pipeline2_t&,
+        const control_class_t&,
         UINT adapter_index,
         UINT output_index, 
         const CComPtr<IDXGIFactory1>&,

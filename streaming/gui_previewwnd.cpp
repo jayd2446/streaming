@@ -18,18 +18,18 @@ LRESULT gui_previewwnd::OnSize(UINT /*nType*/, CSize /*Extent*/)
     return 0;
 }
 
-void gui_previewwnd::OnLButtonDown(UINT nFlags, CPoint point)
+void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
 {
     this->last_pos = point;
     this->dragging = true;
 }
 
-void gui_previewwnd::OnLButtonUp(UINT nFlags, CPoint point)
+void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint /*point*/)
 {
     this->dragging = false;
 }
 
-void gui_previewwnd::OnMouseMove(UINT nFlags, CPoint point)
+void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 {
     control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
 

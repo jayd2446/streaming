@@ -394,7 +394,7 @@ done:
     return hr;
 }
 
-void source_wasapi::initialize(const control_pipeline2_t& ctrl_pipeline,
+void source_wasapi::initialize(const control_class_t& ctrl_pipeline,
     const std::wstring& device_id, bool capture)
 {
     HRESULT hr = S_OK;

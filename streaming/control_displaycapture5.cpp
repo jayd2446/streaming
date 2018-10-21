@@ -5,7 +5,7 @@
 
 control_displaycapture::control_displaycapture(control_set_t& active_controls, 
     control_pipeline2& pipeline) :
-    control_class(active_controls),
+    control_class(active_controls, pipeline.mutex),
     pipeline(pipeline),
     reference(NULL)
 {

@@ -106,7 +106,7 @@ int main()
             RECT r = {CW_USEDEFAULT, CW_USEDEFAULT, 
                 CW_USEDEFAULT + WINDOW_WIDTH, CW_USEDEFAULT + WINDOW_HEIGHT};
             if(wnd.CreateEx(NULL, &r) == NULL)
-                throw HR_EXCEPTION(hr);
+                throw HR_EXCEPTION(E_UNEXPECTED);
             wnd.ShowWindow(SW_SHOW);
             wnd.UpdateWindow();
             int ret = msgloop.Run();

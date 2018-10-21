@@ -208,7 +208,12 @@
     <ClCompile Include="source_wasapi.cpp" />
     <ClCompile Include="source_empty.cpp" />
     <ClCompile Include="transform_aac_encoder.cpp" />
-    <ClCompile Include="transform_audiomix.cpp" />
+    <ClCompile Include="transform_audiomix.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="transform_audiomixer.cpp" />
     <ClCompile Include="transform_audioprocessor.cpp" />
     <ClCompile Include="transform_color_converter.cpp">
@@ -268,7 +273,12 @@
     <ClInclude Include="source_empty.h" />
     <ClInclude Include="stream_worker.h" />
     <ClInclude Include="transform_aac_encoder.h" />
-    <ClInclude Include="transform_audiomix.h" />
+    <ClInclude Include="transform_audiomix.h">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClInclude>
     <ClInclude Include="transform_audiomixer.h" />
     <ClInclude Include="transform_audioprocessor.h" />
     <ClInclude Include="transform_color_converter.h">

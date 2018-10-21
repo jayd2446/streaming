@@ -20,7 +20,7 @@ public:
     typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
 private:
-    control_pipeline2_t ctrl_pipeline;
+    control_class_t ctrl_pipeline;
 
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11VideoDevice> videodevice;
@@ -34,7 +34,7 @@ public:
     transform_color_converter(const media_session_t& session, context_mutex_t context_mutex);
     ~transform_color_converter();
 
-    HRESULT initialize(const control_pipeline2_t&,
+    HRESULT initialize(const control_class_t&,
         const CComPtr<ID3D11Device>&, ID3D11DeviceContext* devctx);
     media_stream_t create_stream();
 };

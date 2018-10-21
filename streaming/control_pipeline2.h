@@ -26,16 +26,14 @@
 
 typedef std::pair<sink_file_t, sink_file_t> sink_mp4_t;
 
-class control_pipeline2 : public control_class, public enable_shared_from_this
+class control_pipeline2 : public control_class
 {
     friend class control_scene2;
-public:
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    bool running;
-    bool recording;
+    bool recording, initialized;
     HWND preview_hwnd;
     CHandle stopped_signal;
+    std::recursive_mutex pipeline_mutex;
 
     presentation_time_source_t time_source;
     media_topology_t video_topology, audio_topology;
@@ -66,16 +64,11 @@ public:
     CComPtr<ID3D11DeviceContext> devctx;
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
-
-    // the mutex must be locked before using any of the pipeline/scene functions;
-    // all locks should be cleared before locking this, and nothing that may
-    // lock should be called while holding this mutex
-    std::recursive_mutex mutex;
     control_scene2 root_scene;
 
     control_pipeline2();
 
-    bool is_running() const {return this->running;}
+    bool is_running() const {return this->initialized;}
     bool is_recording() const {return this->recording;}
 
     void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
@@ -85,12 +78,12 @@ public:
     void update_preview_size() {this->preview_sink->update_size();}
 
     // returns an event handle that is signalled when the recording is ended
-    CHandle start_recording(const std::wstring& filename);
+    HANDLE start_recording(const std::wstring& filename);
     void stop_recording();
 
     // releases all circular dependencies;
-    // same as calling deactivate
-    void shutdown() {this->deactivate();}
+    // pipeline cannot be activated after shutting down
+    void shutdown() {this->disable();}
 };
 
 typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;

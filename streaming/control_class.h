@@ -2,15 +2,17 @@
 #include "media_stream.h"
 #include "media_topology.h"
 #include "media_session.h"
+#include "enable_shared_from_this.h"
 #include <string>
 #include <memory>
 #include <deque>
+#include <mutex>
 //#include <functional>
 
 class control_pipeline2;
 class control_scene2;
 class control_class;
-typedef std::unique_ptr<control_class> control_class_t;
+typedef std::shared_ptr<control_class> control_class_t;
 
 //enum control_common_type : int
 //{
@@ -41,9 +43,11 @@ reactivate itself if the component needs to be reinitialized
 
 typedef std::deque<control_class*> control_set_t;
 
-class control_class
+class control_class : public enable_shared_from_this
 {
     friend class control_scene2;
+public:
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 protected:
     control_class* parent;
     control_set_t& active_controls;
@@ -65,15 +69,20 @@ protected:
     // activate function can throw;
     // activate function searches the last set for a component and the new set
     // for a control reference;
-    // activate must add itself to the new control set if it is succesfully activated
+    // activate must add itself to the new control set if it is succesfully activated;
+    // deactivation also breaks a possible circular dependency between the control and its component
     virtual void activate(const control_set_t& last_set, control_set_t& new_set) = 0;
 
-    explicit control_class(control_set_t& active_controls);
+    control_class(control_set_t& active_controls, std::recursive_mutex& mutex);
 public:
     // name uniquely identifies a control
     std::wstring name;
-    /*const std::wstring type_name;
-    const control_common_type type;*/
+
+    // pipeline control class allocates this mutex;
+    // the mutex must be locked before using any of the control class functions;
+    // all locks should be cleared before locking this, and nothing that may
+    // lock should be called while holding this mutex
+    std::recursive_mutex& mutex;
 
     virtual ~control_class() {}
 
@@ -85,12 +94,9 @@ public:
 
     // (re)activates the whole tree and builds the topology
     void activate();
-    void deactivate() {this->disabled = true; this->activate(); this->disabled = false;}
-    void disable() {this->disabled = true; this->activate();}
+    void deactivate();
+    void disable();
 
     control_class* get_root();
-
-    // is activated checks whether the encapsulated component is non-null
-    /*virtual bool is_activated() const = 0;*/
     bool is_disabled() const {return this->disabled;}
 };
