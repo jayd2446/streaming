@@ -2,7 +2,7 @@
 #include "async_callback.h"
 #include "media_sink.h"
 #include "media_stream.h"
-#include "transform_videoprocessor.h"
+#include "transform_videoprocessor2.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <d2d1_1.h>
@@ -24,7 +24,7 @@ private:
     context_mutex_t context_mutex;
 
     std::atomic_bool render;
-    stream_videoprocessor_controller_t size_box;
+    stream_videoprocessor2_controller_t size_box;
 
     HWND hwnd;
     UINT width, height;
@@ -45,12 +45,16 @@ public:
     sink_preview2(const media_session_t& session, context_mutex_t context_mutex);
 
     // initializes the window
-    void initialize(HWND, CComPtr<ID3D11Device>&);
+    void initialize(
+        HWND, 
+        const CComPtr<ID2D1Device>&,
+        const CComPtr<ID3D11Device>&, 
+        const CComPtr<ID2D1Factory1>&);
     media_stream_t create_stream();
 
     void set_state(bool render) {this->render = render;}
-    void set_size_box(const stream_videoprocessor_controller_t& new_box);
-    stream_videoprocessor_controller_t get_size_box() const {return std::atomic_load(&this->size_box);}
+    void set_size_box(const stream_videoprocessor2_controller_t& new_box);
+    stream_videoprocessor2_controller_t get_size_box() const {return std::atomic_load(&this->size_box);}
     void update_size();
 };
 

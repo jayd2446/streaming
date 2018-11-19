@@ -13,10 +13,14 @@ sink_preview2::sink_preview2(const media_session_t& session, context_mutex_t con
 
 void sink_preview2::initialize(
     HWND hwnd, 
-    CComPtr<ID3D11Device>& d3d11dev)
+    const CComPtr<ID2D1Device>& d2d1dev,
+    const CComPtr<ID3D11Device>& d3d11dev,
+    const CComPtr<ID2D1Factory1>& d2d1factory)
 {
     this->hwnd = hwnd;
     this->d3d11dev = d3d11dev;
+    this->d2d1factory = d2d1factory;
+    this->d2d1dev = d2d1dev;
 
     HRESULT hr = S_OK;
 
@@ -31,16 +35,13 @@ void sink_preview2::initialize(
 
     scoped_lock lock(*this->context_mutex);
 
-    // create d2d factory
-    CHECK_HR(hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &this->d2d1factory));
-
     // obtain the dxgi device of the d3d11 device
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->dxgidev));
 
-    // obtain the direct2d device
-    CHECK_HR(hr = this->d2d1factory->CreateDevice(this->dxgidev, &this->d2d1dev));
+    //// obtain the direct2d device
+    //CHECK_HR(hr = this->d2d1factory->CreateDevice(this->dxgidev, &this->d2d1dev));
 
-    // get the direct2d device context
+    // create a direct2d device context
     CHECK_HR(hr = this->d2d1dev->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &this->d2d1devctx));
 
     // create swap chain for the hwnd
@@ -114,8 +115,8 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 
     const media_sample_texture& sample_view =
         reinterpret_cast<const media_sample_texture&>(sample_view_);
-    stream_videoprocessor_controller_t size_box = std::atomic_load(&this->size_box);
-    stream_videoprocessor_controller::params_t params = {0};
+    stream_videoprocessor2_controller_t size_box = std::atomic_load(&this->size_box);
+    stream_videoprocessor2_controller::params_t params = {0};
     if(size_box)
         size_box->get_params(params);
 
@@ -146,16 +147,16 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
         {
             box_rect.left = (FLOAT)params.dest_rect.left *
                 (rect.right - rect.left) /
-                (FLOAT)transform_videoprocessor::canvas_width;
+                (FLOAT)transform_videoprocessor2::canvas_width;
             box_rect.top = (FLOAT)params.dest_rect.top *
                 (rect.bottom - rect.top) /
-                (FLOAT)transform_videoprocessor::canvas_height;
+                (FLOAT)transform_videoprocessor2::canvas_height;
             box_rect.right = (FLOAT)params.dest_rect.right *
                 (rect.right - rect.left) /
-                (FLOAT)transform_videoprocessor::canvas_width;
+                (FLOAT)transform_videoprocessor2::canvas_width;
             box_rect.bottom = (FLOAT)params.dest_rect.bottom *
                 (rect.bottom - rect.top) /
-                (FLOAT)transform_videoprocessor::canvas_height;
+                (FLOAT)transform_videoprocessor2::canvas_height;
 
             box_rect.left += rect.left;
             box_rect.top += rect.top;
@@ -205,7 +206,7 @@ media_stream_t sink_preview2::create_stream()
     return stream_preview2_t(new stream_preview2(this->shared_from_this<sink_preview2>()));
 }
 
-void sink_preview2::set_size_box(const stream_videoprocessor_controller_t& new_box)
+void sink_preview2::set_size_box(const stream_videoprocessor2_controller_t& new_box)
 {
     std::atomic_exchange(&this->size_box, new_box);
 }

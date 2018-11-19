@@ -1,11 +1,14 @@
 #include "control_pipeline2.h"
 #include <iostream>
 #include <d3d11_4.h>
+#include <d2d1_2.h>
 
 #ifdef _DEBUG
 #define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG
+#define CREATE_DEVICE_DEBUG_D2D1 D2D1_DEBUG_LEVEL_INFORMATION
 #else
 #define CREATE_DEVICE_DEBUG 0
+#define CREATE_DEVICE_DEBUG_D2D1 D2D1_DEBUG_LEVEL_NONE
 #endif
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
@@ -34,6 +37,7 @@ control_pipeline2::control_pipeline2() :
     D3D_FEATURE_LEVEL feature_level;
     CComPtr<ID3D11Multithread> multithread;
     BOOL was_protected;
+    D2D1_FACTORY_OPTIONS d2d1_options;
 
     CHECK_HR(hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&this->dxgifactory));
     CHECK_HR(hr = this->dxgifactory->EnumAdapters1(this->d3d11dev_adapter, &dxgiadapter));
@@ -49,6 +53,17 @@ control_pipeline2::control_pipeline2() :
     // context was being corrupted
     CHECK_HR(hr = this->devctx->QueryInterface(&multithread));
     was_protected = multithread->SetMultithreadProtected(TRUE);
+
+    // get the dxgi device
+    CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->dxgidev));
+
+    // create d2d1 factory
+    d2d1_options.debugLevel = CREATE_DEVICE_DEBUG_D2D1;
+    CHECK_HR(hr = 
+        D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, d2d1_options, &this->d2d1factory));
+
+    // create d2d1 device
+    CHECK_HR(hr = this->d2d1factory->CreateDevice(this->dxgidev, &this->d2d1dev));
 
     std::cout << "adapter " << this->d3d11dev_adapter << std::endl;
 
@@ -102,9 +117,10 @@ void control_pipeline2::activate_components()
     if(!this->videoprocessor_transform ||
         this->videoprocessor_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
-        transform_videoprocessor_t videoprocessor_transform(
-            new transform_videoprocessor(this->session, this->context_mutex));
+        transform_videoprocessor2_t videoprocessor_transform(
+            new transform_videoprocessor2(this->session, this->context_mutex));
         videoprocessor_transform->initialize(this->shared_from_this<control_class>(),
+            this->d2d1factory, this->d2d1dev,
             this->d3d11dev, this->devctx);
 
         this->videoprocessor_transform = videoprocessor_transform;
@@ -172,7 +188,8 @@ void control_pipeline2::activate_components()
         this->preview_sink->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
         sink_preview2_t preview_sink(new sink_preview2(this->session, this->context_mutex));
-        preview_sink->initialize(this->preview_hwnd, this->d3d11dev);
+        preview_sink->initialize(this->preview_hwnd,
+            this->d2d1dev, this->d3d11dev, this->d2d1factory);
 
         this->preview_sink = preview_sink;
     }
@@ -318,7 +335,7 @@ void control_pipeline2::build_and_switch_topology()
         stream_audio_worker_t audio_worker_stream = this->audio_sink->create_worker_stream();
         media_stream_t audiomixer_stream = this->audiomixer_transform->create_stream(
             this->audio_topology->get_clock());
-        stream_videoprocessor_t videoprocessor_stream = 
+        stream_videoprocessor2_t videoprocessor_stream = 
             this->videoprocessor_transform->create_stream();
 
         mpeg_stream->add_worker_stream(mpeg_worker_stream);

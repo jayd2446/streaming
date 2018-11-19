@@ -1,5 +1,6 @@
 #include "transform_color_converter.h"
 #include "transform_h264_encoder.h"
+#include <d3d11_1.h>
 #include <iostream>
 #include <mfapi.h>
 #include <Mferror.h>
@@ -98,6 +99,16 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
             this->videoprocessor, 0, FALSE);
     }
 
+    // set the output color space that is commonly used with h264 encoding
+    {
+        CComPtr<ID3D11VideoContext1> video_context;
+        CHECK_HR(hr = this->transform->videocontext->QueryInterface(&video_context));
+
+        // DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709 partial range
+        // DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709 for full range
+        video_context->VideoProcessorSetOutputColorSpace1(
+            this->videoprocessor, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
+    }
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);

@@ -22,8 +22,8 @@ void control_scene2::build_video_topology_branch(
     if(this->disabled)
         return;
 
-    stream_videoprocessor_t videoprocessor_stream = 
-        std::dynamic_pointer_cast<stream_videoprocessor>(to);
+    stream_videoprocessor2_t videoprocessor_stream = 
+        std::dynamic_pointer_cast<stream_videoprocessor2>(to);
     if(!videoprocessor_stream)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
@@ -41,8 +41,7 @@ void control_scene2::build_video_topology_branch(
     {
         source_empty_video_t empty_source(new source_empty_video(this->pipeline.session));
         media_stream_t empty_stream = empty_source->create_stream();
-        videoprocessor_stream->add_input_stream(empty_stream.get(), NULL);
-        videoprocessor_stream->connect_streams(empty_stream, topology);
+        videoprocessor_stream->connect_streams(empty_stream, NULL, topology);
     }
 }
 

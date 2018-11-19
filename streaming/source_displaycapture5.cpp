@@ -4,9 +4,12 @@
 #include <iostream>
 #include <atomic>
 #include <dxgi1_5.h>
+#include <d2d1.h>
 #include <Mferror.h>
 
 #pragma comment(lib, "D3D11.lib")
+#pragma comment(lib, "D2d1.lib")
+
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 #ifdef _DEBUG
 #define CREATE_DEVICE_DEBUG D3D11_CREATE_DEVICE_DEBUG

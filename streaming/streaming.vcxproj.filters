@@ -132,6 +132,9 @@
     <ClCompile Include="control_class.cpp">
       <Filter>control</Filter>
     </ClCompile>
+    <ClCompile Include="transform_videoprocessor2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -262,6 +265,9 @@
     </ClInclude>
     <ClInclude Include="control_pipeline2.h">
       <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="transform_videoprocessor2.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

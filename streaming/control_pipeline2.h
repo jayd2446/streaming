@@ -8,6 +8,7 @@
 #include "transform_h264_encoder.h"
 #include "transform_color_converter.h"
 #include "transform_audiomixer.h"
+#include "transform_videoprocessor2.h"
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
 #include "sink_preview2.h"
@@ -18,11 +19,13 @@
 #include <atlbase.h>
 #include <d3d11.h>
 #include <dxgi.h>
+#include <dxgi1_2.h>
 #include <mutex>
 #include <memory>
 
 #pragma comment(lib, "D3D11.lib")
 #pragma comment(lib, "DXGI.lib")
+#pragma comment(lib, "D2d1.lib")
 
 typedef std::pair<sink_file_t, sink_file_t> sink_mp4_t;
 
@@ -38,7 +41,7 @@ private:
     presentation_time_source_t time_source;
     media_topology_t video_topology, audio_topology;
     // these components are present in every scene
-    transform_videoprocessor_t videoprocessor_transform;
+    transform_videoprocessor2_t videoprocessor_transform;
     transform_h264_encoder_t h264_encoder_transform;
     transform_color_converter_t color_converter_transform;
     transform_aac_encoder_t aac_encoder_transform;
@@ -60,8 +63,11 @@ private:
 public:
     UINT d3d11dev_adapter;
     CComPtr<IDXGIFactory1> dxgifactory;
+    CComPtr<ID2D1Factory1> d2d1factory;
+    CComPtr<IDXGIDevice1> dxgidev;
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11DeviceContext> devctx;
+    CComPtr<ID2D1Device> d2d1dev;
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
     control_scene2 root_scene;

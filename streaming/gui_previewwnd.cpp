@@ -38,7 +38,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 
     if(this->dragging)
     {
-        stream_videoprocessor_controller_t&& size_box =
+        stream_videoprocessor2_controller_t&& size_box =
             this->ctrl_pipeline->get_preview_window()->get_size_box();
         if(!size_box)
             return;
@@ -47,7 +47,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         move -= this->last_pos;
         this->last_pos = point;
 
-        stream_videoprocessor_controller::params_t params;
+        stream_videoprocessor2_controller::params_t params;
         size_box->get_params(params);
         params.dest_rect.left += move.x;
         params.dest_rect.top += move.y;

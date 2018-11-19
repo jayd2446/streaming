@@ -173,7 +173,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
                 std::abs(dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.bottom -
                     dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.top);
 
-            stream_videoprocessor_controller::params_t params;
+            stream_videoprocessor2_controller::params_t params;
             params.source_rect = { 0 };
             params.dest_rect = { 0 };
             params.source_rect.right = display_w - i * 4;
@@ -195,7 +195,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             control_displaycapture& displaycapture = *scene->add_displaycapture(std::move(sts.str()));
             this->video_counter++;
 
-            displaycapture.videoprocessor_params.reset(new stream_videoprocessor_controller);
+            displaycapture.videoprocessor_params.reset(new stream_videoprocessor2_controller);
             displaycapture.videoprocessor_params->set_params(params);
             displaycapture.set_displaycapture_params(dlg.displaycaptures[dlg.cursel]);
 

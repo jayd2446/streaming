@@ -19,8 +19,8 @@ void control_displaycapture::build_video_topology_branch(
 
     assert_(!this->disabled);
 
-    stream_videoprocessor_t videoprocessor_stream =
-        std::dynamic_pointer_cast<stream_videoprocessor>(to);
+    stream_videoprocessor2_t videoprocessor_stream =
+        std::dynamic_pointer_cast<stream_videoprocessor2>(to);
     if(!videoprocessor_stream)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
@@ -32,13 +32,10 @@ void control_displaycapture::build_video_topology_branch(
 
         displaycapture_stream->set_pointer_stream(displaycapture_pointer_stream);
 
-        videoprocessor_stream->add_input_stream(displaycapture_stream.get(), 
-            this->videoprocessor_params);
-        videoprocessor_stream->add_input_stream(displaycapture_pointer_stream.get(),
-            this->videoprocessor_params);
-
-        videoprocessor_stream->connect_streams(displaycapture_stream, topology);
-        videoprocessor_stream->connect_streams(displaycapture_pointer_stream, topology);
+        videoprocessor_stream->connect_streams(
+            displaycapture_stream, this->videoprocessor_params, topology);
+        videoprocessor_stream->connect_streams(
+            displaycapture_pointer_stream, this->videoprocessor_params, topology);
 
         this->stream = displaycapture_stream;
         this->pointer_stream = displaycapture_pointer_stream;
@@ -49,13 +46,10 @@ void control_displaycapture::build_video_topology_branch(
         assert_(this->reference->pointer_stream);
         assert_(!this->stream);
 
-        videoprocessor_stream->add_input_stream(this->reference->stream.get(),
-            this->videoprocessor_params);
-        videoprocessor_stream->add_input_stream(this->reference->pointer_stream.get(),
-            this->videoprocessor_params);
-
-        videoprocessor_stream->connect_streams(this->reference->stream, topology);
-        videoprocessor_stream->connect_streams(this->reference->pointer_stream, topology);
+        videoprocessor_stream->connect_streams(
+            this->reference->stream, this->videoprocessor_params, topology);
+        videoprocessor_stream->connect_streams(
+            this->reference->pointer_stream, this->videoprocessor_params, topology);
     }
 }
 

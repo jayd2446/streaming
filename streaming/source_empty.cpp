@@ -1,7 +1,7 @@
 #include "source_empty.h"
 #include "transform_aac_encoder.h"
 #include "transform_h264_encoder.h"
-#include "transform_videoprocessor.h"
+#include "transform_videoprocessor2.h"
 #include "transform_audioprocessor.h"
 
 // TODO: decide if these empty sources should dispatch requests to work queues
@@ -76,14 +76,14 @@ stream_empty_video::stream_empty_video(const source_empty_video_t& source) :
 
 media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
 {
-    stream_videoprocessor_controller::params_t params;
+    stream_videoprocessor2_controller::params_t params;
     params.enable_alpha = false;
     params.dest_rect.left = params.dest_rect.top = 0;
     params.dest_rect.right = transform_h264_encoder::frame_width;
     params.dest_rect.bottom = transform_h264_encoder::frame_height;
     params.source_rect = params.dest_rect;
 
-    media_sample_videoprocessor sample_view(params, this->buffer);
+    media_sample_videoprocessor2 sample_view(params, this->buffer);
     sample_view.timestamp = rp.request_time;
 
     return this->process_sample(sample_view, rp, NULL);

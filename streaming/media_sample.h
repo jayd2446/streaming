@@ -9,6 +9,7 @@
 #include <functional>
 #include <stdint.h>
 #include <d3d11.h>
+#include <d2d1_1.h>
 #include <atlbase.h>
 #include <mfidl.h>
 #include "assert.h"
@@ -182,6 +183,7 @@ public:
     DWORD texture_buffer_length;
     std::unique_ptr<BYTE[]> texture_buffer;
 
+    CComPtr<ID2D1Bitmap1> bitmap;
     CComPtr<ID3D11Texture2D> texture;
     virtual ~media_buffer_texture() {}
 };

@@ -1,7 +1,7 @@
 #pragma once
 #include "control_class.h"
 #include "source_displaycapture5.h"
-#include "transform_videoprocessor.h"
+#include "transform_videoprocessor2.h"
 #include <vector>
 
 #define CONTROL_DISPLAYCAPTURE5_TYPE_NAME L"displaycapture"
@@ -29,7 +29,7 @@ private:
 
     control_displaycapture(control_set_t& active_controls, control_pipeline2&);
 public:
-    stream_videoprocessor_controller_t videoprocessor_params;
+    stream_videoprocessor2_controller_t videoprocessor_params;
 
     // before the displaycapture can be activated, right params must be chosen and set
     static void list_available_displaycapture_params(const control_pipeline2_t&,
