@@ -27,11 +27,7 @@ class stream_videoprocessor2_controller
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
-    struct params_t
-    {
-        bool enable_alpha;
-        RECT source_rect, dest_rect;
-    };
+    struct params_t {RECT source_rect, dest_rect;};
 private:
     mutable std::mutex mutex;
     params_t params;
@@ -98,11 +94,6 @@ public:
         request_packet rp;
         media_sample_videoprocessor2 sample;
         stream_videoprocessor2_controller_t user_params;
-    };
-    struct stream_data
-    {
-        packet p;
-        CComPtr<ID2D1Geometry> mask, user_mask;
     };
 private:
     transform_videoprocessor2_t transform;

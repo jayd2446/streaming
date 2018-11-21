@@ -2,7 +2,7 @@
 #include "media_source.h"
 #include "media_stream.h"
 #include "media_sample.h"
-#include "transform_videoprocessor.h"
+#include "transform_videoprocessor2.h"
 #include "async_callback.h"
 #include <d3d11.h>
 #include <dxgi.h>
@@ -150,7 +150,7 @@ public:
         bool new_pointer_shape, 
         const DXGI_OUTDUPL_POINTER_POSITION&,
         const D3D11_TEXTURE2D_DESC* desktop_desc,
-        media_sample_videoprocessor&,
+        media_sample_videoprocessor2&,
         request_packet&);
 
     result_t request_sample(request_packet&, const media_stream*);

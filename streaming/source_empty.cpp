@@ -77,7 +77,6 @@ stream_empty_video::stream_empty_video(const source_empty_video_t& source) :
 media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
 {
     stream_videoprocessor2_controller::params_t params;
-    params.enable_alpha = false;
     params.dest_rect.left = params.dest_rect.top = 0;
     params.dest_rect.right = transform_h264_encoder::frame_width;
     params.dest_rect.bottom = transform_h264_encoder::frame_height;

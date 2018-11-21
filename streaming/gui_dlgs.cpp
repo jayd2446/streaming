@@ -176,7 +176,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             stream_videoprocessor2_controller::params_t params;
             params.source_rect = { 0 };
             params.dest_rect = { 0 };
-            params.source_rect.right = display_w - i * 4;
+            params.source_rect.right = display_w - i * 40;
             params.source_rect.bottom = display_h - i * 4;
             params.source_rect.left = i * 4;
             params.source_rect.top = i * 4;
@@ -184,9 +184,9 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             params.dest_rect.left = i * 4;
             params.dest_rect.top = i * 4;
             params.dest_rect.right =
-                std::min((LONG)transform_videoprocessor::canvas_width, display_w) - i * 40;
+                std::min((LONG)transform_videoprocessor2::canvas_width, display_w) - i * 40;
             params.dest_rect.bottom =
-                std::min((LONG)transform_videoprocessor::canvas_height, display_h) - i * 40;
+                std::min((LONG)transform_videoprocessor2::canvas_height, display_h) - i * 40;
             i++;
 
             // add the displaycapture and set its params

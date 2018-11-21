@@ -104,6 +104,7 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
         CComPtr<ID3D11VideoContext1> video_context;
         CHECK_HR(hr = this->transform->videocontext->QueryInterface(&video_context));
 
+        scoped_lock lock(*this->transform->context_mutex);
         // DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709 partial range
         // DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709 for full range
         video_context->VideoProcessorSetOutputColorSpace1(

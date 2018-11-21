@@ -455,8 +455,8 @@ stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& s
 void stream_displaycapture5::capture_frame_cb(void*)
 {
     std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);
-    media_sample_videoprocessor sample;
-    media_sample_videoprocessor pointer_sample;
+    media_sample_videoprocessor2 sample;
+    media_sample_videoprocessor2 pointer_sample;
     {
         source_displaycapture5::buffer_pool::scoped_lock lock(this->source->available_samples->mutex);
         if(this->source->available_samples->container.empty())
@@ -545,8 +545,6 @@ void stream_displaycapture5::capture_frame_cb(void*)
     {
         sample.buffer->texture->GetDesc(ptr_desc = &desc);
 
-        // enable alpha is only for pointer which has alpha values
-        sample.params.enable_alpha = false;
         sample.params.source_rect.top = sample.params.source_rect.left = 0;
         sample.params.source_rect.right = desc.Width;
         sample.params.source_rect.bottom = desc.Height;
@@ -603,7 +601,7 @@ void stream_displaycapture5_pointer::dispatch(
     bool new_pointer_shape, 
     const DXGI_OUTDUPL_POINTER_POSITION& pointer_position, 
     const D3D11_TEXTURE2D_DESC* desktop_desc,
-    media_sample_videoprocessor& sample_view,
+    media_sample_videoprocessor2& sample_view,
     request_packet& rp)
 {
     if(pointer_position.Visible && desktop_desc && sample_view.buffer->texture)
@@ -611,7 +609,6 @@ void stream_displaycapture5_pointer::dispatch(
         D3D11_TEXTURE2D_DESC desc;
         sample_view.buffer->texture->GetDesc(&desc);
 
-        sample_view.params.enable_alpha = true;
         sample_view.params.source_rect.left = sample_view.params.source_rect.top = 0;
         sample_view.params.source_rect.right = desc.Width;
         sample_view.params.source_rect.bottom = desc.Height;
@@ -627,7 +624,7 @@ void stream_displaycapture5_pointer::dispatch(
         sample_view.buffer = this->null_buffer;
         /*sample_view.attach(this->null_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
     }
-
+    /*sample_view.buffer = this->null_buffer;*/
     sample_view.timestamp = rp.request_time;
 
     this->source->session->give_sample(this, sample_view, rp, true);

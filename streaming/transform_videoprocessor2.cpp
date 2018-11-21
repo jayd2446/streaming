@@ -1,6 +1,7 @@
 #include "transform_videoprocessor2.h"
 #include "assert.h"
 #include <iostream>
+#include <limits>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
@@ -24,17 +25,11 @@ void transform_videoprocessor2::initialize(
     const CComPtr<ID3D11Device>& d3d11dev,
     const CComPtr<ID3D11DeviceContext>& devctx)
 {
-    HRESULT hr = S_OK;
-
     this->ctrl_pipeline = ctrl_pipeline;
     this->d3d11dev = d3d11dev;
     this->d3d11devctx = devctx;
     this->d2d1factory = d2d1factory;
     this->d2d1dev = d2d1dev;
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 }
 
 stream_videoprocessor2_t transform_videoprocessor2::create_stream()
@@ -177,7 +172,6 @@ void stream_videoprocessor2::process()
     // rps are equivalent in every input stream
     request_packet rp = this->input_streams[0].first.rp;
 
-    D2D1::Matrix3x2F matrix = D2D1::Matrix3x2F::Identity();
     this->d2d1devctx->BeginDraw();
     this->d2d1devctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
 
@@ -203,26 +197,129 @@ void stream_videoprocessor2::process()
 
         // TODO: include bitmap in texture sample
         // create bitmap
+        using namespace D2D1;
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
+        CComPtr<ID2D1BitmapBrush1> bitmap_brush;
+        CComPtr<ID2D1RectangleGeometry> geometry;
+        Matrix3x2F src, dst, src2, dst2;
+        Matrix3x2F src_to_dst, src2_to_dst2;
+        Matrix3x2F world_matrix, inverse_world, layer_matrix;
+        D2D1_LAYER_PARAMETERS1 layer_params;
+        bool invert;
+        static FLOAT angle = 0.f;
+        const FLOAT src_angle = 0.f, dst_angle = 0.f;
+        const FLOAT src2_angle = 0.f, dst2_angle = -angle;
+        static const D2D1_RECT_F clip_rect = RectF(0.f, 0.f, 1.f, 1.f);
+        // used when the dst2 angle is 0
+        D2D1_RECT_F new_clip_rect;
+        bool use_axis_aligned_clip = false;
+
+        /*
+        ax = b <=> x = a-1 b,
+        xa = b <=> x = b a-1
+        the order of multiplication is important, because
+        almost never ab = ba
+
+        vector is a matrix with one column
+
+        A 1 × n matrix is called a row vector. 
+        Direct2D and Direct3D both use row vectors to represent points in 2D or 3D space.
+
+        Most graphics texts use the column vector form.
+        */
+
+        /*
+        3x2 matrix:
+        x y
+        x y
+        x y
+
+        vector:
+        x
+        y
+        */
+
+        /*angle += 0.02f;*/
+
         CHECK_HR(hr = texture->QueryInterface(&surface));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
             surface,
-            D2D1::BitmapProperties1(
+            BitmapProperties1(
                 D2D1_BITMAP_OPTIONS_NONE,
-                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
+                PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
             &bitmap));
+        CHECK_HR(hr = this->d2d1devctx->CreateBitmapBrush(bitmap, &bitmap_brush));
 
-        D2D1_RECT_F src_rect, dst_rect;
-        this->calculate_stream_rects(params, user_params, src_rect, dst_rect);
+        src = Matrix3x2F::Scale(params.source_rect.right - params.source_rect.left,
+            params.source_rect.bottom - params.source_rect.top) *
+            Matrix3x2F::Rotation(src_angle) *
+            Matrix3x2F::Translation(params.source_rect.left, params.source_rect.top);
+        dst = Matrix3x2F::Scale(params.dest_rect.right - params.dest_rect.left,
+            params.dest_rect.bottom - params.dest_rect.top) *
+            Matrix3x2F::Rotation(dst_angle) *
+            Matrix3x2F::Translation(params.dest_rect.left, params.dest_rect.top);
+        src2 = Matrix3x2F::Scale(user_params.source_rect.right - user_params.source_rect.left,
+            user_params.source_rect.bottom - user_params.source_rect.top) *
+            Matrix3x2F::Rotation(src2_angle) *
+            Matrix3x2F::Translation(user_params.source_rect.left, user_params.source_rect.top);
+        dst2 = Matrix3x2F::Scale(user_params.dest_rect.right - user_params.dest_rect.left,
+            user_params.dest_rect.bottom - user_params.dest_rect.top) *
+            Matrix3x2F::Rotation(dst2_angle) *
+            Matrix3x2F::Translation(user_params.dest_rect.left, user_params.dest_rect.top);
 
-        this->d2d1devctx->SetTransform(D2D1::Matrix3x2F::Identity());
-        this->d2d1devctx->DrawBitmap(
-            bitmap,
-            dst_rect,
-            1.f,
-            D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
-            src_rect);
+        src_to_dst = src;
+        invert = src_to_dst.Invert();
+        src_to_dst = src_to_dst * dst;
+        src2_to_dst2 = src2;
+        invert = src2_to_dst2.Invert();
+        src2_to_dst2 = src2_to_dst2 * dst2;
+
+        world_matrix = src_to_dst * src2_to_dst2;
+        inverse_world = world_matrix;
+        invert = inverse_world.Invert();
+
+        layer_matrix = dst2 * inverse_world;
+
+        this->d2d1devctx->SetTransform(world_matrix);
+
+        if(std::abs(dst2_angle) < std::numeric_limits<FLOAT>::epsilon())
+        {
+            use_axis_aligned_clip = true;
+            new_clip_rect = RectF(
+                layer_matrix.m[0][0] * clip_rect.left + layer_matrix.m[1][0] * clip_rect.top +
+                layer_matrix.m[2][0],
+                layer_matrix.m[0][1] * clip_rect.left + layer_matrix.m[1][1] * clip_rect.top +
+                layer_matrix.m[2][1],
+
+                layer_matrix.m[0][0] * clip_rect.right + layer_matrix.m[1][0] * clip_rect.bottom +
+                layer_matrix.m[2][0],
+                layer_matrix.m[0][1] * clip_rect.right + layer_matrix.m[1][1] * clip_rect.bottom +
+                layer_matrix.m[2][1]);
+        }
+        else
+        {
+            layer_params = LayerParameters1(
+                InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                layer_matrix);
+            // TODO: rectangle geometry shouldn't be reallocated every time
+            CHECK_HR(hr = this->transform->d2d1factory->CreateRectangleGeometry(
+                clip_rect, &geometry));
+        }
+
+        if(use_axis_aligned_clip)
+            this->d2d1devctx->PushAxisAlignedClip(new_clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        else
+            this->d2d1devctx->PushLayer(layer_params, NULL);
+
+        this->d2d1devctx->FillRectangle(RectF(
+            params.source_rect.left, params.source_rect.top,
+            params.source_rect.right, params.source_rect.bottom), bitmap_brush);
+
+        if(use_axis_aligned_clip)
+            this->d2d1devctx->PopAxisAlignedClip();
+        else
+            this->d2d1devctx->PopLayer();
     }
 
 done:
