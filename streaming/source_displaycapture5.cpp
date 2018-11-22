@@ -545,9 +545,9 @@ void stream_displaycapture5::capture_frame_cb(void*)
     {
         sample.buffer->texture->GetDesc(ptr_desc = &desc);
 
-        sample.params.source_rect.top = sample.params.source_rect.left = 0;
-        sample.params.source_rect.right = desc.Width;
-        sample.params.source_rect.bottom = desc.Height;
+        sample.params.source_rect.top = sample.params.source_rect.left = 0.f;
+        sample.params.source_rect.right = (FLOAT)desc.Width;
+        sample.params.source_rect.bottom = (FLOAT)desc.Height;
         sample.params.dest_rect = sample.params.source_rect;
     }
 
@@ -609,15 +609,15 @@ void stream_displaycapture5_pointer::dispatch(
         D3D11_TEXTURE2D_DESC desc;
         sample_view.buffer->texture->GetDesc(&desc);
 
-        sample_view.params.source_rect.left = sample_view.params.source_rect.top = 0;
-        sample_view.params.source_rect.right = desc.Width;
-        sample_view.params.source_rect.bottom = desc.Height;
-        sample_view.params.dest_rect.left = pointer_position.Position.x;
-        sample_view.params.dest_rect.top = pointer_position.Position.y;
+        sample_view.params.source_rect.left = sample_view.params.source_rect.top = 0.f;
+        sample_view.params.source_rect.right = (FLOAT)desc.Width;
+        sample_view.params.source_rect.bottom = (FLOAT)desc.Height;
+        sample_view.params.dest_rect.left = (FLOAT)pointer_position.Position.x;
+        sample_view.params.dest_rect.top = (FLOAT)pointer_position.Position.y;
         sample_view.params.dest_rect.right = 
-            sample_view.params.dest_rect.left + desc.Width;
+            sample_view.params.dest_rect.left + (FLOAT)desc.Width;
         sample_view.params.dest_rect.bottom = 
-            sample_view.params.dest_rect.top + desc.Height;
+            sample_view.params.dest_rect.top + (FLOAT)desc.Height;
     }
     else
     {

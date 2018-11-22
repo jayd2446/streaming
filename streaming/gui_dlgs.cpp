@@ -164,7 +164,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             /*for(int j = 0; j < (k ? 1 : 85); j++)
             {*/
             // video
-            static int i = 0;
+            static FLOAT i = 0.f;
 
             const LONG display_w = 
                 std::abs(dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.right - 
@@ -174,20 +174,20 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
                     dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.top);
 
             stream_videoprocessor2_controller::params_t params;
-            params.source_rect = { 0 };
-            params.dest_rect = { 0 };
-            params.source_rect.right = display_w - i * 40;
-            params.source_rect.bottom = display_h - i * 4;
-            params.source_rect.left = i * 4;
-            params.source_rect.top = i * 4;
+            params.source_rect = { 0.f };
+            params.dest_rect = { 0.f };
+            params.source_rect.right = (FLOAT)display_w - i * 40.f;
+            params.source_rect.bottom = (FLOAT)display_h - i * 4.f;
+            params.source_rect.left = i * 4.f;
+            params.source_rect.top = i * 4.f;
 
-            params.dest_rect.left = i * 4;
-            params.dest_rect.top = i * 4;
+            params.dest_rect.left = i * 4.f;
+            params.dest_rect.top = i * 4.f;
             params.dest_rect.right =
-                std::min((LONG)transform_videoprocessor2::canvas_width, display_w) - i * 40;
+                (FLOAT)std::min((LONG)transform_videoprocessor2::canvas_width, display_w) - i * 40.f;
             params.dest_rect.bottom =
-                std::min((LONG)transform_videoprocessor2::canvas_height, display_h) - i * 40;
-            i++;
+                (FLOAT)std::min((LONG)transform_videoprocessor2::canvas_height, display_h) - i * 40.f;
+            i += 1.f;
 
             // add the displaycapture and set its params
             std::wostringstream sts;

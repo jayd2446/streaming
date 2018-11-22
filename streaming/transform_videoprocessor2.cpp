@@ -95,75 +95,6 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-void stream_videoprocessor2::calculate_stream_rects(
-    const media_sample_videoprocessor2::params_t& stream_params,
-    const media_sample_videoprocessor2::params_t& user_params,
-    D2D1_RECT_F& src_rect, D2D1_RECT_F& dst_rect)
-{
-    // user src rect and sample dst rect are used to calculate the src rect
-    // (the intersect is taken to calculate non overlapping areas)
-    // dst rect size is modified if there are non overlapping areas
-    // and src rect size aswell
-
-    // if user src rect is larger, dst rect size is only modified
-    // if sample dst rect is larger, src rect size is oly modified
-
-    RECT user_src_rect, user_dst_rect;
-    user_src_rect = user_params.source_rect;
-    user_dst_rect = user_params.dest_rect;
-
-    RECT sample_src_rect, sample_dst_rect;
-    sample_src_rect = stream_params.source_rect;
-    sample_dst_rect = stream_params.dest_rect;
-
-    double sample_src_width, sample_src_height;
-    sample_src_width = sample_src_rect.right - sample_src_rect.left;
-    sample_src_height = sample_src_rect.bottom - sample_src_rect.top;
-
-    double sample_dst_width, sample_dst_height;
-    sample_dst_width = sample_dst_rect.right - sample_dst_rect.left;
-    sample_dst_height = sample_dst_rect.bottom - sample_dst_rect.top;
-
-    double user_src_width, user_src_height;
-    user_src_width = user_src_rect.right - user_src_rect.left;
-    user_src_height = user_src_rect.bottom - user_src_rect.top;
-
-    double user_dst_width, user_dst_height;
-    user_dst_width = user_dst_rect.right - user_dst_rect.left;
-    user_dst_height = user_dst_rect.bottom - user_dst_rect.top;
-
-    RECT nonoverlapping_rect;
-    nonoverlapping_rect.top = user_src_rect.top - sample_dst_rect.top;
-    nonoverlapping_rect.left = user_src_rect.left - sample_dst_rect.left;
-    // these are negative
-    nonoverlapping_rect.bottom = user_src_rect.bottom - sample_dst_rect.bottom;
-    nonoverlapping_rect.right = user_src_rect.right - sample_dst_rect.right;
-
-    src_rect = D2D1::RectF(
-        (FLOAT)sample_src_rect.left, (FLOAT)sample_src_rect.top,
-        (FLOAT)sample_src_rect.right, (FLOAT)sample_src_rect.bottom);
-    dst_rect = D2D1::RectF(
-        (FLOAT)user_dst_rect.left, (FLOAT)user_dst_rect.top,
-        (FLOAT)user_dst_rect.right, (FLOAT)user_dst_rect.bottom);
-
-    if(nonoverlapping_rect.top > 0)
-        src_rect.top += (FLOAT)(sample_src_height * (nonoverlapping_rect.top / sample_dst_height));
-    else if(nonoverlapping_rect.top < 0)
-        dst_rect.top -= (FLOAT)(user_dst_height * (nonoverlapping_rect.top / user_src_height));
-    if(nonoverlapping_rect.left > 0)
-        src_rect.left += (FLOAT)(sample_src_width * (nonoverlapping_rect.left / sample_dst_width));
-    else if(nonoverlapping_rect.left < 0)
-        dst_rect.left -= (FLOAT)(user_dst_width * (nonoverlapping_rect.left / user_src_width));
-    if(nonoverlapping_rect.bottom < 0)
-        src_rect.bottom += (FLOAT)(sample_src_height * (nonoverlapping_rect.bottom / sample_dst_height));
-    else if(nonoverlapping_rect.bottom > 0)
-        dst_rect.bottom -= (FLOAT)(user_dst_height * (nonoverlapping_rect.bottom / user_src_height));
-    if(nonoverlapping_rect.right < 0)
-        src_rect.right += (FLOAT)(sample_src_width * (nonoverlapping_rect.right / sample_dst_width));
-    else if(nonoverlapping_rect.right > 0)
-        dst_rect.right -= (FLOAT)(user_dst_width * (nonoverlapping_rect.right / user_src_width));
-}
-
 void stream_videoprocessor2::process()
 {
     HRESULT hr = S_OK;
@@ -209,11 +140,11 @@ void stream_videoprocessor2::process()
         bool invert;
         static FLOAT angle = 0.f;
         const FLOAT src_angle = 0.f, dst_angle = 0.f;
-        const FLOAT src2_angle = 0.f, dst2_angle = -angle;
+        const FLOAT src2_angle = 0.f, dst2_angle = 0.f;
         static const D2D1_RECT_F clip_rect = RectF(0.f, 0.f, 1.f, 1.f);
-        // used when the dst2 angle is 0
+        // used when the axis aligned clip is applicable
         D2D1_RECT_F new_clip_rect;
-        bool use_axis_aligned_clip = false;
+        bool use_axis_aligned_clip = true;
 
         /*
         ax = b <=> x = a-1 b,
@@ -283,9 +214,11 @@ void stream_videoprocessor2::process()
 
         this->d2d1devctx->SetTransform(world_matrix);
 
-        if(std::abs(dst2_angle) < std::numeric_limits<FLOAT>::epsilon())
+        if(std::abs(src_angle) < std::numeric_limits<FLOAT>::epsilon() &&
+            std::abs(dst_angle) < std::numeric_limits<FLOAT>::epsilon() &&
+            std::abs(src2_angle) < std::numeric_limits<FLOAT>::epsilon() &&
+            std::abs(dst2_angle) < std::numeric_limits<FLOAT>::epsilon() && use_axis_aligned_clip)
         {
-            use_axis_aligned_clip = true;
             new_clip_rect = RectF(
                 layer_matrix.m[0][0] * clip_rect.left + layer_matrix.m[1][0] * clip_rect.top +
                 layer_matrix.m[2][0],
@@ -299,12 +232,14 @@ void stream_videoprocessor2::process()
         }
         else
         {
-            layer_params = LayerParameters1(
-                InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                layer_matrix);
+            use_axis_aligned_clip = false;
+
             // TODO: rectangle geometry shouldn't be reallocated every time
             CHECK_HR(hr = this->transform->d2d1factory->CreateRectangleGeometry(
                 clip_rect, &geometry));
+            layer_params = LayerParameters1(
+                InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                layer_matrix);
         }
 
         if(use_axis_aligned_clip)

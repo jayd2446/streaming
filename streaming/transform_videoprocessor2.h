@@ -27,7 +27,7 @@ class stream_videoprocessor2_controller
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
-    struct params_t {RECT source_rect, dest_rect;};
+    struct params_t {D2D1_RECT_F source_rect, dest_rect;};
 private:
     mutable std::mutex mutex;
     params_t params;
@@ -106,12 +106,6 @@ private:
     int samples_received;
 
     media_buffer_texture_t output_buffer;
-
-    // returns false if the stream won't be shown
-    void calculate_stream_rects(
-        const media_sample_videoprocessor2::params_t& stream_params,
-        const media_sample_videoprocessor2::params_t& user_params,
-        D2D1_RECT_F& src_rect, D2D1_RECT_F& dst_rect);
     void process();
 public:
     explicit stream_videoprocessor2(const transform_videoprocessor2_t& transform);
