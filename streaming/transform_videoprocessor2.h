@@ -57,6 +57,7 @@ class transform_videoprocessor2 : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 
+    // TODO: canvas size should probably be a float
     static const UINT32 canvas_width = transform_h264_encoder::frame_width;
     static const UINT32 canvas_height = transform_h264_encoder::frame_height;
 private:

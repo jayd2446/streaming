@@ -33,7 +33,9 @@ void sink_preview2::initialize(
     DXGI_SWAP_CHAIN_DESC1 swapchain_desc = {0};
     RECT r;
 
-    scoped_lock lock(*this->context_mutex);
+    std::lock(*this->context_mutex, this->d2d1_context_mutex);
+    scoped_lock lock(*this->context_mutex, std::adopt_lock);
+    scoped_lock lock2(this->d2d1_context_mutex, std::adopt_lock);
 
     // obtain the dxgi device of the d3d11 device
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->dxgidev));
@@ -101,6 +103,18 @@ void sink_preview2::initialize(
         D2D1::ColorF(D2D1::ColorF::Red),
         &this->box_brush));
 
+    // create the stroke style for the box
+    {
+        FLOAT dashes[] = {4.f, 4.f};
+        D2D1_STROKE_STYLE_PROPERTIES1 stroke_props = D2D1::StrokeStyleProperties1();
+        // world transform doesn't affect the stroke width
+        stroke_props.transformType = D2D1_STROKE_TRANSFORM_TYPE_FIXED;
+        stroke_props.dashStyle = D2D1_DASH_STYLE_CUSTOM;
+        /*stroke_props.dashStyle = D2D1_DASH_STYLE_DASH;*/
+        CHECK_HR(hr = this->d2d1factory->CreateStrokeStyle(
+            stroke_props, dashes, ARRAYSIZE(dashes), &this->stroke_style));
+    }
+
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
@@ -124,52 +138,32 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
     if(texture)
     {
         using namespace D2D1;
-        D3D11_TEXTURE2D_DESC desc;
-        sample_view.buffer->texture->GetDesc(&desc);
+        scoped_lock lock(this->d2d1_context_mutex);
 
-        const FLOAT width = (FLOAT)this->width, 
-            height = (FLOAT)this->height;
-        const FLOAT scale_w = width / desc.Width,
-            scale_h = height / desc.Height;
-        const bool use_scale_w = scale_w < scale_h;
-        const FLOAT scale = use_scale_w ? scale_w : scale_h;
-        FLOAT padding = use_scale_w ? desc.Height * scale : desc.Width * scale;
-        if(use_scale_w)
-            padding = (height - padding) / 2;
-        else
-            padding = (width - padding) / 2;
+        const FLOAT canvas_w = (FLOAT)transform_videoprocessor2::canvas_width;
+        const FLOAT canvas_h = (FLOAT)transform_videoprocessor2::canvas_height;
+        const FLOAT preview_w = (FLOAT)(this->width - this->padding_width * 2);
+        const FLOAT preview_h = (FLOAT)(this->height - this->padding_height * 2);
+        bool invert;
 
-        D2D1_RECT_F rect, box_rect = {0};
-        rect.top = rect.left = 20 / scale;
-        rect.right = (FLOAT)desc.Width - 20 / scale;
-        rect.bottom = (FLOAT)desc.Height - 20 / scale;
-        if(size_box)
+        FLOAT canvas_scale = preview_w / canvas_w;
+        FLOAT preview_x = (FLOAT)sink_preview2::padding_width, 
+            preview_y = (FLOAT)sink_preview2::padding_height;
+        if((canvas_scale * canvas_h) > preview_h)
         {
-            box_rect.left = (FLOAT)params.dest_rect.left *
-                (rect.right - rect.left) /
-                (FLOAT)transform_videoprocessor2::canvas_width;
-            box_rect.top = (FLOAT)params.dest_rect.top *
-                (rect.bottom - rect.top) /
-                (FLOAT)transform_videoprocessor2::canvas_height;
-            box_rect.right = (FLOAT)params.dest_rect.right *
-                (rect.right - rect.left) /
-                (FLOAT)transform_videoprocessor2::canvas_width;
-            box_rect.bottom = (FLOAT)params.dest_rect.bottom *
-                (rect.bottom - rect.top) /
-                (FLOAT)transform_videoprocessor2::canvas_height;
-
-            box_rect.left += rect.left;
-            box_rect.top += rect.top;
-            box_rect.right += rect.left;
-            box_rect.bottom += rect.top;
+            canvas_scale = preview_h / canvas_h;
+            preview_x = ((FLOAT)this->width - canvas_w * canvas_scale) / 2.f;
         }
+        else
+            preview_y = ((FLOAT)this->height - canvas_h * canvas_scale) / 2.f;
 
-        Matrix3x2F scale_mtx = Matrix3x2F::Scale(scale, scale);
-        Matrix3x2F translation_mtx = use_scale_w ?
-            Matrix3x2F::Translation(0.f, padding) :
-            Matrix3x2F::Translation(padding, 0.f);
-        
-        scoped_lock lock(*this->context_mutex);
+        Matrix3x2F canvas_to_preview = Matrix3x2F::Scale(canvas_w, canvas_h);
+        invert = canvas_to_preview.Invert();
+        canvas_to_preview = canvas_to_preview * 
+            Matrix3x2F::Scale(canvas_w * canvas_scale, canvas_h * canvas_scale);
+        canvas_to_preview = canvas_to_preview * Matrix3x2F::Translation(preview_x, preview_y);
+
+        D2D1_ANTIALIAS_MODE old_mode;
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
         CHECK_HR(hr = texture->QueryInterface(&surface));
@@ -179,21 +173,33 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
             D2D1_BITMAP_OPTIONS_NONE,
             PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
             &bitmap));
+
         this->d2d1devctx->BeginDraw();
-
         this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
-        if(rect.top < rect.bottom && rect.left < rect.right)
-        {
-            this->d2d1devctx->SetTransform(scale_mtx * translation_mtx);
-            this->d2d1devctx->DrawBitmap(bitmap, &rect);
-        }
-        if(box_rect.top < box_rect.bottom && box_rect.left < box_rect.right)
-            this->d2d1devctx->DrawRectangle(box_rect, this->box_brush, 2.f);
 
-        this->d2d1devctx->EndDraw();
+        if(preview_x > std::numeric_limits<FLOAT>::epsilon() &&
+            preview_y > std::numeric_limits<FLOAT>::epsilon())
+        {
+            this->d2d1devctx->SetTransform(canvas_to_preview);
+            this->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f, canvas_w, canvas_h));
+
+            if(size_box)
+            {
+                old_mode = this->d2d1devctx->GetAntialiasMode();
+                this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+                this->d2d1devctx->DrawRectangle(
+                    params.dest_rect, this->box_brush, 1.f, this->stroke_style);
+                this->d2d1devctx->SetAntialiasMode(old_mode);
+            }
+        }
+
+        CHECK_HR(hr = this->d2d1devctx->EndDraw());
 
         // dxgi functions need to be synchronized with the context mutex
-        this->swapchain->Present(0, 0);
+        {
+            scoped_lock lock(*this->context_mutex);
+            CHECK_HR(hr = this->swapchain->Present(0, 0));
+        }
     }
 
 done:
@@ -213,7 +219,9 @@ void sink_preview2::set_size_box(const stream_videoprocessor2_controller_t& new_
 
 void sink_preview2::update_size()
 {
-    scoped_lock lock(*this->context_mutex);
+    std::lock(*this->context_mutex, this->d2d1_context_mutex);
+    scoped_lock lock(*this->context_mutex, std::adopt_lock);
+    scoped_lock lock2(this->d2d1_context_mutex, std::adopt_lock);
 
     RECT r;
     GetClientRect(this->hwnd, &r);

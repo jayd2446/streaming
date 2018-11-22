@@ -20,8 +20,12 @@ class sink_preview2 : public media_sink
     friend class stream_preview2;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+
+    static const UINT32 padding_width = 20;
+    static const UINT32 padding_height = 20;
 private:
     context_mutex_t context_mutex;
+    std::recursive_mutex d2d1_context_mutex;
 
     std::atomic_bool render;
     stream_videoprocessor2_controller_t size_box;
@@ -39,6 +43,7 @@ private:
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
     CComPtr<ID2D1SolidColorBrush> box_brush;
+    CComPtr<ID2D1StrokeStyle1> stroke_style;
 
     void draw_sample(const media_sample& sample_view, request_packet& rp);
 public:
