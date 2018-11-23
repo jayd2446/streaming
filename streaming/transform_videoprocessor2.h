@@ -27,7 +27,14 @@ class stream_videoprocessor2_controller
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
-    struct params_t {D2D1_RECT_F source_rect, dest_rect;};
+    // TODO: user param dest rect could have a geometry instead
+    struct params_t 
+    {
+        D2D1_RECT_F source_rect, dest_rect; 
+        D2D1::Matrix3x2F source_m, dest_m;
+        // only for the user dest param
+        bool axis_aligned_clip;
+    };
 private:
     mutable std::mutex mutex;
     params_t params;

@@ -185,10 +185,18 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 
             if(size_box)
             {
+                Matrix3x2F dest = 
+                    Matrix3x2F::Scale(
+                        params.dest_rect.right - params.dest_rect.left,
+                        params.dest_rect.bottom - params.dest_rect.top) *
+                    Matrix3x2F::Translation(params.dest_rect.left, params.dest_rect.top) *
+                    params.dest_m;
+                this->d2d1devctx->SetTransform(dest * canvas_to_preview);
+
                 old_mode = this->d2d1devctx->GetAntialiasMode();
-                this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
-                this->d2d1devctx->DrawRectangle(
-                    params.dest_rect, this->box_brush, 1.f, this->stroke_style);
+                /*this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);*/
+                this->d2d1devctx->DrawRectangle(RectF(0.f, 0.f, 1.f, 1.f)
+                    /*params.dest_rect*/, this->box_brush, 1.5f, this->stroke_style);
                 this->d2d1devctx->SetAntialiasMode(old_mode);
             }
         }

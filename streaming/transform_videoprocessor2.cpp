@@ -109,8 +109,7 @@ void stream_videoprocessor2::process()
     for(auto&& stream : this->input_streams)
     {
         CComPtr<ID3D11Texture2D> texture = stream.first.sample.buffer->texture;
-        const media_sample_videoprocessor2::params_t& params =
-            stream.first.sample.params;
+        const media_sample_videoprocessor2::params_t& params = stream.first.sample.params;
         media_sample_videoprocessor2::params_t user_params;
 
         if(stream.first.user_params)
@@ -128,23 +127,6 @@ void stream_videoprocessor2::process()
 
         // TODO: include bitmap in texture sample
         // create bitmap
-        using namespace D2D1;
-        CComPtr<ID2D1Bitmap1> bitmap;
-        CComPtr<IDXGISurface> surface;
-        CComPtr<ID2D1BitmapBrush1> bitmap_brush;
-        CComPtr<ID2D1RectangleGeometry> geometry;
-        Matrix3x2F src, dst, src2, dst2;
-        Matrix3x2F src_to_dst, src2_to_dst2;
-        Matrix3x2F world_matrix, inverse_world, layer_matrix;
-        D2D1_LAYER_PARAMETERS1 layer_params;
-        bool invert;
-        static FLOAT angle = 0.f;
-        const FLOAT src_angle = 0.f, dst_angle = 0.f;
-        const FLOAT src2_angle = 0.f, dst2_angle = 0.f;
-        static const D2D1_RECT_F clip_rect = RectF(0.f, 0.f, 1.f, 1.f);
-        // used when the axis aligned clip is applicable
-        D2D1_RECT_F new_clip_rect;
-        bool use_axis_aligned_clip = true;
 
         /*
         ax = b <=> x = a-1 b,
@@ -154,24 +136,70 @@ void stream_videoprocessor2::process()
 
         vector is a matrix with one column
 
-        A 1 × n matrix is called a row vector. 
+        A 1 × n matrix is called a row vector.
         Direct2D and Direct3D both use row vectors to represent points in 2D or 3D space.
 
         Most graphics texts use the column vector form.
         */
 
+        using namespace D2D1;
+        CComPtr<ID2D1Bitmap1> bitmap;
+        CComPtr<IDXGISurface> surface;
+        CComPtr<ID2D1BitmapBrush1> bitmap_brush;
+        CComPtr<ID2D1RectangleGeometry> geometry;
+
+        Matrix3x2F src_to_dest, src2_to_dest2;
+        Matrix3x2F world, world_inverted, brush, layer;
+
+        D2D1_LAYER_PARAMETERS1 layer_params;
+        bool invert;
+
+        // src_rect_m * M = dest_rect_m <=> M = src_rect_t -1 * dest_rect_m
+        src_to_dest = Matrix3x2F::Scale(
+            params.source_rect.right - params.source_rect.left,
+            params.source_rect.bottom - params.source_rect.top) *
+            Matrix3x2F::Translation(params.source_rect.left, params.source_rect.top);
+        invert = src_to_dest.Invert();
+        src_to_dest = src_to_dest * Matrix3x2F::Scale(
+            params.dest_rect.right - params.dest_rect.left,
+            params.dest_rect.bottom - params.dest_rect.top) *
+            Matrix3x2F::Translation(params.dest_rect.left, params.dest_rect.top) *
+            params.dest_m;
+
+        src2_to_dest2 = Matrix3x2F::Scale(
+            user_params.source_rect.right - user_params.source_rect.left,
+            user_params.source_rect.bottom - user_params.source_rect.top) *
+            Matrix3x2F::Translation(user_params.source_rect.left, user_params.source_rect.top) *
+            user_params.source_m;
+        invert = src2_to_dest2.Invert();
+        src2_to_dest2 = src2_to_dest2 * Matrix3x2F::Scale(
+            user_params.dest_rect.right - user_params.dest_rect.left,
+            user_params.dest_rect.bottom - user_params.dest_rect.top) *
+            Matrix3x2F::Translation(user_params.dest_rect.left, user_params.dest_rect.top) *
+            user_params.dest_m;
+
+        world = src_to_dest * src2_to_dest2;
+        brush = params.source_m;
+
+        world_inverted = world;
+        invert = world_inverted.Invert();
+        layer = user_params.dest_m * world_inverted;
+
         /*
-        3x2 matrix:
-        x y
-        x y
-        x y
+        (multiplication of translation matrices are commutative, probably same applies to
+        rotation and scaling),
+        affine transformation matrix cannot map a set of arbitrary points to another set,
+        it only maps sets that preserve affinity
+        https://en.wikipedia.org/wiki/Affine_transformation#Properties_preserved
 
-        vector:
-        x
-        y
+        linear mappings preserve the origin, which isn't the case in affine mappings
+        (translation matrix)
+
+        3x2 matrix(affine transformation matrix):
+        a b (0)
+        c d (0)
+        e f (1)
         */
-
-        /*angle += 0.02f;*/
 
         CHECK_HR(hr = texture->QueryInterface(&surface));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
@@ -182,79 +210,35 @@ void stream_videoprocessor2::process()
             &bitmap));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapBrush(bitmap, &bitmap_brush));
 
-        src = Matrix3x2F::Scale(params.source_rect.right - params.source_rect.left,
-            params.source_rect.bottom - params.source_rect.top) *
-            Matrix3x2F::Rotation(src_angle) *
-            Matrix3x2F::Translation(params.source_rect.left, params.source_rect.top);
-        dst = Matrix3x2F::Scale(params.dest_rect.right - params.dest_rect.left,
-            params.dest_rect.bottom - params.dest_rect.top) *
-            Matrix3x2F::Rotation(dst_angle) *
-            Matrix3x2F::Translation(params.dest_rect.left, params.dest_rect.top);
-        src2 = Matrix3x2F::Scale(user_params.source_rect.right - user_params.source_rect.left,
-            user_params.source_rect.bottom - user_params.source_rect.top) *
-            Matrix3x2F::Rotation(src2_angle) *
-            Matrix3x2F::Translation(user_params.source_rect.left, user_params.source_rect.top);
-        dst2 = Matrix3x2F::Scale(user_params.dest_rect.right - user_params.dest_rect.left,
-            user_params.dest_rect.bottom - user_params.dest_rect.top) *
-            Matrix3x2F::Rotation(dst2_angle) *
-            Matrix3x2F::Translation(user_params.dest_rect.left, user_params.dest_rect.top);
+        bitmap_brush->SetTransform(brush);
 
-        src_to_dst = src;
-        invert = src_to_dst.Invert();
-        src_to_dst = src_to_dst * dst;
-        src2_to_dst2 = src2;
-        invert = src2_to_dst2.Invert();
-        src2_to_dst2 = src2_to_dst2 * dst2;
-
-        world_matrix = src_to_dst * src2_to_dst2;
-        inverse_world = world_matrix;
-        invert = inverse_world.Invert();
-
-        layer_matrix = dst2 * inverse_world;
-
-        this->d2d1devctx->SetTransform(world_matrix);
-
-        if(std::abs(src_angle) < std::numeric_limits<FLOAT>::epsilon() &&
-            std::abs(dst_angle) < std::numeric_limits<FLOAT>::epsilon() &&
-            std::abs(src2_angle) < std::numeric_limits<FLOAT>::epsilon() &&
-            std::abs(dst2_angle) < std::numeric_limits<FLOAT>::epsilon() && use_axis_aligned_clip)
+        if(!user_params.axis_aligned_clip)
         {
-            new_clip_rect = RectF(
-                layer_matrix.m[0][0] * clip_rect.left + layer_matrix.m[1][0] * clip_rect.top +
-                layer_matrix.m[2][0],
-                layer_matrix.m[0][1] * clip_rect.left + layer_matrix.m[1][1] * clip_rect.top +
-                layer_matrix.m[2][1],
-
-                layer_matrix.m[0][0] * clip_rect.right + layer_matrix.m[1][0] * clip_rect.bottom +
-                layer_matrix.m[2][0],
-                layer_matrix.m[0][1] * clip_rect.right + layer_matrix.m[1][1] * clip_rect.bottom +
-                layer_matrix.m[2][1]);
-        }
-        else
-        {
-            use_axis_aligned_clip = false;
-
-            // TODO: rectangle geometry shouldn't be reallocated every time
             CHECK_HR(hr = this->transform->d2d1factory->CreateRectangleGeometry(
-                clip_rect, &geometry));
+                user_params.dest_rect, &geometry));
             layer_params = LayerParameters1(
-                InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                layer_matrix);
+                InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, layer);
+
+            this->d2d1devctx->SetTransform(world);
+            this->d2d1devctx->PushLayer(layer_params, NULL);
+        }
+        else
+        {
+            this->d2d1devctx->SetTransform(user_params.dest_m);
+            // the world transform is applied to the axis aligned clip when push is called
+            this->d2d1devctx->PushAxisAlignedClip(
+                user_params.dest_rect, 
+                D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+            this->d2d1devctx->SetTransform(world);
         }
 
-        if(use_axis_aligned_clip)
-            this->d2d1devctx->PushAxisAlignedClip(new_clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        else
-            this->d2d1devctx->PushLayer(layer_params, NULL);
+        this->d2d1devctx->FillRectangle(params.source_rect, bitmap_brush);
 
-        this->d2d1devctx->FillRectangle(RectF(
-            params.source_rect.left, params.source_rect.top,
-            params.source_rect.right, params.source_rect.bottom), bitmap_brush);
-
-        if(use_axis_aligned_clip)
-            this->d2d1devctx->PopAxisAlignedClip();
-        else
+        if(!user_params.axis_aligned_clip)
             this->d2d1devctx->PopLayer();
+        else
+            this->d2d1devctx->PopAxisAlignedClip();
     }
 
 done:

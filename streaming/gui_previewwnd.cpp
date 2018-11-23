@@ -49,10 +49,11 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 
         stream_videoprocessor2_controller::params_t params;
         size_box->get_params(params);
-        params.dest_rect.left += move.x;
+        params.dest_m = params.dest_m * D2D1::Matrix3x2F::Translation(move.x, move.y);
+        /*params.dest_rect.left += move.x;
         params.dest_rect.top += move.y;
         params.dest_rect.right += move.x;
-        params.dest_rect.bottom += move.y;
+        params.dest_rect.bottom += move.y;*/
         size_box->set_params(params);
     }
 }

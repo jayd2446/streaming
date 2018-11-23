@@ -549,6 +549,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
         sample.params.source_rect.right = (FLOAT)desc.Width;
         sample.params.source_rect.bottom = (FLOAT)desc.Height;
         sample.params.dest_rect = sample.params.source_rect;
+
+        sample.params.source_m = sample.params.dest_m = D2D1::Matrix3x2F::Identity();
     }
 
     sample.timestamp = rp.request_time;
@@ -618,6 +620,7 @@ void stream_displaycapture5_pointer::dispatch(
             sample_view.params.dest_rect.left + (FLOAT)desc.Width;
         sample_view.params.dest_rect.bottom = 
             sample_view.params.dest_rect.top + (FLOAT)desc.Height;
+        sample_view.params.source_m = sample_view.params.dest_m = D2D1::Matrix3x2F::Identity();
     }
     else
     {
