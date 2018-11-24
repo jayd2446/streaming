@@ -33,9 +33,10 @@ void sink_preview2::initialize(
     DXGI_SWAP_CHAIN_DESC1 swapchain_desc = {0};
     RECT r;
 
-    std::lock(*this->context_mutex, this->d2d1_context_mutex);
+    std::lock(*this->context_mutex, this->d2d1_context_mutex, this->size_mutex);
     scoped_lock lock(*this->context_mutex, std::adopt_lock);
     scoped_lock lock2(this->d2d1_context_mutex, std::adopt_lock);
+    scoped_lock lock3(this->size_mutex, std::adopt_lock);
 
     // obtain the dxgi device of the d3d11 device
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->dxgidev));
@@ -98,10 +99,13 @@ void sink_preview2::initialize(
     this->width = std::abs(r.right - r.left);
     this->height = std::abs(r.bottom - r.top);
 
-    // create the brush for the sizing box
+    // create the brushes for sizing
     CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
         D2D1::ColorF(D2D1::ColorF::Red),
         &this->box_brush));
+    CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
+        D2D1::ColorF(D2D1::ColorF::LimeGreen),
+        &this->line_brush));
 
     // create the stroke style for the box
     {
@@ -140,7 +144,10 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
         using namespace D2D1;
         scoped_lock lock(this->d2d1_context_mutex);
 
-        const FLOAT canvas_w = (FLOAT)transform_videoprocessor2::canvas_width;
+        D2D1_RECT_F preview_rect = this->get_preview_rect();
+        bool invert;
+
+        /*const FLOAT canvas_w = (FLOAT)transform_videoprocessor2::canvas_width;
         const FLOAT canvas_h = (FLOAT)transform_videoprocessor2::canvas_height;
         const FLOAT preview_w = (FLOAT)(this->width - this->padding_width * 2);
         const FLOAT preview_h = (FLOAT)(this->height - this->padding_height * 2);
@@ -155,15 +162,18 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
             preview_x = ((FLOAT)this->width - canvas_w * canvas_scale) / 2.f;
         }
         else
-            preview_y = ((FLOAT)this->height - canvas_h * canvas_scale) / 2.f;
+            preview_y = ((FLOAT)this->height - canvas_h * canvas_scale) / 2.f;*/
 
-        Matrix3x2F canvas_to_preview = Matrix3x2F::Scale(canvas_w, canvas_h);
+        Matrix3x2F canvas_to_preview = 
+            Matrix3x2F::Scale((FLOAT)transform_videoprocessor2::canvas_width, 
+            (FLOAT)transform_videoprocessor2::canvas_height);
         invert = canvas_to_preview.Invert();
         canvas_to_preview = canvas_to_preview * 
-            Matrix3x2F::Scale(canvas_w * canvas_scale, canvas_h * canvas_scale);
-        canvas_to_preview = canvas_to_preview * Matrix3x2F::Translation(preview_x, preview_y);
+            Matrix3x2F::Scale(preview_rect.right - preview_rect.left,
+                preview_rect.bottom - preview_rect.top);
+        canvas_to_preview = canvas_to_preview * Matrix3x2F::Translation(
+            preview_rect.left, preview_rect.top);
 
-        D2D1_ANTIALIAS_MODE old_mode;
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
         CHECK_HR(hr = texture->QueryInterface(&surface));
@@ -177,14 +187,19 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
         this->d2d1devctx->BeginDraw();
         this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
 
-        if(preview_x > std::numeric_limits<FLOAT>::epsilon() &&
-            preview_y > std::numeric_limits<FLOAT>::epsilon())
+        if(preview_rect.left > std::numeric_limits<FLOAT>::epsilon() &&
+            preview_rect.top > std::numeric_limits<FLOAT>::epsilon())
         {
+            // draw preview rect
             this->d2d1devctx->SetTransform(canvas_to_preview);
-            this->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f, canvas_w, canvas_h));
+            this->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f, 
+                (FLOAT)transform_videoprocessor2::canvas_width, 
+                (FLOAT)transform_videoprocessor2::canvas_height));
 
             if(size_box)
             {
+                // draw size box
+                FLOAT box_stroke = 1.5f;
                 Matrix3x2F dest = 
                     Matrix3x2F::Scale(
                         params.dest_rect.right - params.dest_rect.left,
@@ -193,11 +208,58 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
                     params.dest_m;
                 this->d2d1devctx->SetTransform(dest * canvas_to_preview);
 
-                old_mode = this->d2d1devctx->GetAntialiasMode();
+                /*D2D1_ANTIALIAS_MODE old_mode = this->d2d1devctx->GetAntialiasMode();*/
                 /*this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);*/
-                this->d2d1devctx->DrawRectangle(RectF(0.f, 0.f, 1.f, 1.f)
-                    /*params.dest_rect*/, this->box_brush, 1.5f, this->stroke_style);
-                this->d2d1devctx->SetAntialiasMode(old_mode);
+                this->d2d1devctx->DrawRectangle(RectF(0.f, 0.f, 1.f, 1.f), 
+                    this->box_brush, box_stroke, this->stroke_style);
+                /*this->d2d1devctx->SetAntialiasMode(old_mode);*/
+
+                // draw corners
+                FLOAT corner_length = 5.f;
+                FLOAT corner_stroke = 1.5f;
+                this->d2d1devctx->SetTransform(Matrix3x2F::Identity());
+
+                const D2D1_POINT_2F corner = Point2F() * dest * canvas_to_preview,
+                    corner2 = Point2F(1.f, 0.f) * dest * canvas_to_preview,
+                    corner3 = Point2F(0.f, 1.f) * dest * canvas_to_preview,
+                    corner4 = Point2F(1.f, 1.f) * dest * canvas_to_preview;
+                this->d2d1devctx->DrawEllipse(
+                    Ellipse(corner, corner_length, corner_length), 
+                    this->line_brush, corner_stroke);
+                this->d2d1devctx->DrawEllipse(
+                    Ellipse(corner2, corner_length, corner_length),
+                    this->line_brush, corner_stroke);
+                this->d2d1devctx->DrawEllipse(
+                    Ellipse(corner3, corner_length, corner_length),
+                    this->line_brush, corner_stroke);
+                this->d2d1devctx->DrawEllipse(
+                    Ellipse(corner4, corner_length, corner_length),
+                    this->line_brush, corner_stroke);
+
+                // draw lines
+                const FLOAT dest_rotation = atan2(dest.m12, dest.m11);
+                const FLOAT x_scale = cos(dest_rotation), y_scale = sin(dest_rotation);
+                corner_stroke = 1.5f;
+                D2D1_POINT_2F center = Point2F(0.5f, 0.f) * dest * canvas_to_preview,
+                    center2 = Point2F(0.f, 0.5f) * dest * canvas_to_preview,
+                    center3 = Point2F(0.5f, 1.f) * dest * canvas_to_preview,
+                    center4 = Point2F(1.f, 0.5f) * dest * canvas_to_preview;
+                this->d2d1devctx->DrawLine(
+                    Point2F(center.x - corner_length * y_scale, center.y - corner_length * -x_scale),
+                    Point2F(center.x + corner_length * y_scale, center.y + corner_length * -x_scale),
+                    this->line_brush, corner_stroke);
+                this->d2d1devctx->DrawLine(
+                    Point2F(center2.x - corner_length * x_scale, center2.y - corner_length * y_scale),
+                    Point2F(center2.x + corner_length * x_scale, center2.y + corner_length * y_scale),
+                    this->line_brush, corner_stroke);
+                this->d2d1devctx->DrawLine(
+                    Point2F(center3.x - corner_length * y_scale, center3.y - corner_length * -x_scale),
+                    Point2F(center3.x + corner_length * y_scale, center3.y + corner_length * -x_scale),
+                    this->line_brush, corner_stroke);
+                this->d2d1devctx->DrawLine(
+                    Point2F(center4.x - corner_length * x_scale, center4.y - corner_length * y_scale),
+                    Point2F(center4.x + corner_length * x_scale, center4.y + corner_length * y_scale),
+                    this->line_brush, corner_stroke);
             }
         }
 
@@ -220,6 +282,39 @@ media_stream_t sink_preview2::create_stream()
     return stream_preview2_t(new stream_preview2(this->shared_from_this<sink_preview2>()));
 }
 
+D2D1_RECT_F sink_preview2::get_preview_rect() const
+{
+    scoped_lock lock(this->size_mutex);
+
+    const FLOAT canvas_w = (FLOAT)transform_videoprocessor2::canvas_width;
+    const FLOAT canvas_h = (FLOAT)transform_videoprocessor2::canvas_height;
+    const FLOAT preview_w = (FLOAT)(this->width - this->padding_width * 2);
+    const FLOAT preview_h = (FLOAT)(this->height - this->padding_height * 2);
+
+    FLOAT canvas_scale = preview_w / canvas_w;
+    FLOAT preview_x = (FLOAT)sink_preview2::padding_width,
+        preview_y = (FLOAT)sink_preview2::padding_height;
+    if((canvas_scale * canvas_h) > preview_h)
+    {
+        canvas_scale = preview_h / canvas_h;
+        preview_x = ((FLOAT)this->width - canvas_w * canvas_scale) / 2.f;
+    }
+    else
+        preview_y = ((FLOAT)this->height - canvas_h * canvas_scale) / 2.f;
+
+    return D2D1::RectF(
+        preview_x, preview_y, 
+        preview_x + canvas_w * canvas_scale,
+        preview_y + canvas_h * canvas_scale);
+}
+
+void sink_preview2::get_window_size(UINT& width, UINT& height) const
+{
+    scoped_lock lock(this->size_mutex);
+    width = this->width;
+    height = this->height;
+}
+
 void sink_preview2::set_size_box(const stream_videoprocessor2_controller_t& new_box)
 {
     std::atomic_exchange(&this->size_box, new_box);
@@ -227,9 +322,10 @@ void sink_preview2::set_size_box(const stream_videoprocessor2_controller_t& new_
 
 void sink_preview2::update_size()
 {
-    std::lock(*this->context_mutex, this->d2d1_context_mutex);
+    std::lock(*this->context_mutex, this->d2d1_context_mutex, this->size_mutex);
     scoped_lock lock(*this->context_mutex, std::adopt_lock);
     scoped_lock lock2(this->d2d1_context_mutex, std::adopt_lock);
+    scoped_lock lock3(this->size_mutex, std::adopt_lock);
 
     RECT r;
     GetClientRect(this->hwnd, &r);

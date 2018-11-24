@@ -146,12 +146,8 @@ void stream_videoprocessor2::process()
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
         CComPtr<ID2D1BitmapBrush1> bitmap_brush;
-        CComPtr<ID2D1RectangleGeometry> geometry;
-
         Matrix3x2F src_to_dest, src2_to_dest2;
-        Matrix3x2F world, world_inverted, brush, layer;
-
-        D2D1_LAYER_PARAMETERS1 layer_params;
+        Matrix3x2F world, brush;
         bool invert;
 
         // src_rect_m * M = dest_rect_m <=> M = src_rect_t -1 * dest_rect_m
@@ -180,10 +176,6 @@ void stream_videoprocessor2::process()
 
         world = src_to_dest * src2_to_dest2;
         brush = params.source_m;
-
-        world_inverted = world;
-        invert = world_inverted.Invert();
-        layer = user_params.dest_m * world_inverted;
 
         /*
         (multiplication of translation matrices are commutative, probably same applies to
@@ -214,6 +206,14 @@ void stream_videoprocessor2::process()
 
         if(!user_params.axis_aligned_clip)
         {
+            CComPtr<ID2D1RectangleGeometry> geometry;
+            D2D1_LAYER_PARAMETERS1 layer_params;
+            Matrix3x2F world_inverted, layer;
+
+            world_inverted = world;
+            invert = world_inverted.Invert();
+            layer = user_params.dest_m * world_inverted;
+
             CHECK_HR(hr = this->transform->d2d1factory->CreateRectangleGeometry(
                 user_params.dest_rect, &geometry));
             layer_params = LayerParameters1(

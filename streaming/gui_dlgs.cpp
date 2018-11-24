@@ -175,7 +175,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
 
             stream_videoprocessor2_controller::params_t params;
             D2D1_RECT_F dest_rect;
-            const FLOAT dest_rot = -i * 10.f;
+            const FLOAT dest_rot = -i * 100.f;
             params.source_rect = { 0.f };
             params.dest_rect = { 0.f };
             params.source_rect.right = (FLOAT)display_w - i * 40.f;

@@ -58,6 +58,8 @@ public:
     virtual ~media_sample_videoprocessor2() {}
 };
 
+
+
 class transform_videoprocessor2 : public media_source
 {
     friend class stream_videoprocessor2;
