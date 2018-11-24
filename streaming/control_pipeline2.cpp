@@ -18,7 +18,7 @@ control_pipeline2::control_pipeline2() :
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
     root_scene(controls, *this),
-    recording(false), initialized(false)
+    recording(false), initialized(false), restart_audiomixer(false)
 {
     this->root_scene.parent = this;
 
@@ -208,8 +208,11 @@ void control_pipeline2::activate_components()
 
     // create audiomixer transform
     if(!this->audiomixer_transform || 
-        this->audiomixer_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
+        this->audiomixer_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE ||
+        this->restart_audiomixer)
     {
+        this->restart_audiomixer = false;
+
         transform_audiomixer_t audiomixer_transform(new transform_audiomixer(this->audio_session));
         audiomixer_transform->initialize();
 
@@ -402,6 +405,7 @@ HANDLE control_pipeline2::start_recording(const std::wstring& /*filename*/)
     if(!this->stopped_signal)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
+    this->restart_audiomixer = true;
     this->recording = true;
     control_class::activate();
 
@@ -410,6 +414,7 @@ HANDLE control_pipeline2::start_recording(const std::wstring& /*filename*/)
 
 void control_pipeline2::stop_recording()
 {
+    this->restart_audiomixer = true;
     this->recording = false;
     control_class::activate();
 }

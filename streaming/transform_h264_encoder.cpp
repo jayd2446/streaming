@@ -733,7 +733,8 @@ stream_h264_encoder::stream_h264_encoder(const transform_h264_encoder_t& transfo
 
 void stream_h264_encoder::on_component_start(time_unit t)
 {
-    this->transform->time_shift = t;
+    if(this->transform->time_shift < 0)
+        this->transform->time_shift = t;
 }
 
 void stream_h264_encoder::on_component_stop(time_unit t)

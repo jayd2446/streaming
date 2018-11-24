@@ -91,8 +91,9 @@ void transform_aac_encoder::processing_cb(void*)
             dur = (time_unit)(dur * sample_duration);
             if(ts < 0)
             {
+                time_unit off = ts;
                 ts = 0;
-                std::cout << "aac encoder time shift was off" << std::endl;
+                std::cout << "aac encoder time shift was off by " << off << std::endl;
             }
             CHECK_HR(hr = (*it)->SetSampleTime(ts));
             CHECK_HR(hr = (*it)->SetSampleDuration(dur));
@@ -252,7 +253,8 @@ stream_aac_encoder::stream_aac_encoder(const transform_aac_encoder_t& transform)
 
 void stream_aac_encoder::on_component_start(time_unit t)
 {
-    this->transform->time_shift = t;
+    if(this->transform->time_shift < 0)
+        this->transform->time_shift = t;
 }
 
 void stream_aac_encoder::on_component_stop(time_unit t)

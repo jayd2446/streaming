@@ -33,7 +33,8 @@ class control_pipeline2 : public control_class
 {
     friend class control_scene2;
 private:
-    bool recording, initialized;
+    // restart audio mixer is used so that the audio is cut when recording starts/stops
+    bool recording, initialized, restart_audiomixer;
     HWND preview_hwnd;
     CHandle stopped_signal;
     std::recursive_mutex pipeline_mutex;
