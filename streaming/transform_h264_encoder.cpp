@@ -166,7 +166,8 @@ transform_h264_encoder::transform_h264_encoder(const media_session_t& session,
     use_system_memory(false),
     software(false),
     draining(false),
-    first_sample(true)
+    first_sample(true),
+    time_shift(-1)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
     this->process_output_callback.Attach(
@@ -287,10 +288,17 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     const LONGLONG sample_duration = (LONGLONG)
         (SECOND_IN_TIME_UNIT / (double)(frame_rate_num / frame_rate_den));
 
+    time_unit sample_time = request.sample_view.sample.timestamp - this->time_shift;
+    if(sample_time < 0)
+    {
+        sample_time = 0;
+        std::cout << "h264 encoder time shift was off" << std::endl;
+    }
+
     // create sample
     CHECK_HR(hr = MFCreateSample(&sample));
     CHECK_HR(hr = sample->AddBuffer(buffer));
-    CHECK_HR(hr = sample->SetSampleTime(request.sample_view.sample.timestamp));
+    CHECK_HR(hr = sample->SetSampleTime(sample_time/*request.sample_view.sample.timestamp*/));
     CHECK_HR(hr = sample->SetSampleDuration(sample_duration));
     // the amd encoder probably copies the discontinuity flag to output sample,
     // which might cause problems when the sample is passed to sinkwriter
@@ -723,8 +731,9 @@ stream_h264_encoder::stream_h264_encoder(const transform_h264_encoder_t& transfo
 {
 }
 
-void stream_h264_encoder::on_component_start(time_unit)
+void stream_h264_encoder::on_component_start(time_unit t)
 {
+    this->transform->time_shift = t;
 }
 
 void stream_h264_encoder::on_component_stop(time_unit t)

@@ -49,6 +49,11 @@ private:
 
     DWORD input_id, output_id;
 
+    // time shift must be used instead of adjusting the time in the output_file, because
+    // it seems that the encoder stores a 'hidden' time field which is
+    // used by the media foundation's file sink
+    time_unit time_shift;
+
     // debug
     frame_unit last_time_stamp;
 

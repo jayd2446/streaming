@@ -8,7 +8,8 @@
 
 transform_aac_encoder::transform_aac_encoder(const media_session_t& session) : 
     media_source(session),
-    last_time_stamp(std::numeric_limits<frame_unit>::min())
+    last_time_stamp(std::numeric_limits<frame_unit>::min()),
+    time_shift(-1)
 {
 }
 
@@ -86,8 +87,13 @@ void transform_aac_encoder::processing_cb(void*)
             }
             this->last_time_stamp = ts + dur;
 
-            ts = (time_unit)(ts * sample_duration);
+            ts = (time_unit)(ts * sample_duration) - this->time_shift;
             dur = (time_unit)(dur * sample_duration);
+            if(ts < 0)
+            {
+                ts = 0;
+                std::cout << "aac encoder time shift was off" << std::endl;
+            }
             CHECK_HR(hr = (*it)->SetSampleTime(ts));
             CHECK_HR(hr = (*it)->SetSampleDuration(dur));
                
@@ -244,8 +250,9 @@ stream_aac_encoder::stream_aac_encoder(const transform_aac_encoder_t& transform)
 {
 }
 
-void stream_aac_encoder::on_component_start(time_unit)
+void stream_aac_encoder::on_component_start(time_unit t)
 {
+    this->transform->time_shift = t;
 }
 
 void stream_aac_encoder::on_component_stop(time_unit t)

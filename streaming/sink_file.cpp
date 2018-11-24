@@ -204,9 +204,6 @@ stream_file::stream_file(const sink_file_t& sink) :
 
 void stream_file::on_component_start(time_unit t)
 {
-    // try to set the initial time for the output;
-    // the output will modify the sample timestamps so that they start at 0
-    this->sink->file_output->set_initial_time(t);
 }
 
 media_stream::result_t stream_file::request_sample(request_packet& rp, const media_stream*)

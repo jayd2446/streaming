@@ -61,6 +61,11 @@ private:
     media_buffer_h264_t out_buffer;
     context_mutex_t context_mutex;
 
+    // time shift must be used instead of adjusting the time in the output_file, because
+    // it seems that the encoder stores a 'hidden' time field which is
+    // used by the media foundation's file sink
+    time_unit time_shift;
+
     bool use_system_memory, software;
 
     // debug

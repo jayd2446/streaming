@@ -99,9 +99,11 @@ void stream_videoprocessor2::process()
 {
     HRESULT hr = S_OK;
     media_sample_texture sample;
-    time_unit timestamp = std::numeric_limits<time_unit>::max();
+    /*time_unit timestamp = std::numeric_limits<time_unit>::max();*/
     // rps are equivalent in every input stream
     request_packet rp = this->input_streams[0].first.rp;
+
+    time_unit timestamp = rp.request_time;
 
     this->d2d1devctx->BeginDraw();
     this->d2d1devctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
@@ -120,7 +122,7 @@ void stream_videoprocessor2::process()
         // use the earliest timestamp;
         // actually, max must be used so that the timestamp stays incremental
         // (using max only applies to displaycapture where the buffers are shared between streams)
-        timestamp = rp.request_time;//std::min(timestamp, it->first.sample_view.timestamp);
+        //timestamp = rp.request_time;//std::min(timestamp, it->first.sample_view.timestamp);
 
         if(!texture)
             continue;

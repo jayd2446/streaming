@@ -8,7 +8,7 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-output_file::output_file() : stopped_signal(NULL), stopped(false), initial_time(-1)
+output_file::output_file() : stopped_signal(NULL), stopped(false)
 {
 }
 
@@ -62,31 +62,12 @@ void output_file::initialize(
         this->stopped = true;
 }
 
-void output_file::set_initial_time(time_unit t)
-{
-    if(this->initial_time < 0)
-        this->initial_time = t;
-}
-
 void output_file::write_sample(bool video, const CComPtr<IMFSample>& sample)
 {
     if(this->stopped)
         return;
 
     HRESULT hr = S_OK;
-    LONGLONG sample_time;
-
-    CHECK_HR(hr = sample->GetSampleTime(&sample_time));
-    /*assert_((sample_time - this->initial_time) >= 0);*/
-    sample_time -= this->initial_time;
-    // off by one errors are introduced when translating audio sample positions
-    // to timestamps
-    if(sample_time < 0)
-    {
-        std::cout << "audio off by one" << std::endl;
-        sample_time = 0;
-    }
-    CHECK_HR(hr = sample->SetSampleTime(sample_time));
     CHECK_HR(hr = this->writer->WriteSample(video ? 0 : 1, sample));
 
 done:
