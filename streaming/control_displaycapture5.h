@@ -1,12 +1,10 @@
 #pragma once
 #include "control_class.h"
+#include "control_video2.h"
 #include "source_displaycapture5.h"
-#include "transform_videoprocessor2.h"
 #include <vector>
 
-#define CONTROL_DISPLAYCAPTURE5_TYPE_NAME L"displaycapture"
-
-class control_displaycapture : public control_class
+class control_displaycapture : public control_video2
 {
     friend class control_scene2;
 public:
@@ -17,19 +15,28 @@ public:
         DXGI_OUTPUT_DESC output;
     };
 private:
-    control_pipeline2& pipeline;
+    /*control_pipeline2& pipeline;*/
     displaycapture_params params;
     source_displaycapture5_t component;
+    stream_videoprocessor2_controller_t videoprocessor_params;
 
     media_stream_t stream, pointer_stream;
     const control_displaycapture* reference;
 
+    // control_class
     void build_video_topology_branch(const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
+    // control_video2
+    void apply_transformation(const D2D1::Matrix3x2F&&, bool dest_params);
+    void set_default_video_params(video_params_t&, bool dest_params);
+
     control_displaycapture(control_set_t& active_controls, control_pipeline2&);
 public:
-    stream_videoprocessor2_controller_t videoprocessor_params;
+    /*stream_videoprocessor2_controller_t videoprocessor_params;*/
+
+    // control_video2
+    D2D1_RECT_F get_rectangle(bool dest_params) const;
 
     // before the displaycapture can be activated, right params must be chosen and set
     static void list_available_displaycapture_params(const control_pipeline2_t&,
@@ -39,6 +46,9 @@ public:
     // while it is active
     void set_displaycapture_params(const displaycapture_params& params) {this->params = params;}
 
+    /*void apply_default_video_params();*/
+
+    // checks if the control's displaycapture parameters match this class' parameters
     bool is_identical_control(const control_class*) const;
 
     /*bool is_activated() const;*/

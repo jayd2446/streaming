@@ -3,9 +3,7 @@
 #include "transform_h264_encoder.h"
 #include "transform_videoprocessor2.h"
 #include "transform_audioprocessor.h"
-
-// TODO: decide if these empty sources should dispatch requests to work queues
-// like normal sources
+#include <Mferror.h>
 
 source_empty_audio::source_empty_audio(const media_session_t& session) : media_source(session)
 {
@@ -25,10 +23,13 @@ media_stream_t source_empty_audio::create_stream()
 stream_empty_audio::stream_empty_audio(const source_empty_audio_t& source) :
     source(source), buffer(new media_buffer_samples)
 {
+    this->callback.Attach(new async_callback_t(&stream_empty_audio::callback_f));
 }
 
-media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, const media_stream*)
+void stream_empty_audio::callback_f(void*)
 {
+    request_packet rp = std::move(this->rp);
+
     const double frame_duration = SECOND_IN_TIME_UNIT / (double)transform_aac_encoder::sample_rate;
     media_sample_audio audio(media_buffer_samples_t(this->buffer));
     audio.timestamp = rp.request_time;
@@ -38,7 +39,21 @@ media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, co
     audio.frame_end = (frame_unit)(rp.request_time / frame_duration);
     audio.silent = true;
 
-    return this->process_sample(audio, rp, NULL);
+    this->process_sample(audio, rp, NULL);
+}
+
+media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, const media_stream*)
+{
+    this->rp = rp;
+
+    const HRESULT hr = this->callback->mf_put_work_item(
+        this->shared_from_this<stream_empty_audio>());
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        throw HR_EXCEPTION(hr);
+    else if(hr == MF_E_SHUTDOWN)
+        return FATAL_ERROR;
+
+    return OK;
 }
 
 media_stream::result_t stream_empty_audio::process_sample(
@@ -72,20 +87,38 @@ stream_empty_video::stream_empty_video(const source_empty_video_t& source) :
     source(source),
     buffer(new media_buffer_texture)
 {
+    this->callback.Attach(new async_callback_t(&stream_empty_video::callback_f));
 }
 
-media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
+void stream_empty_video::callback_f(void*)
 {
+    request_packet rp = std::move(this->rp);
+
     stream_videoprocessor2_controller::params_t params;
     params.dest_rect.left = params.dest_rect.top = 0;
     params.dest_rect.right = transform_h264_encoder::frame_width;
     params.dest_rect.bottom = transform_h264_encoder::frame_height;
     params.source_rect = params.dest_rect;
+    params.source_m = params.dest_m = D2D1::Matrix3x2F::Identity();
 
     media_sample_videoprocessor2 sample_view(params, this->buffer);
     sample_view.timestamp = rp.request_time;
 
-    return this->process_sample(sample_view, rp, NULL);
+    this->process_sample(sample_view, rp, NULL);
+}
+
+media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
+{
+    this->rp = rp;
+
+    const HRESULT hr = this->callback->mf_put_work_item(
+        this->shared_from_this<stream_empty_video>());
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        throw HR_EXCEPTION(hr);
+    else if(hr == MF_E_SHUTDOWN)
+        return FATAL_ERROR;
+
+    return OK;
 }
 
 media_stream::result_t stream_empty_video::process_sample(

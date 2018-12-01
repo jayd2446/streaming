@@ -13,6 +13,7 @@ class control_pipeline2;
 class control_scene2;
 class control_class;
 typedef std::shared_ptr<control_class> control_class_t;
+typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 
 //enum control_common_type : int
 //{

@@ -189,10 +189,25 @@ void stream_videoprocessor2::process()
         linear mappings preserve the origin, which isn't the case in affine mappings
         (translation matrix)
 
-        3x2 matrix(affine transformation matrix):
-        a b (0)
-        c d (0)
-        e f (1)
+        3x2 matrix(affine transformation matrix) in directx:
+        a       b       (0)
+        c       d       (0)
+        e(dx)   f(dy)   (1), in opengl the matrix is transposed
+
+        in directx, the matrix is premultiplied by the vector point, which
+        is P' = P M, whereas in opengl it is post multiplied:
+        P' = M P
+
+        this means that the ordering in opengl is different
+        (glscale, gltranslate) will result in translating first, scaling second
+
+        opengl also uses column vectors while directx uses row vectors
+        (the transformation matrices are thus also different);
+
+        the fact that both the multiplication and vectors differ, the transformation
+        matrices can be used in both opengl and directx;
+        this probably relates to the fact that (AB) transposed = B transposed * A transposed
+
         */
 
         CHECK_HR(hr = texture->QueryInterface(&surface));

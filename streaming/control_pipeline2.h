@@ -22,6 +22,7 @@
 #include <dxgi1_2.h>
 #include <mutex>
 #include <memory>
+#include <vector>
 
 #pragma comment(lib, "D3D11.lib")
 #pragma comment(lib, "DXGI.lib")
@@ -72,6 +73,7 @@ public:
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
     control_scene2 root_scene;
+    std::vector<control_class_t> selected_items;
 
     control_pipeline2();
 

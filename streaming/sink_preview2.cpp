@@ -1,22 +1,28 @@
 #include "sink_preview2.h"
 #include "assert.h"
+#include "control_pipeline2.h"
+#include "control_video2.h"
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
+#define SIZE_POINT_RADIUS 5.f
 
 #undef max
 #undef min
 
 sink_preview2::sink_preview2(const media_session_t& session, context_mutex_t context_mutex) : 
-    media_sink(session), context_mutex(context_mutex), render(true)
+    media_sink(session), context_mutex(context_mutex), render(true),
+    size_point_radius(SIZE_POINT_RADIUS)
 {
 }
 
 void sink_preview2::initialize(
+    const control_pipeline2_t& ctrl_pipeline,
     HWND hwnd, 
     const CComPtr<ID2D1Device>& d2d1dev,
     const CComPtr<ID3D11Device>& d3d11dev,
     const CComPtr<ID2D1Factory1>& d2d1factory)
 {
+    this->ctrl_pipeline = ctrl_pipeline;
     this->hwnd = hwnd;
     this->d3d11dev = d3d11dev;
     this->d2d1factory = d2d1factory;
@@ -106,6 +112,9 @@ void sink_preview2::initialize(
     CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
         D2D1::ColorF(D2D1::ColorF::LimeGreen),
         &this->line_brush));
+    CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
+        D2D1::ColorF(D2D1::ColorF::Red),
+        &this->highlighted_brush));
 
     // create the stroke style for the box
     {
@@ -133,10 +142,24 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 
     const media_sample_texture& sample_view =
         reinterpret_cast<const media_sample_texture&>(sample_view_);
-    stream_videoprocessor2_controller_t size_box = std::atomic_load(&this->size_box);
-    stream_videoprocessor2_controller::params_t params = {0};
-    if(size_box)
-        size_box->get_params(params);
+    control_video2* video_control = NULL;
+    D2D1_RECT_F dest_rect;
+    D2D1::Matrix3x2F dest_m;
+    {
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        if(this->ctrl_pipeline->selected_items.empty())
+            goto out;
+        video_control = dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0].get());
+        if(!video_control)
+            goto out;
+
+        dest_rect = video_control->get_rectangle(true);
+        dest_m = video_control->get_transformation(true);
+    }
+out:
+    /*stream_videoprocessor2_controller::params_t videoprocessor_params;*/
+    /*if(video_control)*/
+        /*video_control->videoprocessor_params->get_params(videoprocessor_params);*/
 
     CComPtr<ID3D11Texture2D> texture = sample_view.buffer->texture;
     if(texture)
@@ -146,23 +169,6 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 
         D2D1_RECT_F preview_rect = this->get_preview_rect();
         bool invert;
-
-        /*const FLOAT canvas_w = (FLOAT)transform_videoprocessor2::canvas_width;
-        const FLOAT canvas_h = (FLOAT)transform_videoprocessor2::canvas_height;
-        const FLOAT preview_w = (FLOAT)(this->width - this->padding_width * 2);
-        const FLOAT preview_h = (FLOAT)(this->height - this->padding_height * 2);
-        bool invert;
-
-        FLOAT canvas_scale = preview_w / canvas_w;
-        FLOAT preview_x = (FLOAT)sink_preview2::padding_width, 
-            preview_y = (FLOAT)sink_preview2::padding_height;
-        if((canvas_scale * canvas_h) > preview_h)
-        {
-            canvas_scale = preview_h / canvas_h;
-            preview_x = ((FLOAT)this->width - canvas_w * canvas_scale) / 2.f;
-        }
-        else
-            preview_y = ((FLOAT)this->height - canvas_h * canvas_scale) / 2.f;*/
 
         Matrix3x2F canvas_to_preview = 
             Matrix3x2F::Scale((FLOAT)transform_videoprocessor2::canvas_width, 
@@ -196,70 +202,92 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
                 (FLOAT)transform_videoprocessor2::canvas_width, 
                 (FLOAT)transform_videoprocessor2::canvas_height));
 
-            if(size_box)
+            if(video_control)
             {
+                /*control_video::video_params_t video_params = video_control->get_video_params(true);*/
+                
                 // draw size box
                 FLOAT box_stroke = 1.5f;
-                Matrix3x2F dest = 
+                /*Matrix3x2F dest = 
                     Matrix3x2F::Scale(
-                        params.dest_rect.right - params.dest_rect.left,
-                        params.dest_rect.bottom - params.dest_rect.top) *
-                    Matrix3x2F::Translation(params.dest_rect.left, params.dest_rect.top) *
-                    params.dest_m;
-                this->d2d1devctx->SetTransform(dest * canvas_to_preview);
+                        video_params.rectangle.right - video_params.rectangle.left,
+                        video_params.rectangle.bottom - video_params.rectangle.top) *
+                    Matrix3x2F::Rotation(video_params.rotation) *
+                    Matrix3x2F::Translation(video_params.rectangle.left, video_params.rectangle.top);*/
+                this->d2d1devctx->SetTransform(dest_m * canvas_to_preview);
 
                 /*D2D1_ANTIALIAS_MODE old_mode = this->d2d1devctx->GetAntialiasMode();*/
                 /*this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);*/
-                this->d2d1devctx->DrawRectangle(RectF(0.f, 0.f, 1.f, 1.f), 
+                this->d2d1devctx->DrawRectangle(dest_rect, 
                     this->box_brush, box_stroke, this->stroke_style);
                 /*this->d2d1devctx->SetAntialiasMode(old_mode);*/
 
                 // draw corners
-                FLOAT corner_length = 5.f;
+                const int highlighted = video_control->get_highlighted_points();
+                ID2D1SolidColorBrush* brush;
+                FLOAT corner_length = this->size_point_radius;
                 FLOAT corner_stroke = 1.5f;
                 this->d2d1devctx->SetTransform(Matrix3x2F::Identity());
 
-                const D2D1_POINT_2F corner = Point2F() * dest * canvas_to_preview,
-                    corner2 = Point2F(1.f, 0.f) * dest * canvas_to_preview,
-                    corner3 = Point2F(0.f, 1.f) * dest * canvas_to_preview,
-                    corner4 = Point2F(1.f, 1.f) * dest * canvas_to_preview;
-                this->d2d1devctx->DrawEllipse(
-                    Ellipse(corner, corner_length, corner_length), 
-                    this->line_brush, corner_stroke);
-                this->d2d1devctx->DrawEllipse(
-                    Ellipse(corner2, corner_length, corner_length),
-                    this->line_brush, corner_stroke);
-                this->d2d1devctx->DrawEllipse(
-                    Ellipse(corner3, corner_length, corner_length),
-                    this->line_brush, corner_stroke);
-                this->d2d1devctx->DrawEllipse(
-                    Ellipse(corner4, corner_length, corner_length),
-                    this->line_brush, corner_stroke);
+                const D2D1_POINT_2F 
+                    corner = Point2F(dest_rect.left, dest_rect.top) * dest_m * canvas_to_preview,
+                    corner2 = Point2F(dest_rect.right, dest_rect.top) * dest_m * canvas_to_preview,
+                    corner3 = Point2F(dest_rect.left, dest_rect.bottom) * dest_m * canvas_to_preview,
+                    corner4 = Point2F(dest_rect.right, dest_rect.bottom) * dest_m * canvas_to_preview;
 
-                // draw lines
-                const FLOAT dest_rotation = atan2(dest.m12, dest.m11);
-                const FLOAT x_scale = cos(dest_rotation), y_scale = sin(dest_rotation);
-                corner_stroke = 1.5f;
-                D2D1_POINT_2F center = Point2F(0.5f, 0.f) * dest * canvas_to_preview,
-                    center2 = Point2F(0.f, 0.5f) * dest * canvas_to_preview,
-                    center3 = Point2F(0.5f, 1.f) * dest * canvas_to_preview,
-                    center4 = Point2F(1.f, 0.5f) * dest * canvas_to_preview;
-                this->d2d1devctx->DrawLine(
-                    Point2F(center.x - corner_length * y_scale, center.y - corner_length * -x_scale),
-                    Point2F(center.x + corner_length * y_scale, center.y + corner_length * -x_scale),
-                    this->line_brush, corner_stroke);
-                this->d2d1devctx->DrawLine(
-                    Point2F(center2.x - corner_length * x_scale, center2.y - corner_length * y_scale),
-                    Point2F(center2.x + corner_length * x_scale, center2.y + corner_length * y_scale),
-                    this->line_brush, corner_stroke);
-                this->d2d1devctx->DrawLine(
-                    Point2F(center3.x - corner_length * y_scale, center3.y - corner_length * -x_scale),
-                    Point2F(center3.x + corner_length * y_scale, center3.y + corner_length * -x_scale),
-                    this->line_brush, corner_stroke);
-                this->d2d1devctx->DrawLine(
-                    Point2F(center4.x - corner_length * x_scale, center4.y - corner_length * y_scale),
-                    Point2F(center4.x + corner_length * x_scale, center4.y + corner_length * y_scale),
-                    this->line_brush, corner_stroke);
+                if((highlighted & control_video2::SCALE_LEFT) &&
+                    (highlighted & control_video2::SCALE_TOP))
+                    brush = this->highlighted_brush, corner_stroke = 3.f;
+                else
+                    brush = this->line_brush, corner_stroke = 1.5f;
+                this->d2d1devctx->DrawEllipse(Ellipse(corner, corner_length, corner_length), 
+                    brush, corner_stroke);
+                if((highlighted & control_video2::SCALE_RIGHT) &&
+                    (highlighted & control_video2::SCALE_TOP))
+                    brush = this->highlighted_brush, corner_stroke = 3.f;
+                else
+                    brush = this->line_brush, corner_stroke = 1.5f;
+                this->d2d1devctx->DrawEllipse(Ellipse(corner2, corner_length, corner_length),
+                    brush, corner_stroke);
+                if((highlighted & control_video2::SCALE_LEFT) &&
+                    (highlighted & control_video2::SCALE_BOTTOM))
+                    brush = this->highlighted_brush, corner_stroke = 3.f;
+                else
+                    brush = this->line_brush, corner_stroke = 1.5f;
+                this->d2d1devctx->DrawEllipse(Ellipse(corner3, corner_length, corner_length),
+                    brush, corner_stroke);
+                if((highlighted & control_video2::SCALE_RIGHT) &&
+                    (highlighted & control_video2::SCALE_BOTTOM))
+                    brush = this->highlighted_brush, corner_stroke = 3.f;
+                else
+                    brush = this->line_brush, corner_stroke = 1.5f;
+                this->d2d1devctx->DrawEllipse(Ellipse(corner4, corner_length, corner_length),
+                    brush, corner_stroke);
+
+                //// draw lines
+                //const FLOAT dest_rotation = atan2(dest.m12, dest.m11);
+                //const FLOAT x_scale = cos(dest_rotation), y_scale = sin(dest_rotation);
+                //corner_stroke = 2.f;
+                //D2D1_POINT_2F center = Point2F(0.5f, 0.f) * dest * canvas_to_preview,
+                //    center2 = Point2F(0.f, 0.5f) * dest * canvas_to_preview,
+                //    center3 = Point2F(0.5f, 1.f) * dest * canvas_to_preview,
+                //    center4 = Point2F(1.f, 0.5f) * dest * canvas_to_preview;
+                //this->d2d1devctx->DrawLine(
+                //    Point2F(center.x - corner_length * y_scale, center.y - corner_length * -x_scale),
+                //    Point2F(center.x + corner_length * y_scale, center.y + corner_length * -x_scale),
+                //    this->line_brush, corner_stroke);
+                //this->d2d1devctx->DrawLine(
+                //    Point2F(center2.x - corner_length * x_scale, center2.y - corner_length * y_scale),
+                //    Point2F(center2.x + corner_length * x_scale, center2.y + corner_length * y_scale),
+                //    this->line_brush, corner_stroke);
+                //this->d2d1devctx->DrawLine(
+                //    Point2F(center3.x - corner_length * y_scale, center3.y - corner_length * -x_scale),
+                //    Point2F(center3.x + corner_length * y_scale, center3.y + corner_length * -x_scale),
+                //    this->line_brush, corner_stroke);
+                //this->d2d1devctx->DrawLine(
+                //    Point2F(center4.x - corner_length * x_scale, center4.y - corner_length * y_scale),
+                //    Point2F(center4.x + corner_length * x_scale, center4.y + corner_length * y_scale),
+                //    this->line_brush, corner_stroke);
             }
         }
 
@@ -313,11 +341,6 @@ void sink_preview2::get_window_size(UINT& width, UINT& height) const
     scoped_lock lock(this->size_mutex);
     width = this->width;
     height = this->height;
-}
-
-void sink_preview2::set_size_box(const stream_videoprocessor2_controller_t& new_box)
-{
-    std::atomic_exchange(&this->size_box, new_box);
 }
 
 void sink_preview2::update_size()

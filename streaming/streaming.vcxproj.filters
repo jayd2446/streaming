@@ -135,6 +135,9 @@
     <ClCompile Include="transform_videoprocessor2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="control_video2.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -268,6 +271,9 @@
     </ClInclude>
     <ClInclude Include="transform_videoprocessor2.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="control_video2.h">
+      <Filter>control</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

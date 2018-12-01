@@ -24,6 +24,7 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
         // video
         {
+            control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
             control_displaycapture::list_available_displaycapture_params(this->ctrl_pipeline,
                 this->displaycaptures);
 

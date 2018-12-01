@@ -262,3 +262,5 @@ __pycache__/
 *.mp4
 /streaming/media_item.h
 /streaming/scene_item.h
+/streaming/control_video.h
+/streaming/control_video.cpp

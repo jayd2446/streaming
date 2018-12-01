@@ -114,6 +114,7 @@ void gui_sourcedlg::set_source_tree(const control_scene2& scene)
         this->wnd_sourcetree.InsertItem(elem->name.c_str(), TVI_ROOT, TVI_LAST);
 }
 
+// TODO: rename to set_selected_item
 void gui_sourcedlg::set_sizing_box(CTreeItem&& item)
 {
     control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
@@ -129,35 +130,40 @@ void gui_sourcedlg::set_sizing_box(CTreeItem&& item)
         /*control_scene2::controls_t& controls = is_video_control ?
             active_scene->video_controls : active_scene->audio_controls;*/
 
-        // TODO: video control items probably should inherit from a generic video
-        // control class that has the stream controller field
         if(found)
         {
-            control_displaycapture* control = dynamic_cast<control_displaycapture*>((*it).get());
+            this->ctrl_pipeline->selected_items.clear();
+            this->ctrl_pipeline->selected_items.push_back(*it);
+
+            /*control_displaycapture* control = dynamic_cast<control_displaycapture*>((*it).get());
             if(control)
                 this->ctrl_pipeline->get_preview_window()->set_size_box(control->videoprocessor_params);
             else
-                this->ctrl_pipeline->get_preview_window()->set_size_box(NULL);
+                this->ctrl_pipeline->get_preview_window()->set_size_box(NULL);*/
         }
     }
 }
 
 LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-
-    control_scene2* scene = this->ctrl_pipeline->root_scene.get_active_scene();
-    if(!scene)
+    control_scene2* scene;
     {
-        this->dlg_scenes.add_scene(L"New Scene");
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
         scene = this->ctrl_pipeline->root_scene.get_active_scene();
-        assert_(scene);
+        if(!scene)
+        {
+            this->dlg_scenes.add_scene(L"New Scene");
+            scene = this->ctrl_pipeline->root_scene.get_active_scene();
+            assert_(scene);
+        }
     }
 
     gui_newdlg dlg(this->ctrl_pipeline);
     const INT_PTR ret = dlg.DoModal(*this, gui_newdlg::NEW_VIDEO);
     if(ret == 0)
     {
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+
         if(dlg.cursel < dlg.audio_sel_offset)
         {
             static int k = 0;
@@ -209,9 +215,11 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             control_displaycapture& displaycapture = *scene->add_displaycapture(std::move(sts.str()));
             this->video_counter++;
 
-            displaycapture.videoprocessor_params.reset(new stream_videoprocessor2_controller);
-            displaycapture.videoprocessor_params->set_params(params);
+            /*displaycapture.videoprocessor_params.reset(new stream_videoprocessor2_controller);
+            displaycapture.videoprocessor_params->set_params(params);*/
             displaycapture.set_displaycapture_params(dlg.displaycaptures[dlg.cursel]);
+            // displaycapture params must be set before setting video params
+            displaycapture.apply_default_video_params();
 
             // TODO: just add items instead of rebuilding the tree
             this->set_source_tree(*scene);
@@ -302,8 +310,10 @@ LRESULT gui_sourcedlg::OnTvnSelchangedSourcetree(int /*idCtrl*/, LPNMHDR pNMHDR,
 
 LRESULT gui_sourcedlg::OnKillFocus(int /*idCtrl*/, LPNMHDR /*pNMHDR*/, BOOL& /*bHandled*/)
 {
-    if(this->ctrl_pipeline->get_preview_window())
-        this->ctrl_pipeline->get_preview_window()->set_size_box(NULL);
+    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    /*if(this->ctrl_pipeline->get_preview_window())*/
+        this->ctrl_pipeline->selected_items.clear();
+        /*this->ctrl_pipeline->get_preview_window()->set_size_box(NULL);*/
     return 0;
 }
 

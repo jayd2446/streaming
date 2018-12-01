@@ -188,7 +188,7 @@ void control_pipeline2::activate_components()
         this->preview_sink->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
         sink_preview2_t preview_sink(new sink_preview2(this->session, this->context_mutex));
-        preview_sink->initialize(this->preview_hwnd,
+        preview_sink->initialize(this->shared_from_this<control_pipeline2>(), this->preview_hwnd,
             this->d2d1dev, this->d3d11dev, this->d2d1factory);
 
         this->preview_sink = preview_sink;

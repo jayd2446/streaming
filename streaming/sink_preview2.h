@@ -3,6 +3,7 @@
 #include "media_sink.h"
 #include "media_stream.h"
 #include "transform_videoprocessor2.h"
+#include "control_class.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <d2d1_1.h>
@@ -24,11 +25,11 @@ public:
     static const UINT32 padding_width = 20;
     static const UINT32 padding_height = 20;
 private:
+    control_pipeline2_t ctrl_pipeline;
     context_mutex_t context_mutex;
     mutable std::recursive_mutex d2d1_context_mutex, size_mutex;
-
+    FLOAT size_point_radius;
     std::atomic_bool render;
-    stream_videoprocessor2_controller_t size_box;
 
     HWND hwnd;
     UINT width, height;
@@ -44,6 +45,7 @@ private:
     CComPtr<ID3D11RenderTargetView> render_target_view;
     CComPtr<ID2D1SolidColorBrush> box_brush;
     CComPtr<ID2D1SolidColorBrush> line_brush;
+    CComPtr<ID2D1SolidColorBrush> highlighted_brush;
     CComPtr<ID2D1StrokeStyle1> stroke_style;
 
     void draw_sample(const media_sample& sample_view, request_packet& rp);
@@ -52,18 +54,20 @@ public:
 
     // initializes the window
     void initialize(
+        const control_pipeline2_t& ctrl_pipeline,
         HWND, 
         const CComPtr<ID2D1Device>&,
         const CComPtr<ID3D11Device>&, 
         const CComPtr<ID2D1Factory1>&);
     media_stream_t create_stream();
 
+    // in preview window coordinates
     D2D1_RECT_F get_preview_rect() const;
     void get_window_size(UINT& width, UINT& height) const;
+    // the radius is in preview window coordinates
+    FLOAT get_size_point_radius() const {return this->size_point_radius;}
 
     void set_state(bool render) {this->render = render;}
-    void set_size_box(const stream_videoprocessor2_controller_t& new_box);
-    stream_videoprocessor2_controller_t get_size_box() const {return std::atomic_load(&this->size_box);}
     void update_size();
 };
 

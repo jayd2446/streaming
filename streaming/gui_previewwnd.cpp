@@ -1,9 +1,14 @@
 #include "gui_previewwnd.h"
+#define _USE_MATH_DEFINES
+#include <math.h>
 #include <iostream>
+
+#define DRAG_RADIUS_OFFSET 2.f
 
 gui_previewwnd::gui_previewwnd(const control_pipeline2_t& ctrl_pipeline) : 
     ctrl_pipeline(ctrl_pipeline),
-    dragging(false)
+    dragging(false), scaling(false), moving(false),
+    scale_flags(0)
 {
 }
 
@@ -18,9 +23,36 @@ LRESULT gui_previewwnd::OnSize(UINT /*nType*/, CSize /*Extent*/)
     return 0;
 }
 
+void gui_previewwnd::OnRButtonDown(UINT /*nFlags*/, CPoint /*point*/)
+{
+    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    if(!this->ctrl_pipeline->get_preview_window())
+        return;
+    if(this->ctrl_pipeline->selected_items.empty())
+        return;
+    control_video2* video_control = dynamic_cast<control_video2*>(
+        this->ctrl_pipeline->selected_items[0].get());
+    if(!video_control)
+        return;
+
+    video_control->rotate(-10.f);
+
+    //static FLOAT y = 30.f;
+
+    ///*control_video::video_params_t params = video_control->get_video_params(true);
+    //params.rotation += -10.f;
+    //video_control->apply_video_params(params);*/
+
+    //video_control->scale(this->ctrl_pipeline->get_preview_window(),
+    //    (FLOAT)this->ctrl_pipeline->get_preview_window()->get_preview_rect().left, (FLOAT)y,
+    //    (FLOAT)0.f, (FLOAT)0.f, control_video2::SCALE_TOP | control_video2::SCALE_LEFT | control_video2::ABSOLUTE_MODE);
+
+    //y += 10.f;
+}
+
 void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
 {
-    if(DragDetect(*this, point))
+    if(DragDetect(*this, point) || this->scale_flags)
     {
         // allows this hwnd to receive mouse events outside the client area
         this->SetCapture();
@@ -35,42 +67,99 @@ void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint /*point*/)
     if(this->dragging)
         ReleaseCapture();
 
-    this->dragging = false;
+    this->dragging = this->scaling = this->moving = false;
+    this->scale_flags = 0;
 }
 
 void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 {
     control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-
     if(!this->ctrl_pipeline->get_preview_window())
         return;
+    if(this->ctrl_pipeline->selected_items.empty())
+        return;
+    control_video2* video_control = dynamic_cast<control_video2*>(
+        this->ctrl_pipeline->selected_items[0].get());
+    if(!video_control)
+        return;
+
+    /*control_video2::video_params_t video_params = video_control->get_video_params(true);*/
+    D2D1_RECT_F preview_rect = this->ctrl_pipeline->get_preview_window()->get_preview_rect();
+    // do not allow dragging if the preview rect has an invalid size
+    if(preview_rect.left >= preview_rect.right || preview_rect.top >= preview_rect.bottom)
+        return;
+
+    const FLOAT size_point_radius =
+        this->ctrl_pipeline->get_preview_window()->get_size_point_radius() +
+        DRAG_RADIUS_OFFSET;
+    D2D1_POINT_2F sizing_points[4];
+    video_control->get_sizing_points(this->ctrl_pipeline->get_preview_window(),
+        sizing_points, ARRAYSIZE(sizing_points));
+    const D2D1_POINT_2F pointer_pos = D2D1::Point2F((FLOAT)point.x, (FLOAT)point.y);
+
+    if(this->moving || this->scaling)
+        goto dragging;
+
+    if(!this->dragging)
+        this->scale_flags = 0;
+
+    // TODO: previewwnd should probably handle the drawing of sizing points
+
+    bool left_scaled = false, top_scaled = false, right_scaled = false, bottom_scaled = false;
+    if(pointer_pos.x >= (sizing_points[0].x - size_point_radius) &&
+        pointer_pos.x <= (sizing_points[0].x + size_point_radius) &&
+        pointer_pos.y >= (sizing_points[0].y - size_point_radius) &&
+        pointer_pos.y <= (sizing_points[0].y + size_point_radius))
+    {
+        left_scaled = top_scaled = true;
+        this->scale_flags |= control_video2::SCALE_LEFT | control_video2::SCALE_TOP;
+    }
+    if(pointer_pos.x >= (sizing_points[1].x - size_point_radius) &&
+        pointer_pos.x <= (sizing_points[1].x + size_point_radius) &&
+        pointer_pos.y >= (sizing_points[1].y - size_point_radius) &&
+        pointer_pos.y <= (sizing_points[1].y + size_point_radius) &&
+        !left_scaled && !bottom_scaled)
+    {
+        right_scaled = top_scaled = true;
+        this->scale_flags |= control_video2::SCALE_RIGHT | control_video2::SCALE_TOP;
+    }
+    if(pointer_pos.x >= (sizing_points[2].x - size_point_radius) &&
+        pointer_pos.x <= (sizing_points[2].x + size_point_radius) &&
+        pointer_pos.y >= (sizing_points[2].y - size_point_radius) &&
+        pointer_pos.y <= (sizing_points[2].y + size_point_radius) &&
+        !right_scaled && !top_scaled)
+    {
+        left_scaled = bottom_scaled = true;
+        this->scale_flags |= control_video2::SCALE_LEFT | control_video2::SCALE_BOTTOM;
+    }
+    if(pointer_pos.x >= (sizing_points[3].x - size_point_radius) &&
+        pointer_pos.x <= (sizing_points[3].x + size_point_radius) &&
+        pointer_pos.y >= (sizing_points[3].y - size_point_radius) &&
+        pointer_pos.y <= (sizing_points[3].y + size_point_radius) &&
+        !left_scaled && !top_scaled)
+        this->scale_flags |= control_video2::SCALE_RIGHT | control_video2::SCALE_BOTTOM;
+
+    video_control->highlight_sizing_points(this->scale_flags);
 
     if(this->dragging)
     {
-        stream_videoprocessor2_controller_t&& size_box =
-            this->ctrl_pipeline->get_preview_window()->get_size_box();
-        if(!size_box)
-            return;
-
+    dragging:
         CPoint move = point;
         move -= this->last_pos;
         this->last_pos = point;
 
-        const D2D1_RECT_F&& preview_rect = 
-            this->ctrl_pipeline->get_preview_window()->get_preview_rect();
-
-        // do not allow dragging if the preview rect has an invalid size
-        if(preview_rect.left >= preview_rect.right || preview_rect.top >= preview_rect.bottom)
-            return;
-
-        stream_videoprocessor2_controller::params_t params;
-        size_box->get_params(params);
-        params.dest_m = params.dest_m * D2D1::Matrix3x2F::Translation(
-            (FLOAT)move.x * (FLOAT)transform_videoprocessor2::canvas_width / 
-            (preview_rect.right - preview_rect.left),
-            (FLOAT)move.y * (FLOAT)transform_videoprocessor2::canvas_height / 
-            (preview_rect.bottom - preview_rect.top));
-
-        size_box->set_params(params);
+        if((this->scale_flags || this->scaling) && !this->moving)
+        {
+            this->scaling = true;
+            video_control->scale(this->ctrl_pipeline->get_preview_window(),
+                (FLOAT)point.x, (FLOAT)point.y,
+                (FLOAT)point.x, (FLOAT)point.y, this->scale_flags | control_video2::ABSOLUTE_MODE);
+        }
+        else
+        {
+            this->moving = true;
+            video_control->move(this->ctrl_pipeline->get_preview_window(),
+                (FLOAT)move.x, (FLOAT)move.y);
+        }
     }
 }
