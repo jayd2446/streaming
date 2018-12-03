@@ -165,12 +165,12 @@ D2D1_RECT_F control_displaycapture::get_rectangle(bool dest_params) const
     D2D1_RECT_F rect;
     rect.left = 0.f;
     rect.top = 0.f;
-    rect.right = width / 2.f;
-    rect.bottom = height / 2.f;
+    rect.right = dest_params ? width / 2.f : width;
+    rect.bottom = dest_params ? height / 2.f : height;
     return rect;
 }
 
-static FLOAT rotation = -15.f;
+static FLOAT rotation = -0.f;
 
 void control_displaycapture::apply_transformation(
     const D2D1::Matrix3x2F&& transformation, bool dest_params)
@@ -199,33 +199,9 @@ void control_displaycapture::apply_transformation(
 void control_displaycapture::set_default_video_params(video_params_t& video_params, bool dest_params)
 {
     video_params.rotate = dest_params ? rotation : 0.f;
-    video_params.translate = D2D1::Point2F();
+    video_params.translate = dest_params ? D2D1::Point2F(100.f, 100.f) : D2D1::Point2F();
     video_params.scale = D2D1::Point2F(1.f, 1.f);
 }
-
-//void control_displaycapture::apply_default_video_params()
-//{
-//    video_params_t params_src, params_dst;
-//    params_dst.rotation = -15.f;
-//    params_dst.translation = D2D1::Point2F(0.f, 0.f);
-//    params_dst.transformation = D2D1::Matrix3x2F::Rotation(params_dst.rotation);
-//    params_dst.rectangle.left = params_dst.rectangle.top = 0.f;
-//    params_dst.rectangle.right = (FLOAT)std::abs(this->params.output.DesktopCoordinates.right -
-//        this->params.output.DesktopCoordinates.left) - 500.f;
-//    params_dst.rectangle.bottom = (FLOAT)std::abs(this->params.output.DesktopCoordinates.bottom -
-//        this->params.output.DesktopCoordinates.top) - 50.f;
-//
-//    params_src.rotation = 0.f;
-//    params_src.translation = D2D1::Point2F(0.f, 0.f);
-//    params_src.transformation = D2D1::Matrix3x2F::Rotation(params_src.rotation);
-//    params_src.rectangle.left = params_src.rectangle.top = 0.f;
-//    params_src.rectangle.right = (FLOAT)std::abs(this->params.output.DesktopCoordinates.right -
-//        this->params.output.DesktopCoordinates.left);
-//    params_src.rectangle.bottom = (FLOAT)std::abs(this->params.output.DesktopCoordinates.bottom -
-//        this->params.output.DesktopCoordinates.top);
-//
-//    this->apply_video_params(params_src, params_dst);
-//}
 
 bool control_displaycapture::is_identical_control(const control_class* control) const
 {

@@ -28,9 +28,13 @@ public:
         ABSOLUTE_MODE = 0x20,
     };
 private:
+    // in client coords
+    LONG clamp_boundary, unclamp_boundary;
     int highlights;
     D2D1::Matrix3x2F transformation_dst, transformation_src;
     
+    void set_transformation(const D2D1::Matrix3x2F& m, bool dest_params)
+    {dest_params ? this->transformation_dst = m : this->transformation_src = m;}
     // builds the transformation by undoing the parent transformation and then applying
     // the parameters
     void build_transformation(const video_params_t& video_params, bool dest_params);
@@ -56,22 +60,36 @@ public:
 
     // reset transforms functionality in obs
     void apply_default_video_params();
-    // used when the parent transformation changes
-    void apply_transformation(bool dest_params)
+    // used when the parent transformation changes;
+    // also used after setting the move/rotate/scale;
+    // apply transformation should be called before releasing the pipeline mutex so that
+    // the selection rect and the dest rect stays in sync
+    void apply_transformation(bool dest_params = true)
     {this->apply_transformation(this->get_transformation(dest_params), dest_params);}
 
-    void move(const sink_preview2_t&,
-        FLOAT x, FLOAT y,
+    void move(FLOAT x, FLOAT y,
         bool absolute_mode = false,
         bool axis_aligned = true,
         bool dest_params = true);
-    void scale(const sink_preview2_t&,
-        FLOAT left, FLOAT top, FLOAT right, FLOAT bottom, int scale_type,
+    void scale(FLOAT left, FLOAT top, FLOAT right, FLOAT bottom, 
+        int scale_type,
         bool axis_aligned = true,
         bool dest_params = true);
     void rotate(FLOAT rotation, bool absolute_mode = false, bool dest_params = true);
 
+    bool allow_clamping(LONG dxy) const {return std::abs(dxy) <= this->unclamp_boundary;}
+    // returns the clamping vector in canvas coords;
+    // the clamping area is the canvas area;
+    // scale type takes flags to exclude points and returns clamping directions
+    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&,
+        D2D1_POINT_2F move_vector, int& scale_type) const;
+
+    D2D1_POINT_2F client_to_canvas(const sink_preview2_t&, LONG x, LONG y, 
+        bool scale_only = false) const;
+
     void highlight_sizing_points(int scale_type) { this->highlights = scale_type; }
     int get_highlighted_points() const { return this->highlights; }
-    void get_sizing_points(const sink_preview2_t&, D2D1_POINT_2F points_out[], int array_size);
+    // 0 1 | 4 5
+    // 2 3 | 6 7;
+    void get_sizing_points(const sink_preview2_t&, D2D1_POINT_2F points_out[], int array_size) const;
 };
