@@ -29,7 +29,7 @@ public:
     };
 private:
     // in client coords
-    LONG clamp_boundary, unclamp_boundary;
+    LONG clamp_boundary;
     int highlights;
     D2D1::Matrix3x2F transformation_dst, transformation_src;
     
@@ -68,21 +68,22 @@ public:
     {this->apply_transformation(this->get_transformation(dest_params), dest_params);}
 
     void move(FLOAT x, FLOAT y,
-        bool absolute_mode = false,
+        bool absolute_mode = true,
         bool axis_aligned = true,
         bool dest_params = true);
-    void scale(FLOAT left, FLOAT top, FLOAT right, FLOAT bottom, 
+    void scale(FLOAT x, FLOAT y, 
         int scale_type,
         bool axis_aligned = true,
         bool dest_params = true);
     void rotate(FLOAT rotation, bool absolute_mode = false, bool dest_params = true);
 
-    bool allow_clamping(LONG dxy) const {return std::abs(dxy) <= this->unclamp_boundary;}
+    // TODO: get sizing points covers this
+    D2D1_POINT_2F get_center(bool dest_params = true) const;
+
     // returns the clamping vector in canvas coords;
     // the clamping area is the canvas area;
     // scale type takes flags to exclude points and returns clamping directions
-    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&,
-        D2D1_POINT_2F move_vector, int& scale_type) const;
+    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, int& scale_type) const;
 
     D2D1_POINT_2F client_to_canvas(const sink_preview2_t&, LONG x, LONG y, 
         bool scale_only = false) const;
@@ -91,5 +92,6 @@ public:
     int get_highlighted_points() const { return this->highlights; }
     // 0 1 | 4 5
     // 2 3 | 6 7;
-    void get_sizing_points(const sink_preview2_t&, D2D1_POINT_2F points_out[], int array_size) const;
+    void get_sizing_points(const sink_preview2_t&, D2D1_POINT_2F points_out[], int array_size,
+        bool dest_params = true) const;
 };

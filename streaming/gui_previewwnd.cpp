@@ -5,8 +5,6 @@
 
 #define DRAG_RADIUS_OFFSET 2.f
 
-FLOAT _rot = -15.f;
-
 gui_previewwnd::gui_previewwnd(const control_pipeline2_t& ctrl_pipeline) : 
     ctrl_pipeline(ctrl_pipeline),
     dragging(false), scaling(false), moving(false),
@@ -67,6 +65,23 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
 
         this->last_pos = point;
         this->dragging = true;
+
+        // initialize the pos to center vector
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        if(!this->ctrl_pipeline->get_preview_window())
+            return;
+        if(this->ctrl_pipeline->selected_items.empty())
+            return;
+        control_video2* video_control = dynamic_cast<control_video2*>(
+            this->ctrl_pipeline->selected_items[0].get());
+        if(!video_control)
+            return;
+
+        const D2D1_POINT_2F pos = video_control->client_to_canvas(
+            this->ctrl_pipeline->get_preview_window(), point.x, point.y);
+        this->pos_to_center = video_control->get_center();
+        this->pos_to_center.x -= pos.x;
+        this->pos_to_center.y -= pos.y;
     }
 }
 
@@ -199,99 +214,37 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         move_client.x -= this->last_pos.x;
         move_client.y -= this->last_pos.y;
 
-        /*this->last_pos = point;*/
+        this->last_pos = point;
 
         if((this->scale_flags || this->scaling) && !this->moving)
         {
-            /*this->last_pos = point;
-
-            this->scaling = true;
-            video_control->scale(pos.x, pos.y, pos.x, pos.y, 
-                this->scale_flags | control_video2::ABSOLUTE_MODE);*/
-
             this->scaling = true;
 
-            video_control->scale(pos.x, pos.y, pos.x, pos.y,
-                this->scale_flags | control_video2::ABSOLUTE_MODE);
+            video_control->scale(pos.x, pos.y, this->scale_flags | control_video2::ABSOLUTE_MODE);
 
             int scale_type = ~this->scale_flags;
             const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
-                this->ctrl_pipeline->get_preview_window(), D2D1::Point2F(), scale_type);
+                this->ctrl_pipeline->get_preview_window(), scale_type);
 
-            bool allow_clamping_x, allow_clamping_y;
+            // TODO: rotated clamping doesn't always work
 
-            // TODO: rotated clamping fails because logic allows sliding
-            // TODO: left side of clamping fails
-
-            if(allow_clamping_x = video_control->allow_clamping(move_client.x))
-            {
-                /*move.x += clamping_vector.x;*/
-                if(!clamping_vector.x)
-                    this->last_pos.x = point.x;
-            }
-            else
-                this->last_pos.x = point.x;
-            if(allow_clamping_y = video_control->allow_clamping(move_client.y))
-            {
-                /*move.y += clamping_vector.y;*/
-                if(!clamping_vector.y)
-                    this->last_pos.y = point.y;
-            }
-            else
-                this->last_pos.y = point.y;
-
-            D2D1_POINT_2F dmove = pos;
-            bool do_clamp = false;
-            if(clamping_vector.x && allow_clamping_x)
-                dmove.x += clamping_vector.x, do_clamp = true;
-            if(clamping_vector.y && allow_clamping_y)
-                dmove.y += clamping_vector.y, do_clamp = true;
-
-            if(do_clamp)
-                video_control->scale(dmove.x, dmove.y, dmove.x, dmove.y, 
-                    this->scale_flags | control_video2::ABSOLUTE_MODE);
-
+            video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags);
             video_control->apply_transformation();
         }
         else
         {
             this->moving = true;
 
-            video_control->move(move.x, move.y);
+            pos.x += this->pos_to_center.x;
+            pos.y += this->pos_to_center.y;
+
+            video_control->move(pos.x, pos.y);
 
             int scale_type = 0;
             const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
-                this->ctrl_pipeline->get_preview_window(), D2D1::Point2F(), scale_type);
+                this->ctrl_pipeline->get_preview_window(), scale_type);
 
-            bool allow_clamping_x, allow_clamping_y;
-
-            if(allow_clamping_x = video_control->allow_clamping(move_client.x))
-            {
-                /*move.x += clamping_vector.x;*/
-                if(!clamping_vector.x)
-                    this->last_pos.x = point.x;
-            }
-            else
-                this->last_pos.x = point.x;
-            if(allow_clamping_y = video_control->allow_clamping(move_client.y))
-            {
-                /*move.y += clamping_vector.y;*/
-                if(!clamping_vector.y)
-                    this->last_pos.y = point.y;
-            }
-            else
-                this->last_pos.y = point.y;
-
-            D2D1_POINT_2F dmove = D2D1::Point2F();
-            if(clamping_vector.x && allow_clamping_x)
-                dmove.x = clamping_vector.x;
-            if(clamping_vector.y && allow_clamping_y)
-                dmove.y = clamping_vector.y;
-
-            if(dmove.x || dmove.y)
-                video_control->move(dmove.x, dmove.y);
-            /*video_control->move(move.x, move.y);*/
-
+            video_control->move(clamping_vector.x, clamping_vector.y, false);
             video_control->apply_transformation();
         }
     }

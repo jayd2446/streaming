@@ -2,6 +2,7 @@
 
 #include "wtl.h"
 #include "control_pipeline2.h"
+#include <d2d1.h>
 
 // preview window implements the user controls for controlling the sources in the
 // scene and provides the canvas for sink_preview
@@ -13,6 +14,7 @@ private:
     bool dragging, scaling, moving;
     int scale_flags;
     CPoint last_pos;
+    D2D1_POINT_2F pos_to_center;
 public:
     DECLARE_WND_CLASS(L"preview")
 
