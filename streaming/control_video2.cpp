@@ -131,10 +131,8 @@ void control_video2::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, 
         if(scale_type == SCALE_BOTTOM)
             xy = points[7];
 
-        if((scale_type & SCALE_RIGHT) || (scale_type & SCALE_LEFT))
-            xy.x += x;
-        if((scale_type & SCALE_TOP) || (scale_type & SCALE_BOTTOM))
-            xy.y += y;
+        xy.x += x;
+        xy.y += y;
     }
 
     Matrix3x2F transformation_invert = transformation;
@@ -190,6 +188,42 @@ void control_video2::rotate(FLOAT rotation, bool absolute_mode, bool dest_params
     this->build_transformation(params, dest_params);
 }
 
+void control_video2::align_source_rect()
+{
+    const video_params_t old_params = this->get_video_params(false),
+        old_params_dst = this->get_video_params(true);
+    video_params_t params = old_params;
+    using namespace D2D1;
+
+    const D2D1_RECT_F src_rect = this->get_rectangle(false),
+        dst_rect = this->get_rectangle(true);
+
+    const D2D1_SIZE_F src_size = SizeF(
+        src_rect.right - src_rect.left,
+        src_rect.bottom - src_rect.top);
+    const D2D1_SIZE_F dst_size = SizeF(
+        std::abs((dst_rect.right - dst_rect.left) * old_params_dst.scale.x), 
+        std::abs((dst_rect.bottom - dst_rect.top) * old_params_dst.scale.y));
+    if(std::abs(dst_size.width) < std::numeric_limits<decltype(dst_size.width)>::epsilon() ||
+        std::abs(dst_size.height) < std::numeric_limits<decltype(dst_size.height)>::epsilon())
+        return;
+
+    FLOAT src_w = src_size.width;
+    FLOAT src_h = src_w * dst_size.height / dst_size.width;
+    if(src_h < src_size.height)
+    {
+        src_h = src_size.height;
+        src_w = dst_size.width * src_h / dst_size.height;
+    }
+
+    const FLOAT scale_w = src_w / src_size.width,
+        scale_h = src_h / src_size.height;
+    params.scale = Point2F(scale_w, scale_h);
+    params.translate = Point2F((src_size.width - src_w) / 2.f, (src_size.height - src_h) / 2.f);
+
+    this->build_transformation(params, false);
+}
+
 D2D1_POINT_2F control_video2::get_center(bool dest_params) const
 {
     using namespace D2D1;
@@ -220,7 +254,7 @@ D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview
     {
         // clamp the closest points
 
-        switch(i)
+        /*switch(i)
         {
         case 0:
             if((excluded_points & SCALE_LEFT) && (excluded_points & SCALE_TOP))
@@ -238,7 +272,7 @@ D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview
             if((excluded_points & SCALE_RIGHT) && (excluded_points & SCALE_BOTTOM))
                 continue;
             break;
-        }
+        }*/
 
         diff = corners[i].x - clamp_edges.left;
         if(std::abs(diff) > max_diff_x && std::abs(diff) <= clamp_boundary.x)

@@ -185,7 +185,8 @@ void control_displaycapture::apply_transformation(
         const video_params_t video_params = this->get_video_params(dest_params);
         params.dest_rect = rect;
         params.dest_m = transformation;
-        params.axis_aligned_clip = (video_params.rotate == 0.f);
+        params.axis_aligned_clip = ((video_params.rotate / 90.f) ==
+            round(video_params.rotate / 90.f));
     }
     else
     {

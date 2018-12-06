@@ -228,7 +228,12 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 
             // TODO: rotated clamping doesn't always work
 
-            video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags);
+            if(clamping_vector.x || clamping_vector.y)
+                video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags);
+
+            video_control->align_source_rect();
+            video_control->apply_transformation(false);
+
             video_control->apply_transformation();
         }
         else
@@ -244,7 +249,8 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
             const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
                 this->ctrl_pipeline->get_preview_window(), scale_type);
 
-            video_control->move(clamping_vector.x, clamping_vector.y, false);
+            if(clamping_vector.x || clamping_vector.y)
+                video_control->move(clamping_vector.x, clamping_vector.y, false);
             video_control->apply_transformation();
         }
     }

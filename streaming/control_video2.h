@@ -76,6 +76,8 @@ public:
         bool axis_aligned = true,
         bool dest_params = true);
     void rotate(FLOAT rotation, bool absolute_mode = false, bool dest_params = true);
+    // aligns the source rect to dest rect without changing aspect ratio
+    void align_source_rect();
 
     // TODO: get sizing points covers this
     D2D1_POINT_2F get_center(bool dest_params = true) const;
