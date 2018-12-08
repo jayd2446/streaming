@@ -9,10 +9,6 @@ typedef std::shared_ptr<sink_preview2> sink_preview2_t;
 // TODO: control scene will implement the control video, apply_transformation
 // will update its own transform first and then update all scene items by calling
 // scene_item->apply_transformation();
-
-// TODO: video params t might be unnecessary;
-// decomposition of matrix should be used instead(rotation is easily extracted, aswell as translation)
-// in case of scaling factor, the matrix should be unrotated first
 class control_video2 : public control_class
 {
 public:
@@ -32,9 +28,7 @@ private:
     LONG clamp_boundary;
     int highlights;
     D2D1::Matrix3x2F transformation_dst, transformation_src;
-    
-    void set_transformation(const D2D1::Matrix3x2F& m, bool dest_params)
-    {dest_params ? this->transformation_dst = m : this->transformation_src = m;}
+
     // builds the transformation by undoing the parent transformation and then applying
     // the parameters
     void build_transformation(const video_params_t& video_params, bool dest_params);

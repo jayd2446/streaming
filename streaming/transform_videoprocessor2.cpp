@@ -112,12 +112,8 @@ void stream_videoprocessor2::process()
     {
         CComPtr<ID3D11Texture2D> texture = stream.first.sample.buffer->texture;
         const media_sample_videoprocessor2::params_t& params = stream.first.sample.params;
-        media_sample_videoprocessor2::params_t user_params;
-
-        if(stream.first.user_params)
-            stream.first.user_params->get_params(user_params);
-        else
-            user_params = params;
+        const media_sample_videoprocessor2::params_t& user_params = 
+            stream.first.valid_user_params ? stream.first.user_params_cached : params;
 
         // use the earliest timestamp;
         // actually, max must be used so that the timestamp stays incremental
@@ -299,6 +295,14 @@ void stream_videoprocessor2::connect_streams(
 media_stream::result_t stream_videoprocessor2::request_sample(
     request_packet& rp, const media_stream*)
 {
+    // for this to work, the dispatching to work queue should happen in source component
+    for(auto&& stream : this->input_streams)
+    {
+        stream.first.valid_user_params = !!stream.first.user_params;
+        if(stream.first.valid_user_params)
+            stream.first.user_params->get_params(stream.first.user_params_cached);
+    }
+
     if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
     return OK;

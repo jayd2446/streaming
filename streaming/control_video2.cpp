@@ -204,8 +204,8 @@ void control_video2::align_source_rect()
     const D2D1_SIZE_F dst_size = SizeF(
         std::abs((dst_rect.right - dst_rect.left) * old_params_dst.scale.x), 
         std::abs((dst_rect.bottom - dst_rect.top) * old_params_dst.scale.y));
-    if(std::abs(dst_size.width) < std::numeric_limits<decltype(dst_size.width)>::epsilon() ||
-        std::abs(dst_size.height) < std::numeric_limits<decltype(dst_size.height)>::epsilon())
+    if(dst_size.width < std::numeric_limits<decltype(dst_size.width)>::epsilon() ||
+        dst_size.height < std::numeric_limits<decltype(dst_size.height)>::epsilon())
         return;
 
     FLOAT src_w = src_size.width;

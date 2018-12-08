@@ -104,6 +104,9 @@ public:
         request_packet rp;
         media_sample_videoprocessor2 sample;
         stream_videoprocessor2_controller_t user_params;
+        // cached params must be used so that newer params aren't applied to older rps
+        bool valid_user_params;
+        media_sample_videoprocessor2::params_t user_params_cached;
     };
 private:
     transform_videoprocessor2_t transform;
