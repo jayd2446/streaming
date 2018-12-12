@@ -13,6 +13,7 @@ private:
     control_pipeline2_t ctrl_pipeline;
     bool dragging, scaling, moving;
     int scale_flags;
+    int sizing_point;
     CPoint last_pos;
     D2D1_POINT_2F pos_to_center;
 public:

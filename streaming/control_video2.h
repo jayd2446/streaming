@@ -1,5 +1,6 @@
 #pragma once
 #include "control_class.h"
+#include <stack>
 
 // base class for control classes that support video transformations
 
@@ -22,12 +23,16 @@ public:
         SCALE_LEFT = 0x1, SCALE_TOP = 0x2, SCALE_RIGHT = 0x4, SCALE_BOTTOM = 0x8,
         PRESERVE_ASPECT_RATIO = 0x10,
         ABSOLUTE_MODE = 0x20,
+        SCALE_INVERT_CENTER_POINT = 0x40, // used only for side scaling where the center point
+        // is ambiguous
+        SCALE_USE_X = 0x80, // y scaling is set to x scale
+        SCALE_USE_Y = 0x100, // x scaling is set to y scale
     };
 private:
     // in client coords
     LONG clamp_boundary;
     int highlights;
-    D2D1::Matrix3x2F transformation_dst, transformation_src;
+    std::stack<D2D1::Matrix3x2F> transformation_dst, transformation_src;
 
     // builds the transformation by undoing the parent transformation and then applying
     // the parameters
@@ -42,6 +47,9 @@ protected:
     virtual void set_default_video_params(video_params_t&, bool dest_params) = 0;
 public:
     virtual ~control_video2() {}
+
+    void push_matrix(bool dest_params = true);
+    void pop_matrix(bool dest_params = true);
 
     virtual D2D1_RECT_F get_rectangle(bool dest_params) const = 0;
     // returns the parent transformation that has the grandparent transformations applied to it
@@ -78,8 +86,8 @@ public:
 
     // returns the clamping vector in canvas coords;
     // the clamping area is the canvas area;
-    // scale type takes flags to exclude points and returns clamping directions
-    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, int& scale_type) const;
+    // the returned vector is not axis aligned
+    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, bool& x_clamped, bool& y_clamped) const;
 
     D2D1_POINT_2F client_to_canvas(const sink_preview2_t&, LONG x, LONG y, 
         bool scale_only = false) const;
@@ -88,6 +96,7 @@ public:
     int get_highlighted_points() const { return this->highlights; }
     // 0 1 | 4 5
     // 2 3 | 6 7;
+    // if null sink preview is passed, the points are in canvas coordinates
     void get_sizing_points(const sink_preview2_t&, D2D1_POINT_2F points_out[], int array_size,
         bool dest_params = true) const;
 };

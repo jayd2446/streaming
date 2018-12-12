@@ -109,6 +109,10 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
         // DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709 for full range
         video_context->VideoProcessorSetOutputColorSpace1(
             this->videoprocessor, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
+
+        // srgb
+        video_context->VideoProcessorSetStreamColorSpace1(
+            this->videoprocessor, 0, DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
     }
 done:
     if(FAILED(hr))

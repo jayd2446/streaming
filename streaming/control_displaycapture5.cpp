@@ -170,7 +170,7 @@ D2D1_RECT_F control_displaycapture::get_rectangle(bool dest_params) const
     return rect;
 }
 
-static FLOAT rotation = -0.f;
+static FLOAT rotation = 0.f;
 
 void control_displaycapture::apply_transformation(
     const D2D1::Matrix3x2F&& transformation, bool dest_params)

@@ -11,6 +11,25 @@ control_video2::control_video2(control_set_t& active_controls, control_pipeline2
     control_class(active_controls, pipeline.mutex), pipeline(pipeline), highlights(0),
     clamp_boundary(CLAMP_BOUNDARY)
 {
+    this->push_matrix(true);
+    this->push_matrix(false);
+}
+
+void control_video2::push_matrix(bool dest_params)
+{
+    using namespace D2D1;
+
+    if(dest_params)
+        this->transformation_dst.push(this->transformation_dst.empty() ? 
+            Matrix3x2F::Identity() : this->transformation_dst.top());
+    else
+        this->transformation_src.push(this->transformation_src.empty() ?
+            Matrix3x2F::Identity() : this->transformation_src.top());
+}
+
+void control_video2::pop_matrix(bool dest_params)
+{
+    dest_params ? this->transformation_dst.pop() : this->transformation_src.pop();
 }
 
 D2D1::Matrix3x2F control_video2::get_parent_transformation(bool dest_params) const
@@ -27,7 +46,7 @@ D2D1::Matrix3x2F control_video2::get_transformation(bool dest_params) const
 {
     using namespace D2D1;
     const Matrix3x2F this_transformation = 
-        dest_params ? this->transformation_dst : this->transformation_src;
+        dest_params ? this->transformation_dst.top() : this->transformation_src.top();
 
     return (this_transformation * this->get_parent_transformation(dest_params));
 }
@@ -47,7 +66,8 @@ void control_video2::apply_default_video_params()
 void control_video2::build_transformation(const video_params_t& video_params, bool dest_params)
 {
     using namespace D2D1;
-    Matrix3x2F& transformation = dest_params ? this->transformation_dst : this->transformation_src;
+    Matrix3x2F& transformation = dest_params ? this->transformation_dst.top() : 
+        this->transformation_src.top();
     Matrix3x2F parent_transformation_invert = this->get_parent_transformation(dest_params);
     const bool invert = parent_transformation_invert.Invert(); invert;
 
@@ -82,14 +102,17 @@ void control_video2::move(FLOAT x, FLOAT y, bool absolute_mode, bool axis_aligne
     video_params_t params = old_params;
     using namespace D2D1;
 
-    // TODO: make non axis aligned movement possible
+    D2D1_POINT_2F xy = Point2F(x, y);
+
+    if(!axis_aligned)
+        xy = xy * Matrix3x2F::Rotation(old_params.rotate);
 
     if(absolute_mode)
-        params.translate = Point2F(x, y);
+        params.translate = xy;
     else
     {
-        params.translate.x += x;
-        params.translate.y += y;
+        params.translate.x += xy.x;
+        params.translate.y += xy.y;
     }
 
     this->build_transformation(params, dest_params);
@@ -102,42 +125,45 @@ void control_video2::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, 
     video_params_t params = old_params;
     using namespace D2D1;
 
-    // TODO: make non axis aligned movement possible
-
     const D2D1_RECT_F rect = this->get_rectangle(dest_params);
     const D2D1_SIZE_F rect_size = SizeF(rect.right - rect.left, rect.bottom - rect.top);
     D2D1_POINT_2F xy = Point2F(x, y);
     const Matrix3x2F transformation = this->get_transformation(dest_params);
+    const int scale_directions = scale_type & (SCALE_LEFT | SCALE_TOP | SCALE_RIGHT | SCALE_BOTTOM);
+
+    if(!axis_aligned)
+        xy = xy * Matrix3x2F::Rotation(old_params.rotate);
 
     if(!(scale_type & ABSOLUTE_MODE))
     {
+        const D2D1_POINT_2F old_xy = xy;
         D2D1_POINT_2F points[8];
         this->get_sizing_points(NULL, points, ARRAYSIZE(points), dest_params);
 
-        if((scale_type & SCALE_LEFT) && (scale_type & SCALE_TOP))
+        if((scale_directions & SCALE_LEFT) && (scale_directions & SCALE_TOP))
             xy = points[0];
-        if((scale_type & SCALE_RIGHT) && (scale_type & SCALE_TOP))
+        if((scale_directions & SCALE_RIGHT) && (scale_directions & SCALE_TOP))
             xy = points[1];
-        if((scale_type & SCALE_LEFT) && (scale_type & SCALE_BOTTOM))
+        if((scale_directions & SCALE_LEFT) && (scale_directions & SCALE_BOTTOM))
             xy = points[2];
-        if((scale_type & SCALE_RIGHT) && (scale_type & SCALE_BOTTOM))
+        if((scale_directions & SCALE_RIGHT) && (scale_directions & SCALE_BOTTOM))
             xy = points[3];
-        if(scale_type == SCALE_TOP)
+        if(scale_directions == SCALE_TOP)
             xy = points[4];
-        if(scale_type == SCALE_RIGHT)
+        if(scale_directions == SCALE_RIGHT)
             xy = points[5];
-        if(scale_type == SCALE_LEFT)
+        if(scale_directions == SCALE_LEFT)
             xy = points[6];
-        if(scale_type == SCALE_BOTTOM)
+        if(scale_directions == SCALE_BOTTOM)
             xy = points[7];
 
-        xy.x += x;
-        xy.y += y;
+        xy.x += old_xy.x;
+        xy.y += old_xy.y;
     }
 
+    D2D1_POINT_2F position = xy, scale = Point2F(1.f, 1.f), move = Point2F();
     Matrix3x2F transformation_invert = transformation;
     const bool invert = transformation_invert.Invert(); invert;
-    D2D1_POINT_2F position = xy, scale = Point2F(1.f, 1.f), move = Point2F();
     position = position * transformation_invert;
 
     if(scale_type & SCALE_LEFT)
@@ -154,6 +180,51 @@ void control_video2::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, 
         scale.x = position.x / rect_size.width;
     if(scale_type & SCALE_BOTTOM)
         scale.y = position.y / rect_size.height;
+
+    if(scale_type & PRESERVE_ASPECT_RATIO)
+    {
+        if(scale_directions == SCALE_BOTTOM)
+        {
+            scale.x = scale.y;
+            if(scale_type & SCALE_INVERT_CENTER_POINT)
+                move.x = rect_size.width - scale.x * rect_size.width;
+        }
+        else if(scale_directions == SCALE_TOP)
+        {
+            scale.x = scale.y;
+            move.y = rect_size.height - scale.y * rect_size.height;
+            if(scale_type & SCALE_INVERT_CENTER_POINT)
+                move.x = rect_size.width - scale.x * rect_size.width;
+        }
+        else if(scale_directions == SCALE_RIGHT)
+        {
+            scale.y = scale.x;
+            if(scale_type & SCALE_INVERT_CENTER_POINT)
+                move.y = rect_size.height - scale.y * rect_size.height;
+        }
+        else if(scale_directions == SCALE_LEFT)
+        {
+            scale.y = scale.x;
+            move.x = rect_size.width - scale.x * rect_size.width;
+            if(scale_type & SCALE_INVERT_CENTER_POINT)
+                move.y = rect_size.height - scale.y * rect_size.height;
+        }
+        else
+        {
+            if((scale.x > scale.y || scale_type & SCALE_USE_X) && !(scale_type & SCALE_USE_Y))
+            {
+                scale.y = scale.x;
+                if(scale_directions & SCALE_TOP)
+                    move.y = rect_size.height - scale.y * rect_size.height;
+            }
+            else
+            {
+                scale.x = scale.y;
+                if(scale_directions & SCALE_LEFT)
+                    move.x = rect_size.width - scale.x * rect_size.width;
+            }
+        }
+    }
 
     Matrix3x2F new_transformation = Matrix3x2F::Scale(scale.x, scale.y) *
         Matrix3x2F::Translation(move.x, move.y);
@@ -232,7 +303,7 @@ D2D1_POINT_2F control_video2::get_center(bool dest_params) const
 }
 
 D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview_sink, 
-    int& scale_type) const
+    bool& x_clamped, bool& y_clamped) const
 {
     if(!preview_sink)
         throw HR_EXCEPTION(E_UNEXPECTED);
@@ -243,75 +314,52 @@ D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview
     const D2D1_POINT_2F clamp_boundary = this->client_to_canvas(preview_sink,
         this->clamp_boundary, this->clamp_boundary, true);
     D2D1_POINT_2F clamping_vector = Point2F();
-    FLOAT diff, max_diff_x = 0.f, max_diff_y = 0.f;
-    const int excluded_points = scale_type;
-    scale_type = 0;
+    FLOAT diff, max_diff_x = -1.f, max_diff_y = -1.f;
+    x_clamped = y_clamped = false;
 
     D2D1_POINT_2F corners[8];
     this->get_sizing_points(NULL, corners, ARRAYSIZE(corners));
 
     for(int i = 0; i < 4; i++)
     {
-        // clamp the closest points
-
-        /*switch(i)
-        {
-        case 0:
-            if((excluded_points & SCALE_LEFT) && (excluded_points & SCALE_TOP))
-                continue;
-            break;
-        case 1:
-            if((excluded_points & SCALE_RIGHT) && (excluded_points & SCALE_TOP))
-                continue;
-            break;
-        case 2:
-            if((excluded_points & SCALE_LEFT) && (excluded_points & SCALE_BOTTOM))
-                continue;
-            break;
-        case 3:
-            if((excluded_points & SCALE_RIGHT) && (excluded_points & SCALE_BOTTOM))
-                continue;
-            break;
-        }*/
-
         diff = corners[i].x - clamp_edges.left;
-        if(std::abs(diff) > max_diff_x && std::abs(diff) <= clamp_boundary.x)
+        if(std::abs(diff) > max_diff_x &&
+            std::abs(diff) <= clamp_boundary.x)
         {
             max_diff_x = std::abs(diff);
             clamping_vector.x = -diff;
-            scale_type &= ~SCALE_RIGHT;
-            scale_type |= SCALE_LEFT;
+            x_clamped = true;
         }
 
         diff = corners[i].y - clamp_edges.top;
-        if(std::abs(diff) > max_diff_y && std::abs(diff) <= clamp_boundary.y)
+        if(std::abs(diff) > max_diff_y &&
+            std::abs(diff) <= clamp_boundary.y)
         {
             max_diff_y = std::abs(diff);
             clamping_vector.y = -diff;
-            scale_type &= ~SCALE_BOTTOM;
-            scale_type |= SCALE_TOP;
+            y_clamped = true;
         }
 
         diff = corners[i].x - clamp_edges.right;
-        if(std::abs(diff) > max_diff_x && std::abs(diff) <= clamp_boundary.x)
+        if(std::abs(diff) > max_diff_x &&
+            std::abs(diff) <= clamp_boundary.x)
         {
             max_diff_x = std::abs(diff);
             clamping_vector.x = -diff;
-            scale_type &= ~SCALE_LEFT;
-            scale_type |= SCALE_RIGHT;
+            x_clamped = true;
         }
 
         diff = corners[i].y - clamp_edges.bottom;
-        if(std::abs(diff) > max_diff_y && std::abs(diff) <= clamp_boundary.y)
+        if(std::abs(diff) > max_diff_y &&
+            std::abs(diff) <= clamp_boundary.y)
         {
             max_diff_y = std::abs(diff);
             clamping_vector.y = -diff;
-            scale_type &= ~SCALE_TOP;
-            scale_type |= SCALE_BOTTOM;
+            y_clamped = true;
         }
     }
 
-    return clamping_vector;
+    return (clamping_vector * Matrix3x2F::Rotation(-this->get_video_params(true).rotate));
 }
 
 D2D1_POINT_2F control_video2::client_to_canvas(

@@ -8,7 +8,8 @@
 gui_previewwnd::gui_previewwnd(const control_pipeline2_t& ctrl_pipeline) : 
     ctrl_pipeline(ctrl_pipeline),
     dragging(false), scaling(false), moving(false),
-    scale_flags(0)
+    scale_flags(0),
+    sizing_point(0)
 {
 }
 
@@ -38,6 +39,9 @@ void gui_previewwnd::OnRButtonDown(UINT /*nFlags*/, CPoint /*point*/)
     /*_rot += -10.f;
     video_control->apply_transformation(true);*/
 
+    /*video_control->scale(40.f, 40.f, 
+        control_video2::SCALE_LEFT | control_video2::PRESERVE_ASPECT_RATIO,
+        false);*/
     video_control->rotate(-10.f);
     video_control->apply_transformation();
 
@@ -91,7 +95,7 @@ void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint /*point*/)
         ReleaseCapture();
 
     this->dragging = this->scaling = this->moving = false;
-    this->scale_flags = 0;
+    this->sizing_point = this->scale_flags = 0;
 }
 
 void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
@@ -134,6 +138,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y >= (sizing_points[0].y - size_point_radius) &&
         pointer_pos.y <= (sizing_points[0].y + size_point_radius))
     {
+        this->sizing_point = 0;
         left_scaled = top_scaled = true;
         this->scale_flags |= control_video2::SCALE_LEFT | control_video2::SCALE_TOP;
     }
@@ -143,6 +148,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y <= (sizing_points[1].y + size_point_radius) &&
         !left_scaled && !bottom_scaled)
     {
+        this->sizing_point = 1;
         right_scaled = top_scaled = true;
         this->scale_flags |= control_video2::SCALE_RIGHT | control_video2::SCALE_TOP;
     }
@@ -152,6 +158,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y <= (sizing_points[2].y + size_point_radius) &&
         !right_scaled && !top_scaled)
     {
+        this->sizing_point = 2;
         left_scaled = bottom_scaled = true;
         this->scale_flags |= control_video2::SCALE_LEFT | control_video2::SCALE_BOTTOM;
     }
@@ -160,7 +167,10 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y >= (sizing_points[3].y - size_point_radius) &&
         pointer_pos.y <= (sizing_points[3].y + size_point_radius) &&
         !left_scaled && !top_scaled)
+    {
+        this->sizing_point = 3;
         this->scale_flags |= control_video2::SCALE_RIGHT | control_video2::SCALE_BOTTOM;
+    }
 
     /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -170,6 +180,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y >= (sizing_points[4].y - size_point_radius) &&
         pointer_pos.y <= (sizing_points[4].y + size_point_radius))
     {
+        this->sizing_point = 4;
         left_scaled = top_scaled = true;
         this->scale_flags |= control_video2::SCALE_TOP;
     }
@@ -179,6 +190,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y <= (sizing_points[5].y + size_point_radius) &&
         !left_scaled && !bottom_scaled)
     {
+        this->sizing_point = 5;
         right_scaled = top_scaled = true;
         this->scale_flags |= control_video2::SCALE_RIGHT;
     }
@@ -188,6 +200,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y <= (sizing_points[6].y + size_point_radius) &&
         !right_scaled && !top_scaled)
     {
+        this->sizing_point = 6;
         left_scaled = bottom_scaled = true;
         this->scale_flags |= control_video2::SCALE_LEFT;
     }
@@ -196,7 +209,10 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         pointer_pos.y >= (sizing_points[7].y - size_point_radius) &&
         pointer_pos.y <= (sizing_points[7].y + size_point_radius) &&
         !left_scaled && !top_scaled)
+    {
+        this->sizing_point = 7;
         this->scale_flags |= control_video2::SCALE_BOTTOM;
+    }
 
     video_control->highlight_sizing_points(this->scale_flags);
 
@@ -220,19 +236,27 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         {
             this->scaling = true;
 
-            video_control->scale(pos.x, pos.y, this->scale_flags | control_video2::ABSOLUTE_MODE);
-
-            int scale_type = ~this->scale_flags;
-            const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
-                this->ctrl_pipeline->get_preview_window(), scale_type);
+            video_control->push_matrix();
 
             // TODO: rotated clamping doesn't always work
 
-            if(clamping_vector.x || clamping_vector.y)
-                video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags);
+            video_control->scale(pos.x, pos.y, this->scale_flags | control_video2::ABSOLUTE_MODE);
+            bool x_clamped, y_clamped;
+            const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
+                this->ctrl_pipeline->get_preview_window(), x_clamped, y_clamped);
+            video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags, false);
 
-            video_control->align_source_rect();
-            video_control->apply_transformation(false);
+            D2D1_POINT_2F points[8];
+            video_control->get_sizing_points(NULL, points, ARRAYSIZE(points));
+
+            video_control->pop_matrix();
+
+            video_control->scale(
+                points[this->sizing_point].x, points[this->sizing_point].y, this->scale_flags |
+                control_video2::ABSOLUTE_MODE | control_video2::PRESERVE_ASPECT_RATIO);
+
+            /*video_control->align_source_rect();
+            video_control->apply_transformation(false);*/
 
             video_control->apply_transformation();
         }
@@ -245,12 +269,12 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 
             video_control->move(pos.x, pos.y);
 
-            int scale_type = 0;
+            bool x_clamped, y_clamped;
             const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
-                this->ctrl_pipeline->get_preview_window(), scale_type);
+                this->ctrl_pipeline->get_preview_window(), x_clamped, y_clamped);
 
-            if(clamping_vector.x || clamping_vector.y)
-                video_control->move(clamping_vector.x, clamping_vector.y, false);
+            if(x_clamped || y_clamped)
+                video_control->move(clamping_vector.x, clamping_vector.y, false, false);
             video_control->apply_transformation();
         }
     }
