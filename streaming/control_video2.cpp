@@ -303,7 +303,7 @@ D2D1_POINT_2F control_video2::get_center(bool dest_params) const
 }
 
 D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview_sink, 
-    bool& x_clamped, bool& y_clamped) const
+    bool& x_clamped, bool& y_clamped, bool clamp_min) const
 {
     if(!preview_sink)
         throw HR_EXCEPTION(E_UNEXPECTED);
@@ -314,8 +314,11 @@ D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview
     const D2D1_POINT_2F clamp_boundary = this->client_to_canvas(preview_sink,
         this->clamp_boundary, this->clamp_boundary, true);
     D2D1_POINT_2F clamping_vector = Point2F();
-    FLOAT diff, max_diff_x = -1.f, max_diff_y = -1.f;
+    FLOAT diff, extreme_diff_x, extreme_diff_y;
+
     x_clamped = y_clamped = false;
+    extreme_diff_x = clamp_min ? std::numeric_limits<FLOAT>::max() : -1.f;
+    extreme_diff_y = clamp_min ? std::numeric_limits<FLOAT>::max() : -1.f;
 
     D2D1_POINT_2F corners[8];
     this->get_sizing_points(NULL, corners, ARRAYSIZE(corners));
@@ -323,37 +326,37 @@ D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview
     for(int i = 0; i < 4; i++)
     {
         diff = corners[i].x - clamp_edges.left;
-        if(std::abs(diff) > max_diff_x &&
+        if(((std::abs(diff) > extreme_diff_x) ^ clamp_min) &&
             std::abs(diff) <= clamp_boundary.x)
         {
-            max_diff_x = std::abs(diff);
+            extreme_diff_x = std::abs(diff);
             clamping_vector.x = -diff;
             x_clamped = true;
         }
 
         diff = corners[i].y - clamp_edges.top;
-        if(std::abs(diff) > max_diff_y &&
+        if(((std::abs(diff) > extreme_diff_y) ^ clamp_min) &&
             std::abs(diff) <= clamp_boundary.y)
         {
-            max_diff_y = std::abs(diff);
+            extreme_diff_y = std::abs(diff);
             clamping_vector.y = -diff;
             y_clamped = true;
         }
 
         diff = corners[i].x - clamp_edges.right;
-        if(std::abs(diff) > max_diff_x &&
+        if(((std::abs(diff) > extreme_diff_x) ^ clamp_min) &&
             std::abs(diff) <= clamp_boundary.x)
         {
-            max_diff_x = std::abs(diff);
+            extreme_diff_x = std::abs(diff);
             clamping_vector.x = -diff;
             x_clamped = true;
         }
 
         diff = corners[i].y - clamp_edges.bottom;
-        if(std::abs(diff) > max_diff_y &&
+        if(((std::abs(diff) > extreme_diff_y) ^ clamp_min) &&
             std::abs(diff) <= clamp_boundary.y)
         {
-            max_diff_y = std::abs(diff);
+            extreme_diff_y = std::abs(diff);
             clamping_vector.y = -diff;
             y_clamped = true;
         }

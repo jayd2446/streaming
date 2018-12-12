@@ -87,7 +87,8 @@ public:
     // returns the clamping vector in canvas coords;
     // the clamping area is the canvas area;
     // the returned vector is not axis aligned
-    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, bool& x_clamped, bool& y_clamped) const;
+    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, bool& x_clamped, bool& y_clamped,
+        bool clamp_min = true) const;
 
     D2D1_POINT_2F client_to_canvas(const sink_preview2_t&, LONG x, LONG y, 
         bool scale_only = false) const;
