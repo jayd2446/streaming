@@ -77,6 +77,7 @@ public:
     source_displaycapture5(const media_session_t& session, context_mutex_t context_mutex);
     ~source_displaycapture5();
 
+    // TODO: orientation
     bool capture_frame(
         bool& new_pointer_shape,
         DXGI_OUTDUPL_POINTER_POSITION&,

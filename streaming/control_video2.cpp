@@ -233,9 +233,9 @@ void control_video2::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, 
     params = this->get_video_params(std::move(new_transformation));
 
     // the image cannot be unscaled if it reaches zero size
-    if(std::abs(params.scale.x) <= std::numeric_limits<decltype(params.scale.x)>::epsilon())
+    if(std::abs(params.scale.x) < std::numeric_limits<decltype(params.scale.x)>::epsilon())
         params.scale.x = std::numeric_limits<decltype(params.scale.x)>::epsilon();
-    if(std::abs(params.scale.y) <= std::numeric_limits<decltype(params.scale.y)>::epsilon())
+    if(std::abs(params.scale.y) < std::numeric_limits<decltype(params.scale.y)>::epsilon())
         params.scale.y = std::numeric_limits<decltype(params.scale.y)>::epsilon();
 
     this->build_transformation(params, dest_params);

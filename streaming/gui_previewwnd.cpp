@@ -245,7 +245,8 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
             // clamp the max distance
             const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
                 this->ctrl_pipeline->get_preview_window(), x_clamped, y_clamped, false);
-            video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags, false);
+            if(x_clamped || y_clamped)
+                video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags, false);
 
             D2D1_POINT_2F points[8];
             video_control->get_sizing_points(NULL, points, ARRAYSIZE(points));
