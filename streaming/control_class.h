@@ -7,20 +7,12 @@
 #include <memory>
 #include <deque>
 #include <mutex>
-//#include <functional>
 
 class control_pipeline2;
 class control_scene2;
 class control_class;
 typedef std::shared_ptr<control_class> control_class_t;
 typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
-
-//enum control_common_type : int
-//{
-//    CONTROL_VIDEO_TYPE = 0x1,
-//    CONTROL_AUDIO_TYPE = 0x2,
-//    CONTROL_VIDEO_AUDIO_TYPE = CONTROL_VIDEO_TYPE | CONTROL_AUDIO_TYPE,
-//};
 
 /*
 
@@ -33,10 +25,6 @@ reactivate itself if the component needs to be reinitialized
 
 */
 
-// control_class(audio session, video session)
-// control_class* parent;
-
-// virtual void activate(last control set, new control set, audio session, video session)
 // void activate walks the parent tree and the root control reactivates the whole tree
 
 // TODO: control class needs explicit referencing;

@@ -89,6 +89,9 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
 {
     HRESULT hr = S_OK;
 
+    // TODO: decide if the transform should create the video processor,
+    // because this might be a somewhat heavy operation
+
     CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessor(
         this->transform->enumerator, 0, &this->videoprocessor));
 

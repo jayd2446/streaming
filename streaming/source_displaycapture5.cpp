@@ -496,27 +496,28 @@ void stream_displaycapture5::capture_frame_cb(void*)
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
     time_unit timestamp;
     presentation_clock_t clock;
-    request_packet rp;
+    source_displaycapture5::request_t request;
 
+    // the stream might serve the request on behalf of some other stream
     {
         scoped_lock lock(this->source->requests_mutex);
-        rp = this->source->requests.front();
+        request = this->source->requests.front();
         this->source->requests.pop();
     }
 
-    if(rp.request_time <= this->source->last_timestamp2)
+    if(request.rp.request_time <= this->source->last_timestamp2)
     {
         std::cout << "timestamp error in stream_displaycapture5::capture_frame_cb" << std::endl;
         assert_(false);
     }
-    this->source->last_timestamp2 = rp.request_time;
+    this->source->last_timestamp2 = request.rp.request_time;
 
     // capture a frame
     // TODO: buffer parameter is redundant because the routine
     // updates the newest buffer field
 
     // clock is assumed to be valid
-    rp.get_clock(clock);
+    request.rp.get_clock(clock);
     try
     {
         frame_captured = this->source->capture_frame(
@@ -569,20 +570,23 @@ void stream_displaycapture5::capture_frame_cb(void*)
         }
     }
 
-    sample.timestamp = rp.request_time;
+    sample.timestamp = request.rp.request_time;
 
     lock.unlock();
 
-    this->process_sample(sample, rp, NULL);
-    this->pointer_stream->dispatch(
-        new_pointer_shape, pointer_position, ptr_desc, pointer_sample, rp);
+    this->source->session->give_sample(request.stream, sample, request.rp, true);
+    static_cast<stream_displaycapture5*>(request.stream)->pointer_stream->dispatch(
+        new_pointer_shape, pointer_position, ptr_desc, pointer_sample, request);
 }
 
 media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp, const media_stream*)
 {
     {
         scoped_lock lock(this->source->requests_mutex);
-        this->source->requests.push(rp);
+        source_displaycapture5::request_t request;
+        request.rp = rp;
+        request.stream = this;
+        this->source->requests.push(request);
     }
 
     // dispatch the capture request
@@ -599,7 +603,7 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
 media_stream::result_t stream_displaycapture5::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    this->source->session->give_sample(this, sample_view, rp, true);
+    assert_(false);
     return OK;
 }
 
@@ -620,7 +624,7 @@ void stream_displaycapture5_pointer::dispatch(
     const DXGI_OUTDUPL_POINTER_POSITION& pointer_position, 
     const D3D11_TEXTURE2D_DESC* desktop_desc,
     media_sample_videoprocessor2& sample_view,
-    request_packet& rp)
+    source_displaycapture5::request_t& request)
 {
     if(pointer_position.Visible && desktop_desc && sample_view.buffer->texture)
     {
@@ -646,9 +650,9 @@ void stream_displaycapture5_pointer::dispatch(
         /*sample_view.attach(this->null_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
     }
     /*sample_view.buffer = this->null_buffer;*/
-    sample_view.timestamp = rp.request_time;
+    sample_view.timestamp = request.rp.request_time;
 
-    this->source->session->give_sample(this, sample_view, rp, true);
+    this->source->session->give_sample(this, sample_view, request.rp, true);
 }
 
 media_stream::result_t stream_displaycapture5_pointer::request_sample(request_packet&, const media_stream*)

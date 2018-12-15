@@ -38,8 +38,7 @@ void gui_controlwnd::OnDestroy()
 {
     control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
 
-    if(this->ctrl_pipeline->is_running())
-        this->ctrl_pipeline->shutdown();
+    this->ctrl_pipeline->shutdown();
 
     CMessageLoop* loop = module_.GetMessageLoop();
     loop->RemoveMessageFilter(this);
@@ -82,8 +81,8 @@ LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*
 
 gui_mainwnd::gui_mainwnd() : 
     ctrl_pipeline(new control_pipeline2),
-    wnd_preview(this->ctrl_pipeline),
     wnd_control(this->ctrl_pipeline),
+    wnd_preview(wnd_control.dlg_sources, this->ctrl_pipeline),
     // use this class' messagemap(=this) and use map section 1
     wnd_statusbar(this, 1),
     was_minimized(FALSE)
@@ -196,8 +195,8 @@ void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
         this->was_minimized = bMinimized;
 
         control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-        if(this->ctrl_pipeline->is_running())
-            this->ctrl_pipeline->set_preview_state(!bMinimized);
+        if(this->ctrl_pipeline->get_preview_window())
+            this->ctrl_pipeline->get_preview_window()->set_state(!bMinimized);
     }
 
     if(!bMinimized)
@@ -258,5 +257,25 @@ LRESULT gui_mainwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM wParam, LPARAM lParam, B
 LRESULT gui_mainwnd::OnAbout(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
     this->MessageBoxW(L"scuffed gui ver. 0.1", L"About", MB_ICONINFORMATION);
+    return 0;
+}
+
+LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
+{
+    {
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        if(this->ctrl_pipeline->root_scene.video_controls.size() < 2)
+            return 0;
+    }
+
+    for(int i = 0; i < 19; i++)
+    {
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        this->wnd_control.dlg_scenes.wnd_scenelist.SetCurSel(i % 2);
+        this->ctrl_pipeline->root_scene.switch_scene(true, i % 2);
+        this->wnd_control.dlg_sources.set_source_tree(
+            this->ctrl_pipeline->root_scene.get_active_scene());
+    }
+
     return 0;
 }

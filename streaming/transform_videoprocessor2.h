@@ -123,7 +123,7 @@ private:
 public:
     explicit stream_videoprocessor2(const transform_videoprocessor2_t& transform);
 
-    // last added input stream appears topmost;
+    // first added input stream appears topmost;
     // user_params can be NULL
     void connect_streams(
         const media_stream_t& from,

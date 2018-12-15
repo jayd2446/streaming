@@ -286,8 +286,8 @@ void stream_videoprocessor2::connect_streams(
     const stream_videoprocessor2_controller_t& user_params,
     const media_topology_t& topology)
 {
-    this->input_streams.push_back(std::make_pair(packet(), from.get()));
-    this->input_streams.back().first.user_params = user_params;
+    this->input_streams.insert(this->input_streams.begin(), std::make_pair(packet(), from.get()));
+    this->input_streams.front().first.user_params = user_params;
 
     media_stream::connect_streams(from, topology);
 }

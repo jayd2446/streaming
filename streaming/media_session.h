@@ -12,34 +12,7 @@
 #include <queue>
 #include <atomic>
 
-// orchestrates the data flow between components in the media pipeline;
-// translates the source's media time to the presentation time
-
-/*
-
-on topology change when the original sink sends a request, media session will
-send a notifypreroll event to the new sink, and the new sink will request a sample aswell.
-
-mixer transform must wait for all the samples to arrive before mixing. the earliest
-time stamp will be the output time stamp.
-// (live media sources will generate samples asynchronously based on framerate and update their buffers)
-
-when the media session is ready to deliver the prerolled sample to the new sink, it will
-stop the current topology's media sink by stop() and start the new topology with the
-old topology's time.(the stop can happen instantly when the media session gets a request)
-the new sink either schedules the sample for rendering or drops it.
-it also sets a periodic sample request based on that timestamp.
-
-presentation time will by default lag by 1 fps behind the time stamps
-
-(media sink will take a standalone encoding transform as reference.)
-media sink itself will also render the frame to live preview window
-
-media sink will periodically request new samples based on the
-presentation sample time(e.g 1/60 secs after the first time stamp
-new request will be made)
-
-*/
+// orchestrates the data flow between components in the media pipeline
 
 class media_stream;
 
@@ -48,7 +21,6 @@ class media_session : public enable_shared_from_this
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    /*volatile bool is_started;*/
     presentation_time_source_t time_source;
 
     std::recursive_mutex topology_switch_mutex;
@@ -70,7 +42,6 @@ public:
     // create a cyclic dependency between clock and components;
     // returns false if the clock is NULL
     bool get_current_clock(presentation_clock_t&) const;
-    /*bool started() const {return this->is_started;}*/
     const presentation_time_source_t& get_time_source() const {return this->time_source;}
 
     void switch_topology(const media_topology_t& new_topology);

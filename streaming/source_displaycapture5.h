@@ -30,6 +30,8 @@ class source_displaycapture5 : public media_source
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
+    struct empty {};
+    typedef request_queue<empty>::request_t request_t;
 private:
     control_class_t ctrl_pipeline;
 
@@ -60,7 +62,7 @@ private:
     // queue is used for requests so that the request time matches the
     // fetched displaycapture image
     std::recursive_mutex requests_mutex;
-    std::queue<request_packet> requests;
+    std::queue<request_t> requests;
 
     HRESULT copy_between_adapters(
         ID3D11Device* dst_dev,
@@ -77,7 +79,6 @@ public:
     source_displaycapture5(const media_session_t& session, context_mutex_t context_mutex);
     ~source_displaycapture5();
 
-    // TODO: orientation
     bool capture_frame(
         bool& new_pointer_shape,
         DXGI_OUTDUPL_POINTER_POSITION&,
@@ -142,17 +143,12 @@ private:
 public:
     explicit stream_displaycapture5_pointer(const source_displaycapture5_t& source);
 
-    /*bool set_pointer_rect(
-        media_sample_view_videoprocessor_t& sample_view, 
-        const RECT& src_rect_in,
-        const RECT& dest_rect_in) const;*/
-
     void dispatch(
         bool new_pointer_shape, 
         const DXGI_OUTDUPL_POINTER_POSITION&,
         const D3D11_TEXTURE2D_DESC* desktop_desc,
         media_sample_videoprocessor2&,
-        request_packet&);
+        source_displaycapture5::request_t&);
 
     result_t request_sample(request_packet&, const media_stream*);
     result_t process_sample(const media_sample&, request_packet&, const media_stream* = NULL);

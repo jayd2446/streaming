@@ -35,7 +35,7 @@ class control_pipeline2 : public control_class
     friend class control_scene2;
 private:
     // restart audio mixer is used so that the audio is cut when recording starts/stops
-    bool recording, initialized, restart_audiomixer;
+    bool recording, restart_audiomixer;
     HWND preview_hwnd;
     CHandle stopped_signal;
     std::recursive_mutex pipeline_mutex;
@@ -77,21 +77,16 @@ public:
 
     control_pipeline2();
 
-    bool is_running() const {return this->initialized;}
     bool is_recording() const {return this->recording;}
 
     void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
     const sink_preview2_t& get_preview_window() const {return this->preview_sink;}
-    // TODO: these functions are obsolete
-    void set_preview_state(bool render) {this->preview_sink->set_state(render);}
-    void update_preview_size() {this->preview_sink->update_size();}
 
     // returns an event handle that is signalled when the recording is ended
     HANDLE start_recording(const std::wstring& filename);
     void stop_recording();
 
-    // releases all circular dependencies;
-    // pipeline cannot be activated after shutting down
+    // releases all circular dependencies
     void shutdown() {this->disable();}
 };
 

@@ -35,9 +35,9 @@ void control_displaycapture::build_video_topology_branch(
         displaycapture_stream->set_pointer_stream(displaycapture_pointer_stream);
 
         videoprocessor_stream->connect_streams(
-            displaycapture_stream, this->videoprocessor_params, topology);
-        videoprocessor_stream->connect_streams(
             displaycapture_pointer_stream, this->videoprocessor_params, topology);
+        videoprocessor_stream->connect_streams(
+            displaycapture_stream, this->videoprocessor_params, topology);
 
         this->stream = displaycapture_stream;
         this->pointer_stream = displaycapture_pointer_stream;
@@ -49,9 +49,9 @@ void control_displaycapture::build_video_topology_branch(
         assert_(!this->stream);
 
         videoprocessor_stream->connect_streams(
-            this->reference->stream, this->videoprocessor_params, topology);
-        videoprocessor_stream->connect_streams(
             this->reference->pointer_stream, this->videoprocessor_params, topology);
+        videoprocessor_stream->connect_streams(
+            this->reference->stream, this->videoprocessor_params, topology);
     }
 }
 

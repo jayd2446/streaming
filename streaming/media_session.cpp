@@ -5,8 +5,7 @@
 #include "assert.h"
 
 media_session::media_session(const presentation_time_source_t& time_source) :
-    time_source(time_source)/*,
-    is_started(false)*/
+    time_source(time_source)
 {
 }
 
@@ -81,32 +80,6 @@ void media_session::start_playback(const media_topology_t& topology, time_unit t
     this->switch_topology_immediate(topology, time_point);
 }
 
-// media session has no concept of start/stop
-
-//void media_session::stop_playback()
-//{
-//    this->is_started = false;
-//
-//    presentation_clock_t clock;
-//    if(!this->get_current_clock(clock))
-//        throw HR_EXCEPTION(E_UNEXPECTED);
-//
-//    media_topology_t empty_topology(new media_topology(clock->get_time_source()));
-//    this->switch_topology_immediate(empty_topology, clock->get_current_time());
-//}
-//
-//void media_session::stop_playback(time_unit t)
-//{
-//    this->is_started = false;
-//
-//    presentation_clock_t clock;
-//    if(!this->get_current_clock(clock))
-//        throw HR_EXCEPTION(E_UNEXPECTED);
-//
-//    media_topology_t empty_topology(new media_topology(clock->get_time_source()));
-//    this->switch_topology_immediate(empty_topology, t);
-//}
-
 bool media_session::request_sample(
     const media_stream* stream, 
     request_packet& rp,
@@ -164,7 +137,6 @@ bool media_session::give_sample(
     bool /*is_source*/)
 {
     // TODO: media topology should be defined as const
-    // is_source is used for translating time stamps to presentation time
 
     media_topology_t topology(rp.topology);
     assert_(topology);
@@ -178,16 +150,3 @@ bool media_session::give_sample(
 
     return true;
 }
-
-//void media_session::shutdown()
-//{
-//    assert_(!this->is_started);
-//
-//    scoped_lock lock(this->topology_switch_mutex);
-//
-//    media_topology_t null_topology;
-//    std::atomic_exchange(&this->current_topology, null_topology);
-//    this->new_topology = null_topology;
-//
-//    this->is_shutdown = true;
-//}

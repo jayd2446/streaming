@@ -27,7 +27,6 @@ class sink_audio : public media_sink
     friend class stream_audio;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef request_queue<media_sample_aac> request_queue;
     typedef std::chrono::duration<time_unit, 
         std::ratio<transform_aac_encoder::input_frames, transform_aac_encoder::sample_rate>>
         periodicity_t;

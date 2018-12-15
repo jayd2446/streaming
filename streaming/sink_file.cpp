@@ -208,6 +208,11 @@ void stream_file::on_component_start(time_unit t)
 
 media_stream::result_t stream_file::request_sample(request_packet& rp, const media_stream*)
 {
+    if(this->sink->video)
+        this->sink->requests_video.initialize_queue(rp);
+    else
+        this->sink->requests_audio.initialize_queue(rp);
+
     return this->sink->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
 }
 

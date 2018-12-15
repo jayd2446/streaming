@@ -264,6 +264,7 @@ void stream_aac_encoder::on_component_stop(time_unit t)
 
 media_stream::result_t stream_aac_encoder::request_sample(request_packet& rp, const media_stream*)
 {
+    this->transform->requests.initialize_queue(rp);
     return this->transform->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
 }
 

@@ -11,14 +11,13 @@ class gui_scenedlg :
     public CDialogImpl<gui_scenedlg>,
     public CDialogResize<gui_scenedlg>
 {
-private:
+public:
     int scene_counter;
-
     control_pipeline2_t ctrl_pipeline;
     gui_sourcedlg& dlg_sources;
     CButton btn_addscene, btn_removescene;
     CListBox wnd_scenelist;
-public:
+
     enum {IDD = IDD_SCENEDLG};
 
     gui_scenedlg(gui_sourcedlg&, const control_pipeline2_t&);
@@ -59,13 +58,15 @@ private:
     gui_scenedlg& dlg_scenes;
     CButton btn_addsource, btn_removesource;
     CTreeViewCtrlEx wnd_sourcetree;
+
+    void set_selected_item(CTreeItem item);
 public:
     enum {IDD = IDD_SOURCEDLG};
 
     gui_sourcedlg(gui_scenedlg&, const control_pipeline2_t&);
 
-    void set_source_tree(const control_scene2&);
-    void set_sizing_box(CTreeItem&& item);
+    void set_source_tree(const control_scene2*);
+    void set_selected_item(const control_class_t&);
 
     BEGIN_MSG_MAP(gui_sourcedlg)
         COMMAND_HANDLER(IDC_ADDSRC, BN_CLICKED, OnBnClickedAddsrc)

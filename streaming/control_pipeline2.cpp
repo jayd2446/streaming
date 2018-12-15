@@ -18,7 +18,7 @@ control_pipeline2::control_pipeline2() :
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
     root_scene(controls, *this),
-    recording(false), initialized(false), restart_audiomixer(false)
+    recording(false), restart_audiomixer(false)
 {
     this->root_scene.parent = this;
 
@@ -74,13 +74,18 @@ done:
 
 void control_pipeline2::activate(const control_set_t& last_set, control_set_t& new_set)
 {
+    // catch all unhandled initialization exceptions
+    try
+    {
+
     if(this->disabled)
     {
+        const bool old_disabled = this->root_scene.disabled;
         this->root_scene.disabled = true;
         this->root_scene.activate(last_set, new_set);
-        this->deactivate_components();
+        this->root_scene.disabled = old_disabled;
 
-        this->initialized = false;
+        this->deactivate_components();
 
         return;
     }
@@ -93,7 +98,18 @@ void control_pipeline2::activate(const control_set_t& last_set, control_set_t& n
     // activate the root scene
     this->root_scene.activate(last_set, new_set);
 
-    this->initialized = true;
+    }
+    catch(streaming::exception e)
+    {
+        typedef std::lock_guard<std::mutex> scoped_lock;
+        scoped_lock lock(::async_callback_error_mutex);
+        ::async_callback_error = true;
+
+        std::cout << e.what();
+        system("pause");
+
+        abort();
+    }
 }
 
 void control_pipeline2::activate_components()
@@ -282,6 +298,11 @@ void control_pipeline2::activate_components()
 
 void control_pipeline2::deactivate_components()
 {
+    if(this->is_recording())
+        this->stop_recording();
+
+    this->selected_items.clear();
+
     // stop the playback by switching to empty topologies
     if(this->mpeg_sink)
     {
@@ -300,15 +321,6 @@ void control_pipeline2::deactivate_components()
     this->audiomixer_transform = NULL;
     this->audio_sink = NULL;
 
-    // shutdown specific
-    /*this->video_topology = NULL;
-    this->audio_topology = NULL;
-
-    this->session->stop_playback();
-    this->session->shutdown();
-    this->audio_session->stop_playback();
-    this->audio_session->shutdown();*/
-
     this->session = NULL;
     this->audio_session = NULL;
     this->time_source = NULL;
@@ -318,6 +330,10 @@ void control_pipeline2::deactivate_components()
 
 void control_pipeline2::build_and_switch_topology()
 {
+    // catch all unhandled initialization exceptions
+    try
+    {
+
     if(this->disabled)
         return;
 
@@ -393,6 +409,19 @@ void control_pipeline2::build_and_switch_topology()
     }
     else
         this->mpeg_sink->switch_topologies(this->video_topology, this->audio_topology);
+
+    }
+    catch(streaming::exception e)
+    {
+        typedef std::lock_guard<std::mutex> scoped_lock;
+        scoped_lock lock(::async_callback_error_mutex);
+        ::async_callback_error = true;
+
+        std::cout << e.what();
+        system("pause");
+
+        abort();
+    }
 }
 
 HANDLE control_pipeline2::start_recording(const std::wstring& /*filename*/)
@@ -409,6 +438,8 @@ HANDLE control_pipeline2::start_recording(const std::wstring& /*filename*/)
     this->recording = true;
     control_class::activate();
 
+    std::cout << "recording started" << std::endl;
+
     return this->stopped_signal.Detach();
 }
 
@@ -417,4 +448,6 @@ void control_pipeline2::stop_recording()
     this->restart_audiomixer = true;
     this->recording = false;
     control_class::activate();
+
+    std::cout << "recording stopped" << std::endl;
 }

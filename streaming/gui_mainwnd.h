@@ -13,6 +13,7 @@ class gui_controlwnd :
     public CWindowImpl<gui_controlwnd>,
     public CMessageFilter
 {
+    friend class gui_mainwnd;
 private:
     control_pipeline2_t ctrl_pipeline;
     gui_scenedlg dlg_scenes;
@@ -72,6 +73,7 @@ public:
         MSG_WM_ACTIVATE(OnActivate)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         COMMAND_ID_HANDLER(ID_ABOUT, OnAbout)
+        COMMAND_ID_HANDLER(ID_DEBUG, OnDebug)
 
         CHAIN_MSG_MAP(CFrameWindowImpl<gui_mainwnd>)
 
@@ -89,4 +91,5 @@ public:
     LRESULT OnStatusBarSimple(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
     LRESULT OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
     LRESULT OnAbout(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+    LRESULT OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };

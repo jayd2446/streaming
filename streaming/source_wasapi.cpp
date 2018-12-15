@@ -500,6 +500,8 @@ void stream_wasapi::process_sample_cb(void*)
 
 media_stream::result_t stream_wasapi::request_sample(request_packet& rp, const media_stream*)
 {
+    this->source->requests.initialize_queue(rp);
+
     source_wasapi::request_t request;
     request.stream = this;
     this->rp = rp;

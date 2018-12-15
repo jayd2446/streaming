@@ -1,11 +1,13 @@
 #include "gui_previewwnd.h"
+#include "gui_dlgs.h"
 #define _USE_MATH_DEFINES
 #include <math.h>
 #include <iostream>
 
 #define DRAG_RADIUS_OFFSET 2.f
 
-gui_previewwnd::gui_previewwnd(const control_pipeline2_t& ctrl_pipeline) : 
+gui_previewwnd::gui_previewwnd(gui_sourcedlg& dlg_sources, const control_pipeline2_t& ctrl_pipeline) :
+    dlg_sources(dlg_sources),
     ctrl_pipeline(ctrl_pipeline),
     dragging(false), scaling(false), moving(false),
     scale_flags(0),
@@ -13,12 +15,89 @@ gui_previewwnd::gui_previewwnd(const control_pipeline2_t& ctrl_pipeline) :
 {
 }
 
+bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool select_next)
+{
+    first_selection = false;
+
+    // select item
+    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    if(!this->ctrl_pipeline->get_preview_window())
+        return false;
+
+    control_scene2* scene = this->ctrl_pipeline->root_scene.get_active_scene();
+    if(scene->video_controls.empty())
+        return false;
+    auto start_it = scene->video_controls.begin();
+    if(!this->ctrl_pipeline->selected_items.empty())
+    {
+        // it is assumed that the selected item is contained in the active scene
+        control_video2* video_control = dynamic_cast<control_video2*>(
+            this->ctrl_pipeline->selected_items[0].get());
+        if(video_control)
+        {
+            bool is_video_control, found;
+            auto it = scene->find_control_iterator(video_control->name, is_video_control, found);
+            if(is_video_control && found)
+            {
+                if(select_next)
+                    start_it = it + 1;
+                else
+                    start_it = it;
+            }
+        }
+    }
+
+    bool item_selected = false;
+    auto it = start_it;
+    do
+    {
+        if(it == scene->video_controls.end())
+        {
+            it = scene->video_controls.begin();
+            if(it == start_it)
+                break;
+        }
+
+        control_video2* video_control = dynamic_cast<control_video2*>(it->get());
+        if(!video_control)
+            continue;
+
+        using namespace D2D1;
+        Matrix3x2F invert_dest_m = video_control->get_transformation(true);
+        const bool inverted = invert_dest_m.Invert(); inverted;
+
+        D2D1_POINT_2F selection_pos = video_control->client_to_canvas(
+            this->ctrl_pipeline->get_preview_window(), point.x, point.y);
+        selection_pos = selection_pos * invert_dest_m;
+
+        const D2D1_RECT_F rectangle = video_control->get_rectangle(true);
+        if(selection_pos.x >= rectangle.left && selection_pos.y >= rectangle.top &&
+            selection_pos.x <= rectangle.right && selection_pos.y <= rectangle.bottom)
+        {
+            // select the item
+            first_selection = this->ctrl_pipeline->selected_items.empty();
+            this->dlg_sources.set_selected_item(*it);
+            item_selected = true;
+            break;
+        }
+
+        it++;
+    }
+    while(it != start_it);
+
+    // unselect all items
+    if(!item_selected)
+        this->dlg_sources.set_selected_item((control_class_t)NULL);
+
+    return item_selected;
+}
+
 LRESULT gui_previewwnd::OnSize(UINT /*nType*/, CSize /*Extent*/)
 {
     control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-    if(this->ctrl_pipeline->is_running())
+    if(this->ctrl_pipeline->get_preview_window())
     {
-        this->ctrl_pipeline->update_preview_size();
+        this->ctrl_pipeline->get_preview_window()->update_size();
         /*this->wnd_parent.wnd_maindlg.RedrawWindow();*/
     }
     return 0;
@@ -60,9 +139,26 @@ void gui_previewwnd::OnRButtonDown(UINT /*nFlags*/, CPoint /*point*/)
 
 void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
 {
-    if(DragDetect(*this, point) /*|| this->scale_flags*/)
+    int dragging = 0;
     {
-        // TODO: the dragging type should be chosen here
+        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        control_video2* video_control;
+        if(!this->ctrl_pipeline->selected_items.empty() &&
+            (video_control = 
+                dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0].get())))
+        {
+            dragging = video_control->get_highlighted_points();
+        }
+    }
+    bool first_selection = true;
+    bool selected = (bool)dragging;
+    if(!selected)
+        selected = this->select_item(point, first_selection);
+
+    if(DragDetect(*this, point))
+    {
+        if(!selected)
+            return;
 
         // allows this hwnd to receive mouse events outside the client area
         this->SetCapture();
@@ -72,8 +168,6 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
 
         // initialize the pos to center vector
         control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-        if(!this->ctrl_pipeline->get_preview_window())
-            return;
         if(this->ctrl_pipeline->selected_items.empty())
             return;
         control_video2* video_control = dynamic_cast<control_video2*>(
@@ -87,9 +181,11 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
         this->pos_to_center.x -= pos.x;
         this->pos_to_center.y -= pos.y;
     }
+    else if(!first_selection && selected)
+        this->select_item(point, first_selection, true);
 }
 
-void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint /*point*/)
+void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint point)
 {
     if(this->dragging)
         ReleaseCapture();
@@ -244,7 +340,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
             bool x_clamped, y_clamped;
             // clamp the max distance
             const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
-                this->ctrl_pipeline->get_preview_window(), x_clamped, y_clamped, false);
+                this->ctrl_pipeline->get_preview_window(), x_clamped, y_clamped, this->sizing_point);
             if(x_clamped || y_clamped)
                 video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags, false);
 

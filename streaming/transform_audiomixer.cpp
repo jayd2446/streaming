@@ -329,6 +329,8 @@ void stream_audiomixer::connect_streams(const media_stream_t& from, const media_
 
 media_stream::result_t stream_audiomixer::request_sample(request_packet& rp, const media_stream*)
 {
+    this->transform->requests.initialize_queue(rp);
+
     // make the buffer ready for the next iteration
     this->audios.clear();
     return this->transform->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;

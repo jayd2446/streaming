@@ -144,7 +144,8 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
 
     const media_sample_texture& sample_view =
         reinterpret_cast<const media_sample_texture&>(sample_view_);
-    control_video2* video_control = NULL;
+    bool has_video_control = false;
+    int highlighted_points;
     D2D1_RECT_F dest_rect;
     D2D1::Matrix3x2F dest_m;
     control_video2::video_params_t video_params;
@@ -152,19 +153,19 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
         control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
         if(this->ctrl_pipeline->selected_items.empty())
             goto out;
-        video_control = dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0].get());
+        control_video2* video_control = 
+            dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0].get());
         if(!video_control)
             goto out;
 
+        has_video_control = true;
+        highlighted_points = video_control->get_highlighted_points();
         dest_rect = video_control->get_rectangle(true);
         dest_m = video_control->get_transformation(true);
         video_params = video_control->get_video_params(true);
     }
-out:
-    /*stream_videoprocessor2_controller::params_t videoprocessor_params;*/
-    /*if(video_control)*/
-        /*video_control->videoprocessor_params->get_params(videoprocessor_params);*/
 
+out:
     CComPtr<ID3D11Texture2D> texture = sample_view.buffer->texture;
     if(texture)
     {
@@ -206,7 +207,7 @@ out:
                 (FLOAT)transform_videoprocessor2::canvas_width, 
                 (FLOAT)transform_videoprocessor2::canvas_height));
 
-            if(video_control)
+            if(has_video_control)
             {
                 /*control_video::video_params_t video_params = video_control->get_video_params(true);*/
                 
@@ -227,7 +228,7 @@ out:
                 /*this->d2d1devctx->SetAntialiasMode(old_mode);*/
 
                 // draw corners
-                const int highlighted = video_control->get_highlighted_points();
+                const int highlighted = highlighted_points;
                 ID2D1SolidColorBrush* brush;
                 FLOAT corner_length = this->size_point_radius;
                 FLOAT corner_stroke = 1.5f;

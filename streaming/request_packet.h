@@ -4,6 +4,7 @@
 #include "assert.h"
 #include <mutex>
 #include <deque>
+#include <atomic>
 
 #define INVALID_PACKET_NUMBER -1
 
@@ -53,11 +54,17 @@ private:
     mutable std::mutex requests_mutex;
     std::deque<request_t> requests;
     int first_packet_number, last_packet_number;
+    std::atomic_bool initialized;
 
     int get_index(int packet_number) const;
     bool can_pop() const;
 public:
     request_queue();
+
+    // initialize_queue must be called in the request_sample function;
+    // failure to do so causes a race condition with the first packet number
+    // initialization
+    void initialize_queue(const request_packet&);
 
     // rp needs to be valid
     request_t& push(const request_t&);
@@ -71,7 +78,8 @@ public:
 
 template<class T>
 request_queue<T>::request_queue() : 
-    first_packet_number(INVALID_PACKET_NUMBER), last_packet_number(INVALID_PACKET_NUMBER)
+    first_packet_number(INVALID_PACKET_NUMBER), last_packet_number(INVALID_PACKET_NUMBER),
+    initialized(false)
 {
 }
 
@@ -93,17 +101,28 @@ bool request_queue<T>::can_pop() const
 }
 
 template<class T>
+void request_queue<T>::initialize_queue(const request_packet& rp)
+{
+    assert_(rp.topology);
+
+    bool not_initialized = false;
+    if(this->initialized.compare_exchange_strong(not_initialized, true))
+    {
+        scoped_lock lock(this->requests_mutex);
+
+        this->first_packet_number =
+            this->last_packet_number = rp.topology->get_first_packet_number();
+        this->requests.push_back(request_t());
+    }
+}
+
+template<class T>
 typename request_queue<T>::request_t& request_queue<T>::push(const request_t& request)
 {
     scoped_lock lock(this->requests_mutex);
-    // starting packet number must be initialized lazily
-    if(this->first_packet_number == INVALID_PACKET_NUMBER)
-    {
-        assert_(this->requests.empty());
-        this->first_packet_number = 
-            this->last_packet_number = request.rp.topology->get_first_packet_number();
-        this->requests.push_back(request);
-    }
+
+    // the queue must have been initialized in the request sample function
+    assert_(this->first_packet_number != INVALID_PACKET_NUMBER);
 
     // queue won't work properly if the first packet number is greater than
     // the one in the submitted request

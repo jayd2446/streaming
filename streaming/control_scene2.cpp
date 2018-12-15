@@ -116,7 +116,7 @@ void control_scene2::activate(const control_set_t& last_set, control_set_t& new_
         elem->activate(last_set, new_set);
 }
 
-control_displaycapture* control_scene2::add_displaycapture(const std::wstring& name)
+control_displaycapture* control_scene2::add_displaycapture(const std::wstring& name, bool add_front)
 {
     bool is_video_control, found;
     this->find_control_iterator(name, is_video_control, found);
@@ -128,11 +128,14 @@ control_displaycapture* control_scene2::add_displaycapture(const std::wstring& n
         new control_displaycapture(this->active_controls, this->pipeline));
     displaycapture_control->parent = this;
     displaycapture_control->name = name;
-    this->video_controls.push_back(std::move(displaycapture_control));
+    if(!add_front)
+        this->video_controls.push_back(std::move(displaycapture_control));
+    else
+        this->video_controls.insert(this->video_controls.begin(), std::move(displaycapture_control));
     return ptr;
 }
 
-control_wasapi* control_scene2::add_wasapi(const std::wstring& name)
+control_wasapi* control_scene2::add_wasapi(const std::wstring& name, bool add_front)
 {
     bool is_video_control, found;
     this->find_control_iterator(name, is_video_control, found);
@@ -143,11 +146,14 @@ control_wasapi* control_scene2::add_wasapi(const std::wstring& name)
     control_class_t wasapi_control(ptr = new control_wasapi(this->active_controls, this->pipeline));
     wasapi_control->parent = this;
     wasapi_control->name = name;
-    this->audio_controls.push_back(std::move(wasapi_control));
+    if(!add_front)
+        this->audio_controls.push_back(std::move(wasapi_control));
+    else
+        this->audio_controls.insert(this->audio_controls.begin(), std::move(wasapi_control));
     return ptr;
 }
 
-control_scene2* control_scene2::add_scene(const std::wstring& name)
+control_scene2* control_scene2::add_scene(const std::wstring& name, bool add_front)
 {
     bool is_video_control, found;
     this->find_control_iterator(name, is_video_control, found);
@@ -158,7 +164,10 @@ control_scene2* control_scene2::add_scene(const std::wstring& name)
     control_class_t scene_control(ptr = new control_scene2(this->active_controls, this->pipeline));
     scene_control->parent = this;
     scene_control->name = name;
-    this->video_controls.push_back(std::move(scene_control));
+    if(!add_front)
+        this->video_controls.push_back(std::move(scene_control));
+    else
+        this->video_controls.insert(this->video_controls.begin(), std::move(scene_control));
     return ptr;
 }
 
@@ -168,9 +177,11 @@ control_class* control_scene2::find_control(bool is_control_video, int control_i
         return NULL;
 
     if(is_control_video)
-        return this->video_controls[control_index].get();
+        return control_index >= this->video_controls.size() ? NULL : 
+        this->video_controls[control_index].get();
     else
-        return this->audio_controls[control_index].get();
+        return control_index >= this->audio_controls.size() ? NULL :
+        this->audio_controls[control_index].get();
 }
 
 void control_scene2::switch_scene(bool is_video_control, int control_index)

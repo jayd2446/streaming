@@ -81,14 +81,17 @@ public:
     // aligns the source rect to dest rect without changing aspect ratio
     void align_source_rect();
 
+    // TODO: scale directions and sizing point representations can be unified
+
     // TODO: get sizing points covers this
     D2D1_POINT_2F get_center(bool dest_params = true) const;
 
     // returns the clamping vector in canvas coords;
     // the clamping area is the canvas area;
-    // the returned vector is not axis aligned
-    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, bool& x_clamped, bool& y_clamped,
-        bool clamp_min = true) const;
+    // the returned vector is not axis aligned;
+    // negative sizing point includes all points
+    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, 
+        bool& x_clamped, bool& y_clamped, int clamped_sizing_point = -1) const;
 
     D2D1_POINT_2F client_to_canvas(const sink_preview2_t&, LONG x, LONG y, 
         bool scale_only = false) const;

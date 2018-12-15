@@ -29,7 +29,8 @@ private:
     control_scene2(control_set_t& active_controls, control_pipeline2&);
 public:
     // TODO: scene really shouldn't expose these fields but instead have functions
-    // video controls include scene controls aswell so that scenes can have ordering
+    // video controls include scene controls aswell so that scenes can have ordering;
+    // first control appears topmost
     controls_t video_controls;
     controls_t audio_controls;
 
@@ -38,9 +39,9 @@ public:
     // the added controls must be explicitly activated;
     // the name for the control must be unique;
     // returns NULL if the name wasn't unique
-    control_displaycapture* add_displaycapture(const std::wstring& name);
-    control_wasapi* add_wasapi(const std::wstring& name);
-    control_scene2* add_scene(const std::wstring& name);
+    control_displaycapture* add_displaycapture(const std::wstring& name, bool add_front = true);
+    control_wasapi* add_wasapi(const std::wstring& name, bool add_front = true);
+    control_scene2* add_scene(const std::wstring& name, bool add_front = false);
 
     void switch_scene(bool is_video_control, int control_index);
     void switch_scene(const control_scene2& new_scene);

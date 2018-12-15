@@ -389,6 +389,7 @@ void stream_audioprocessor::on_component_stop(time_unit t)
 
 media_stream::result_t stream_audioprocessor::request_sample(request_packet& rp, const media_stream*)
 {
+    this->transform->requests.initialize_queue(rp);
     return this->transform->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
 }
 
