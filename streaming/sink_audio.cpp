@@ -23,9 +23,9 @@ stream_audio_t sink_audio::create_stream(presentation_clock_t&& clock)
     return stream;
 }
 
-stream_audio_worker_t sink_audio::create_worker_stream()
+stream_worker_t sink_audio::create_worker_stream()
 {
-    return stream_audio_worker_t(new stream_audio_worker(this->shared_from_this<sink_audio>()));
+    return stream_worker_t(new stream_worker(this->shared_from_this<sink_audio>()));
 }
 
 
@@ -62,10 +62,10 @@ void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
     scoped_lock lock(this->worker_streams_mutex);
     for(auto it = this->worker_streams.begin(); it != (this->worker_streams.end() - j); it++)
     {
-        if((*it)->available)
+        if((*it)->is_available())
         {
-            this->unavailable = 0;
-            (*it)->available = false;
+            /*this->unavailable = 0;
+            (*it)->available = false;*/
 
             result_t res = (*it)->request_sample(rp, this);
             if(res == FATAL_ERROR)
@@ -80,7 +80,7 @@ void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
     this->unavailable++;
 }
 
-void stream_audio::add_worker_stream(const stream_audio_worker_t& worker_stream)
+void stream_audio::add_worker_stream(const stream_worker_t& worker_stream)
 {
     scoped_lock lock(this->worker_streams_mutex);
     this->worker_streams.push_back(worker_stream);

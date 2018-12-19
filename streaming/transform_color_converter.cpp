@@ -289,7 +289,7 @@ media_stream::result_t stream_color_converter::process_sample(
     const media_sample& sample_view_, request_packet& rp, const media_stream*)
 {
     const media_sample_texture& sample_view = 
-        reinterpret_cast<const media_sample_texture&>(sample_view_);
+        static_cast<const media_sample_texture&>(sample_view_);
 
     /*CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;*/
 

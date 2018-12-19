@@ -336,7 +336,7 @@ void transform_audioprocessor::process()
     request_t request;
     while(this->requests.pop(request))
     {
-        stream_audioprocessor* stream = reinterpret_cast<stream_audioprocessor*>(request.stream);
+        stream_audioprocessor* stream = static_cast<stream_audioprocessor*>(request.stream);
         media_sample_audio audio(stream->audio_buffer);
 
         this->resample(audio, request.sample_view.audio, request.sample_view.drain);
@@ -396,7 +396,7 @@ media_stream::result_t stream_audioprocessor::request_sample(request_packet& rp,
 media_stream::result_t stream_audioprocessor::process_sample(
     const media_sample& sample_, request_packet& rp, const media_stream*)
 {
-    const media_sample_audio& sample = reinterpret_cast<const media_sample_audio&>(sample_);
+    const media_sample_audio& sample = static_cast<const media_sample_audio&>(sample_);
     HRESULT hr = S_OK;
 
     transform_audioprocessor::request_t request;

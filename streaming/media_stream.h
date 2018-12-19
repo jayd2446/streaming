@@ -3,13 +3,6 @@
 #include "enable_shared_from_this.h"
 #include <memory>
 
-// media stream object is needed for stream type info;
-// mediatypehandler is used to check if the stream supports a format and to
-// set a format for the stream;
-// format is represented as mediatype
-
-// (formats for the streams are changed by creating new topologies)
-
 class media_topology;
 class media_stream;
 class media_component;
@@ -49,12 +42,13 @@ public:
     // requests samples from media session or processes
     // samples if there are any;
     // implements input stream functionality;
-    // NOTE: request_sample shouldn't lock anything, because otherwise a deadlock might occur
+    // NOTE: request_sample shouldn't lock anything, because otherwise a deadlock might occur;
+    // source's request sample must dispatch to a work queue, because mpeg_sink
+    // holds a topology switch mutex, which can cause a deadlock with pipeline mutex;
     virtual result_t request_sample(request_packet&, const media_stream* previous_stream) = 0;
     // processes the new sample and optionally calls media_session::give_sample;
     // implements output stream functionality;
-    // source's process sample must dispatch to a work queue, because mpeg_sink
-    // holds a topology switch mutex, which can cause a deadlock with pipeline mutex
+    // process_sample is single threaded until media_session::give_sample is called
     virtual result_t process_sample(
         const media_sample&, request_packet&, const media_stream* previous_stream) = 0;
 };

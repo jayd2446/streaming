@@ -271,7 +271,7 @@ media_stream::result_t stream_aac_encoder::request_sample(request_packet& rp, co
 media_stream::result_t stream_aac_encoder::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    const media_sample_audio& audio_sample = reinterpret_cast<const media_sample_audio&>(sample_view);
+    const media_sample_audio& audio_sample = static_cast<const media_sample_audio&>(sample_view);
 
     transform_aac_encoder::request_t request;
     request.rp = rp;

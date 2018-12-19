@@ -77,7 +77,6 @@ public:
     explicit stream_audiomixer(const transform_audiomixer_t& transform);
 
     void connect_streams(const media_stream_t& from, const media_topology_t&);
-    bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     result_t request_sample(request_packet&, const media_stream*);
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

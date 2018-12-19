@@ -21,8 +21,6 @@ class sink_mpeg2;
 class stream_mpeg2;
 typedef std::shared_ptr<sink_mpeg2> sink_mpeg2_t;
 typedef std::shared_ptr<stream_mpeg2> stream_mpeg2_t;
-typedef stream_worker<sink_mpeg2_t> stream_mpeg2_worker;
-typedef std::shared_ptr<stream_mpeg2_worker> stream_mpeg2_worker_t;
 
 class sink_mpeg2 : public media_sink
 {
@@ -53,7 +51,7 @@ public:
         const media_topology_t& audio_topology);
 
     stream_mpeg2_t create_stream(presentation_clock_t&&, const stream_audio_t&);
-    stream_mpeg2_worker_t create_worker_stream();
+    stream_worker_t create_worker_stream();
 
     bool is_started() const {return this->started;}
 };
@@ -69,7 +67,7 @@ private:
     bool discontinuity;
 
     std::recursive_mutex worker_streams_mutex;
-    std::vector<stream_mpeg2_worker_t> worker_streams;
+    std::vector<stream_worker_t> worker_streams;
     stream_audio_t audio_sink_stream;
     time_unit last_due_time;
 
@@ -94,7 +92,7 @@ public:
     stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&);
     ~stream_mpeg2();
 
-    void add_worker_stream(const stream_mpeg2_worker_t& worker_stream);
+    void add_worker_stream(const stream_worker_t& worker_stream);
 
     // presentation_clock_sink
     bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}

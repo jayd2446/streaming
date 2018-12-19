@@ -1,48 +1,35 @@
 #pragma once
 #include "media_stream.h"
+#include "media_component.h"
+#include <queue>
+#include <mutex>
 
-template<typename Component>
+#define DEFAULT_MAX_REQUESTS 1
+
+// implements buffering by buffering request packets
+
+// TODO: decide if topology switching should be tied to the preview time or the real time;
+// for preview time, the request packet should trigger the topology switch
+
 class stream_worker : public media_stream
 {
 public:
-    typedef Component component_t;
-public:
-    component_t component;
-    volatile bool available;
+    typedef std::lock_guard<std::mutex> scoped_lock;
+    typedef std::queue<request_packet> request_queue_t;
+private:
+    media_component_t component;
+    request_queue_t requests;
+    mutable std::mutex request_dispatch_mutex;
+    int max_requests;
 
-    explicit stream_worker(const component_t& component);
+    void dispatch_next_request();
+public:
+    explicit stream_worker(const media_component_t& component);
+
+    bool is_available() const;
 
     result_t request_sample(request_packet&, const media_stream*);
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };
 
-
-
-template<typename T>
-stream_worker<T>::stream_worker(const component_t& component) : component(component), available(true)
-{
-}
-
-template<typename T>
-media_stream::result_t stream_worker<T>::request_sample(request_packet& rp, const media_stream*)
-{
-    if(!this->component->session->request_sample(this, rp, true))
-    {
-        this->available = true;
-        return FATAL_ERROR;
-    }
-
-    return OK;
-}
-
-template<typename T>
-media_stream::result_t stream_worker<T>::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
-{
-    this->available = true;
-
-    if(!this->component->session->give_sample(this, sample_view, rp, false))
-        return FATAL_ERROR;
-
-    return OK;
-}
+typedef std::shared_ptr<stream_worker> stream_worker_t;

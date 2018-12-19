@@ -116,7 +116,7 @@ void source_wasapi::serve_cb(void*)
         bool dispatch = false;
 
         // use the stream's sample
-        stream_wasapi* stream = reinterpret_cast<stream_wasapi*>(request.stream);
+        stream_wasapi* stream = static_cast<stream_wasapi*>(request.stream);
         media_sample_audio& audio = stream->audio_sample;
         audio.buffer->samples.clear();
         audio.bit_depth = sizeof(bit_depth_t) * 8;

@@ -309,7 +309,7 @@ media_stream::result_t stream_audiomix::process_sample(
 {
     std::unique_lock<std::mutex> lock(this->mutex);
 
-    const media_sample_audio& audio_sample = reinterpret_cast<const media_sample_audio&>(sample_view);
+    const media_sample_audio& audio_sample = static_cast<const media_sample_audio&>(sample_view);
 
     if(prev_stream == this->primary_stream)
     {

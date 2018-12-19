@@ -222,7 +222,7 @@ media_stream::result_t stream_file::process_sample(
     HRESULT hr = S_OK;
     if(this->sink->video)
     {
-        const media_sample_h264* sample_h264 = reinterpret_cast<const media_sample_h264*>(&sample);
+        const media_sample_h264* sample_h264 = static_cast<const media_sample_h264*>(&sample);
         assert_(dynamic_cast<const media_sample_h264*>(&sample));
 
         sink_file::request_video_t request;
@@ -249,7 +249,7 @@ media_stream::result_t stream_file::process_sample(
     }
     else
     {
-        const media_sample_aac* sample_aac = reinterpret_cast<const media_sample_aac*>(&sample);
+        const media_sample_aac* sample_aac = static_cast<const media_sample_aac*>(&sample);
         assert_(dynamic_cast<const media_sample_aac*>(&sample));
 
         sink_file::request_audio_t request;

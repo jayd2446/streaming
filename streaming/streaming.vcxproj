@@ -208,6 +208,7 @@
     <ClCompile Include="source_displaycapture5.cpp" />
     <ClCompile Include="source_wasapi.cpp" />
     <ClCompile Include="source_empty.cpp" />
+    <ClCompile Include="stream_worker.cpp" />
     <ClCompile Include="transform_aac_encoder.cpp" />
     <ClCompile Include="transform_audiomix.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>

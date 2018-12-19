@@ -277,7 +277,7 @@ void transform_audiomixer::process()
     {
         const double frame_duration = SECOND_IN_TIME_UNIT / (double)transform_aac_encoder::sample_rate;
         const frame_unit drain_point = (frame_unit)(request.sample_view.drain_point / frame_duration);
-        stream_audiomixer* stream = reinterpret_cast<stream_audiomixer*>(request.stream);
+        stream_audiomixer* stream = static_cast<stream_audiomixer*>(request.stream);
         media_sample_audio audio(stream->audio_buffer);
 
         this->process(audio, *request.sample_view.audios, request.sample_view.drain, drain_point);
@@ -341,7 +341,7 @@ media_stream::result_t stream_audiomixer::process_sample(
 {
     std::unique_lock<std::mutex> lock(this->mutex);
 
-    const media_sample_audio& audio_sample = reinterpret_cast<const media_sample_audio&>(sample_view);
+    const media_sample_audio& audio_sample = static_cast<const media_sample_audio&>(sample_view);
 
     this->samples_received++;
     this->audios.push_back(audio_sample);

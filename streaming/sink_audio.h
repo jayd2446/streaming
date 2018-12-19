@@ -19,8 +19,6 @@ class sink_audio;
 class stream_audio;
 typedef std::shared_ptr<sink_audio> sink_audio_t;
 typedef std::shared_ptr<stream_audio> stream_audio_t;
-typedef stream_worker<sink_audio_t> stream_audio_worker;
-typedef std::shared_ptr<stream_audio_worker> stream_audio_worker_t;
 
 class sink_audio : public media_sink
 {
@@ -39,7 +37,7 @@ public:
     stream_audio_t create_stream(presentation_clock_t&&);
     // worker streams duplicate the topology so that individual branches can be
     // multithreaded
-    stream_audio_worker_t create_worker_stream();
+    stream_worker_t create_worker_stream();
 };
 
 class stream_audio : public media_stream_clock_sink
@@ -51,7 +49,7 @@ private:
     bool running;
 
     std::recursive_mutex worker_streams_mutex;
-    std::vector<stream_audio_worker_t> worker_streams;
+    std::vector<stream_worker_t> worker_streams;
 
     // for debug
     int unavailable;
@@ -65,7 +63,7 @@ private:
 public:
     explicit stream_audio(const sink_audio_t& sink);
 
-    void add_worker_stream(const stream_audio_worker_t& worker_stream);
+    void add_worker_stream(const stream_worker_t& worker_stream);
 
     // uses a special stream branch so that the request won't be dropped
     result_t request_sample_last(time_unit);

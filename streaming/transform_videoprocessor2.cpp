@@ -312,7 +312,7 @@ media_stream::result_t stream_videoprocessor2::process_sample(
     const media_sample& sample_, request_packet& rp, const media_stream* prev_stream)
 {
     const media_sample_videoprocessor2& sample =
-        reinterpret_cast<const media_sample_videoprocessor2&>(sample_);
+        static_cast<const media_sample_videoprocessor2&>(sample_);
 
     // this function needs to be locked because multiple inputs
     // might be running simultaneously

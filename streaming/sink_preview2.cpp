@@ -143,7 +143,7 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
     HRESULT hr = S_OK;
 
     const media_sample_texture& sample_view =
-        reinterpret_cast<const media_sample_texture&>(sample_view_);
+        static_cast<const media_sample_texture&>(sample_view_);
     bool has_video_control = false;
     int highlighted_points;
     D2D1_RECT_F dest_rect;

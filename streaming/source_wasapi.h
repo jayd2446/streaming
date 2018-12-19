@@ -115,8 +115,6 @@ private:
 public:
     explicit stream_wasapi(const source_wasapi_t& source);
 
-    bool get_clock(presentation_clock_t& c) {return this->source->session->get_current_clock(c);}
-
     result_t request_sample(request_packet&, const media_stream*);
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

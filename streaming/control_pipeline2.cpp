@@ -349,9 +349,9 @@ void control_pipeline2::build_and_switch_topology()
 
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
-        stream_mpeg2_worker_t mpeg_worker_stream = this->mpeg_sink->create_worker_stream();
+        stream_worker_t mpeg_worker_stream = this->mpeg_sink->create_worker_stream();
         media_stream_t preview_stream = this->preview_sink->create_stream();
-        stream_audio_worker_t audio_worker_stream = this->audio_sink->create_worker_stream();
+        stream_worker_t audio_worker_stream = this->audio_sink->create_worker_stream();
         media_stream_t audiomixer_stream = this->audiomixer_transform->create_stream(
             this->audio_topology->get_clock());
         stream_videoprocessor2_t videoprocessor_stream = 

@@ -757,7 +757,7 @@ media_stream::result_t stream_h264_encoder::process_sample(
     transform_h264_encoder::request_t request;
     request.stream = this;
     request.sample_view.drain = (rp.request_time == this->drain_point);
-    request.sample_view.sample = reinterpret_cast<const media_sample_texture&>(sample_view);
+    request.sample_view.sample = static_cast<const media_sample_texture&>(sample_view);
     request.rp = rp;
 
     this->transform->requests.push(request);

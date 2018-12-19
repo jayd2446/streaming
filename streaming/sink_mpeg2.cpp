@@ -62,9 +62,9 @@ stream_mpeg2_t sink_mpeg2::create_stream(
     return stream;
 }
 
-stream_mpeg2_worker_t sink_mpeg2::create_worker_stream()
+stream_worker_t sink_mpeg2::create_worker_stream()
 {
-    return stream_mpeg2_worker_t(new stream_mpeg2_worker(this->shared_from_this<sink_mpeg2>()));
+    return stream_worker_t(new stream_worker(this->shared_from_this<sink_mpeg2>()));
 }
 
 
@@ -101,10 +101,6 @@ void stream_mpeg2::on_stream_start(time_unit t)
 {
     this->set_schedule_cb_work_queue(capture_work_queue_id);
 
-    // try to set the initial time for the output;
-    // the output will modify the sample timestamps so that they start at 0
-    /*this->sink->get_output()->set_initial_time(t);*/
-
     this->running = true;
     this->last_due_time = t;
     this->schedule_new(t);
@@ -116,13 +112,11 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     this->clear_queue();
 
     // the audio topology will be switched in this call
-    assert_(this->sink->pending_audio_topology/* || !this->sink->session->started()*/);
+    assert_(this->sink->pending_audio_topology);
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
     this->sink->pending_audio_topology = NULL;
 
-    // do not bother requesting the last sample if the session is shutting down
-    /*if(this->sink->session->started())*/
-        this->audio_sink_stream->request_sample_last(t);
+    this->audio_sink_stream->request_sample_last(t);
 }
 
 void stream_mpeg2::scheduled_callback(time_unit due_time)
@@ -202,10 +196,10 @@ void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
     scoped_lock lock(this->worker_streams_mutex);
     for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
     {
-        if((*it)->available)
+        if((*it)->is_available())
         {
-            this->unavailable = 0;
-            (*it)->available = false;
+            /*this->unavailable = 0;
+            (*it)->available = false;*/
 
             result_t res = (*it)->request_sample(rp, this);
             if(res == FATAL_ERROR)
@@ -224,7 +218,7 @@ void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
     this->unavailable++;
 }
 
-void stream_mpeg2::add_worker_stream(const stream_mpeg2_worker_t& worker_stream)
+void stream_mpeg2::add_worker_stream(const stream_worker_t& worker_stream)
 {
     scoped_lock lock(this->worker_streams_mutex);
     this->worker_streams.push_back(worker_stream);

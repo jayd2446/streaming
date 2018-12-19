@@ -114,7 +114,6 @@ private:
 public:
     explicit stream_h264_encoder(const transform_h264_encoder_t& transform);
 
-    bool get_clock(presentation_clock_t& c) {return this->transform->session->get_current_clock(c);}
     // called by the downstream from media session
     result_t request_sample(request_packet&, const media_stream*);
     // called by the upstream from media session

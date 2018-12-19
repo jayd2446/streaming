@@ -645,11 +645,8 @@ void stream_displaycapture5_pointer::dispatch(
         sample_view.params.dest_m = D2D1::Matrix3x2F::Identity();
     }
     else
-    {
         sample_view.buffer = this->null_buffer;
-        /*sample_view.attach(this->null_buffer, view_lock_t::READ_LOCK_BUFFERS);*/
-    }
-    /*sample_view.buffer = this->null_buffer;*/
+    
     sample_view.timestamp = request.rp.request_time;
 
     this->source->session->give_sample(this, sample_view, request.rp, true);

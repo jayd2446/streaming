@@ -30,8 +30,6 @@ private:
     presentation_clock_t clock;
     volatile int packet_number, first_packet_number;
 public:
-    // TODO: implement topology cloning;
-    // requires streams to clone themselves to a new stream
     explicit media_topology(const presentation_time_source_t&);
 
     // only one request stream connection is added for a node;
