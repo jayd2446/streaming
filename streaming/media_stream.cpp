@@ -3,13 +3,30 @@
 #include "presentation_clock.h"
 #include "assert.h"
 
-media_stream::media_stream(stream_t stream_type) : stream_type(stream_type)
+media_stream::media_stream(stream_t stream_type) : 
+    stream_type(stream_type), locked(false)
 {
 }
 
 void media_stream::connect_streams(const media_stream_t& from, const media_topology_t& topology)
 {
     topology->connect_streams(from, this->shared_from_this<media_stream>());
+}
+
+void media_stream::lock()
+{
+    scoped_lock lock(this->mutex);
+    while(this->locked)
+        this->cv.wait(lock);
+    this->locked = true;
+}
+
+void media_stream::unlock()
+{
+    scoped_lock lock(this->mutex);
+    assert_(this->locked);
+    this->locked = false;
+    this->cv.notify_one();
 }
 
 

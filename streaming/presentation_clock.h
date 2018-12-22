@@ -1,7 +1,6 @@
 #pragma once
 #include "async_callback.h"
 #include "media_sample.h"
-#include "media_stream.h"
 #include "enable_shared_from_this.h"
 #include <map>
 #include <set>
@@ -98,6 +97,10 @@ public:
 typedef std::shared_ptr<presentation_clock_sink> presentation_clock_sink_t;
 
 class media_component;
+class media_stream;
+class media_stream_clock_sink;
+typedef std::shared_ptr<media_stream> media_stream_t;
+typedef std::shared_ptr<media_stream_clock_sink> media_stream_clock_sink_t;
 
 class presentation_clock
 {

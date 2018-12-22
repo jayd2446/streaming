@@ -6,6 +6,7 @@
 #include "media_sample.h"
 #include "control_class.h"
 #include "transform_h264_encoder.h"
+#include "request_packet.h"
 #include <d3d11.h>
 #include <d2d1_1.h>
 #include <dxgi1_2.h>
@@ -13,6 +14,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <map>
 
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
@@ -20,9 +22,7 @@
 class stream_videoprocessor2;
 typedef std::shared_ptr<stream_videoprocessor2> stream_videoprocessor2_t;
 
-// controls how the stream should process the input sample;
-// controllers must be used instead of using streams themselves
-// because there are duplicates of streams to allow non locking multithreading
+// controls how the stream should process the input sample
 class stream_videoprocessor2_controller
 {
 public:
@@ -58,28 +58,30 @@ public:
     virtual ~media_sample_videoprocessor2() {}
 };
 
-
+// TODO: videoprocessor controller is no longer needed, the component
+// can be directly modified(probably)
 
 class transform_videoprocessor2 : public media_source
 {
     friend class stream_videoprocessor2;
 public:
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
 
     // TODO: canvas size should probably be a float
     static const UINT32 canvas_width = transform_h264_encoder::frame_width;
     static const UINT32 canvas_height = transform_h264_encoder::frame_height;
 private:
     control_class_t ctrl_pipeline;
+    context_mutex_t context_mutex;
+    std::shared_ptr<buffer_pool> texture_pool;
 
     CComPtr<ID2D1Factory1> d2d1factory;
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID2D1Device> d2d1dev;
-
-    context_mutex_t context_mutex;
 public:
     transform_videoprocessor2(const media_session_t& session, context_mutex_t context_mutex);
+    ~transform_videoprocessor2();
 
     void initialize(
         const control_class_t&,
@@ -94,32 +96,35 @@ typedef std::shared_ptr<transform_videoprocessor2> transform_videoprocessor2_t;
 
 class stream_videoprocessor2 : public media_stream
 {
+    friend class transform_videoprocessor2;
 private:
     using media_stream::connect_streams;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    
+    struct input_stream_props_t
+    {
+        media_stream* input_stream;
+        stream_videoprocessor2_controller_t user_params;
+    };
     struct packet
     {
-        request_packet rp;
+        media_stream* input_stream;
         media_sample_videoprocessor2 sample;
-        stream_videoprocessor2_controller_t user_params;
-        // cached params must be used so that newer params aren't applied to older rps
         bool valid_user_params;
-        media_sample_videoprocessor2::params_t user_params_cached;
+        media_sample_videoprocessor2::params_t user_params;
     };
+    typedef std::pair<size_t /*samples received*/, std::shared_ptr<packet[]>> request_t;
+    typedef request_queue<request_t> request_queue;
 private:
     transform_videoprocessor2_t transform;
+    // TODO: enable multithreaded dev context again by having a predefined set
     CComPtr<ID2D1DeviceContext> d2d1devctx;
 
-    std::recursive_mutex mutex;
+    request_queue requests;
+    std::vector<input_stream_props_t> input_stream_props;
 
-    typedef std::pair<packet, const media_stream*> input_stream_t;
-    std::vector<input_stream_t> input_streams;
-    int samples_received;
-
-    media_buffer_texture_t output_buffer;
-    void process();
+    void initialize_buffer(const media_buffer_texture_t& buffer);
+    void process(request_queue::request_t&);
 public:
     explicit stream_videoprocessor2(const transform_videoprocessor2_t& transform);
 

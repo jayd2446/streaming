@@ -1,5 +1,6 @@
 #include "media_session.h"
 #include "media_sink.h"
+#include "media_stream.h"
 #include <Mferror.h>
 #include <iostream>
 #include "assert.h"
@@ -145,8 +146,10 @@ bool media_session::give_sample(
     assert_(it != topology->topology.end());
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
+    {
         if((*jt)->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
             return false;
+    }
 
     return true;
 }

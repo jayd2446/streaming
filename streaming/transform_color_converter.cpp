@@ -271,6 +271,7 @@ done:
     this->pending_packet.rp = request_packet();
 
     // give the sample to downstream
+    this->unlock();
     this->transform->session->give_sample(this, sample, rp, false);
 
 //done:
@@ -288,6 +289,8 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 media_stream::result_t stream_color_converter::process_sample(
     const media_sample& sample_view_, request_packet& rp, const media_stream*)
 {
+    this->lock();
+
     const media_sample_texture& sample_view = 
         static_cast<const media_sample_texture&>(sample_view_);
 

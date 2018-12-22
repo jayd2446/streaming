@@ -1,9 +1,5 @@
 #include "sink_audio.h"
 #include <iostream>
-#include <Mferror.h>
-
-#pragma comment(lib, "Mf.lib")
-#pragma comment(lib, "Mfreadwrite.lib")
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
@@ -64,8 +60,7 @@ void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
     {
         if((*it)->is_available())
         {
-            /*this->unavailable = 0;
-            (*it)->available = false;*/
+            this->unavailable = 0;
 
             result_t res = (*it)->request_sample(rp, this);
             if(res == FATAL_ERROR)

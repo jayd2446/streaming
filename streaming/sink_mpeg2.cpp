@@ -198,8 +198,7 @@ void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
     {
         if((*it)->is_available())
         {
-            /*this->unavailable = 0;
-            (*it)->available = false;*/
+            this->unavailable = 0;
 
             result_t res = (*it)->request_sample(rp, this);
             if(res == FATAL_ERROR)
@@ -221,6 +220,9 @@ void stream_mpeg2::dispatch_request(request_packet& rp, bool no_drop)
 void stream_mpeg2::add_worker_stream(const stream_worker_t& worker_stream)
 {
     scoped_lock lock(this->worker_streams_mutex);
+
+    worker_stream->set_max_requests(VIDEO_MAX_REQUESTS);
+
     this->worker_streams.push_back(worker_stream);
 }
 

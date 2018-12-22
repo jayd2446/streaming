@@ -739,7 +739,9 @@ void stream_h264_encoder::on_component_start(time_unit t)
 
 void stream_h264_encoder::on_component_stop(time_unit t)
 {
+    this->lock();
     this->drain_point = t;
+    this->unlock();
 }
 
 media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, const media_stream*)
@@ -754,6 +756,8 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, c
 media_stream::result_t stream_h264_encoder::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
+    this->lock();
+
     transform_h264_encoder::request_t request;
     request.stream = this;
     request.sample_view.drain = (rp.request_time == this->drain_point);
@@ -770,6 +774,7 @@ media_stream::result_t stream_h264_encoder::process_sample(
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     count++;*/
 
+    this->unlock();
     this->transform->processing_cb(NULL);
     return OK;
 }

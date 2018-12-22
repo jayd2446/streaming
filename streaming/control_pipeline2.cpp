@@ -347,6 +347,8 @@ void control_pipeline2::build_and_switch_topology()
     mpeg_stream->set_pull_rate(
         transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
 
+    // TODO: remove this and the loop when branching is no longer used
+    bool video_branch_not_build = true;
     for(int i = 0; i < WORKER_STREAMS; i++)
     {
         stream_worker_t mpeg_worker_stream = this->mpeg_sink->create_worker_stream();
@@ -357,17 +359,21 @@ void control_pipeline2::build_and_switch_topology()
         stream_videoprocessor2_t videoprocessor_stream = 
             this->videoprocessor_transform->create_stream();
 
-        mpeg_stream->add_worker_stream(mpeg_worker_stream);
+        if(video_branch_not_build)
+            mpeg_stream->add_worker_stream(mpeg_worker_stream);
         audio_stream->add_worker_stream(audio_worker_stream);
 
-        this->root_scene.build_video_topology_branch(videoprocessor_stream, this->video_topology);
+        if(video_branch_not_build)
+            this->root_scene.build_video_topology_branch(videoprocessor_stream, this->video_topology);
         this->root_scene.build_audio_topology_branch(audiomixer_stream, this->audio_topology);
 
-        preview_stream->connect_streams(videoprocessor_stream, this->video_topology);
+        if(video_branch_not_build)
+            preview_stream->connect_streams(videoprocessor_stream, this->video_topology);
 
         if(!this->recording)
         {
-            mpeg_worker_stream->connect_streams(preview_stream, this->video_topology);
+            if(video_branch_not_build)
+                mpeg_worker_stream->connect_streams(preview_stream, this->video_topology);
             audio_worker_stream->connect_streams(audiomixer_stream, this->audio_topology);
         }
         else
@@ -386,18 +392,24 @@ void control_pipeline2::build_and_switch_topology()
             mpeg_stream->encoder_stream = 
                 std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream_video);
 
-            color_converter_stream->connect_streams(preview_stream, this->video_topology);
-            encoder_stream_video->connect_streams(color_converter_stream, this->video_topology);
-            mp4_stream_video->connect_streams(encoder_stream_video, this->video_topology);
-            mpeg_worker_stream->connect_streams(mp4_stream_video, this->video_topology);
+            if(video_branch_not_build)
+            {
+                color_converter_stream->connect_streams(preview_stream, this->video_topology);
+                encoder_stream_video->connect_streams(color_converter_stream, this->video_topology);
+                mp4_stream_video->connect_streams(encoder_stream_video, this->video_topology);
+                mpeg_worker_stream->connect_streams(mp4_stream_video, this->video_topology);
+            }
 
             encoder_stream_audio->connect_streams(audiomixer_stream, this->audio_topology);
             mp4_stream_audio->connect_streams(encoder_stream_audio, this->audio_topology);
             audio_worker_stream->connect_streams(mp4_stream_audio, this->audio_topology);
         }
 
-        mpeg_stream->connect_streams(mpeg_worker_stream, this->video_topology);
+        if(video_branch_not_build)
+            mpeg_stream->connect_streams(mpeg_worker_stream, this->video_topology);
         audio_stream->connect_streams(audio_worker_stream, this->audio_topology);
+
+        video_branch_not_build = false;
     }
 
     // mpeg sink ensures atomic topology starting/switching for audio and video

@@ -1,5 +1,4 @@
 #pragma once
-#include "media_stream.h"
 #include "presentation_clock.h"
 #include <memory>
 #include <unordered_map>
@@ -16,6 +15,9 @@ only one topology is active in a session at a time
 if changing the time source, new session must be created,
 which also means that components need to be reinitialized
 */
+
+class media_stream;
+typedef std::shared_ptr<media_stream> media_stream_t;
 
 // TODO: improve topology traverse speed
 

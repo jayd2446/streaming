@@ -5,17 +5,16 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-#ifdef min
-#undef min
-#endif
-#ifdef max
-#undef max
-#endif
-
 transform_videoprocessor2::transform_videoprocessor2(
     const media_session_t& session, context_mutex_t context_mutex) :
-    media_source(session), context_mutex(context_mutex)
+    media_source(session), context_mutex(context_mutex), texture_pool(new buffer_pool)
 {
+}
+
+transform_videoprocessor2::~transform_videoprocessor2()
+{
+    buffer_pool::scoped_lock lock(this->texture_pool->mutex);
+    this->texture_pool->dispose();
 }
 
 void transform_videoprocessor2::initialize(
@@ -45,9 +44,7 @@ stream_videoprocessor2_t transform_videoprocessor2::create_stream()
 
 
 stream_videoprocessor2::stream_videoprocessor2(const transform_videoprocessor2_t& transform) :
-    transform(transform),
-    output_buffer(new media_buffer_texture),
-    samples_received(0)
+    transform(transform)
 {
     HRESULT hr = S_OK;
 
@@ -56,64 +53,81 @@ stream_videoprocessor2::stream_videoprocessor2(const transform_videoprocessor2_t
         D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
         &this->d2d1devctx));
 
-    // create the d3d11 texture
-    {
-        D3D11_TEXTURE2D_DESC desc;
-        desc.Width = transform_h264_encoder::frame_width;
-        desc.Height = transform_h264_encoder::frame_height;
-        desc.MipLevels = 1;
-        desc.ArraySize = 1;
-        desc.SampleDesc.Count = 1;
-        desc.SampleDesc.Quality = 0;
-        desc.CPUAccessFlags = 0;
-        desc.MiscFlags = 0;
-        desc.Usage = D3D11_USAGE_DEFAULT;
-        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(
-            &desc, NULL, &this->output_buffer->texture));
-    }
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
+}
 
-    // associate the texture with d2d1 bitmap which is used as a render target
-    // for the d2d1 dev ctx
-    {
-        CComPtr<IDXGISurface> dxgisurface;
-        D2D1_BITMAP_PROPERTIES1 bitmap_properties =
-            D2D1::BitmapProperties1(
-                D2D1_BITMAP_OPTIONS_TARGET,
-                D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
+void stream_videoprocessor2::initialize_buffer(const media_buffer_texture_t& buffer)
+{
+    HRESULT hr = S_OK;
+    CComPtr<IDXGISurface> dxgisurface;
+    D2D1_BITMAP_PROPERTIES1 bitmap_properties = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_TARGET,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
 
-        CHECK_HR(hr = this->output_buffer->texture->QueryInterface(&dxgisurface));
-        CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
-            dxgisurface, bitmap_properties, &this->output_buffer->bitmap));
+    D3D11_TEXTURE2D_DESC desc;
+    desc.Width = transform_h264_encoder::frame_width;
+    desc.Height = transform_h264_encoder::frame_height;
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.CPUAccessFlags = 0;
+    desc.MiscFlags = 0;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(&desc, NULL, &buffer->texture));
 
-        this->d2d1devctx->SetTarget(this->output_buffer->bitmap);
-    }
+    CHECK_HR(hr = buffer->texture->QueryInterface(&dxgisurface));
+    CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
+        dxgisurface, bitmap_properties, &buffer->bitmap));
 
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
 }
 
-void stream_videoprocessor2::process()
+void stream_videoprocessor2::process(request_queue::request_t& request)
 {
+    // the stream in the request equals to this
+
     HRESULT hr = S_OK;
     media_sample_texture sample;
-    /*time_unit timestamp = std::numeric_limits<time_unit>::max();*/
-    // rps are equivalent in every input stream
-    request_packet rp = this->input_streams[0].first.rp;
+    const time_unit timestamp = request.rp.request_time;
 
-    time_unit timestamp = rp.request_time;
+    // get the pooled buffer and set the device context to draw into it
+    media_buffer_texture_t output_buffer;
+    {
+        transform_videoprocessor2::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
+        if(this->transform->texture_pool->container.empty())
+        {
+            media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
+                this->transform->texture_pool));
+            output_buffer = pooled_buffer->create_pooled_buffer();
+            this->initialize_buffer(output_buffer);
+        }
+        else
+        {
+            output_buffer = this->transform->texture_pool->container.top()->create_pooled_buffer();
+            this->transform->texture_pool->container.pop();
+        }
+    }
+    this->d2d1devctx->SetTarget(output_buffer->bitmap);
 
+    // draw
     this->d2d1devctx->BeginDraw();
     this->d2d1devctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
 
-    for(auto&& stream : this->input_streams)
+    for(size_t i = 0; i < this->input_stream_props.size(); i++)
     {
-        CComPtr<ID3D11Texture2D> texture = stream.first.sample.buffer->texture;
-        const media_sample_videoprocessor2::params_t& params = stream.first.sample.params;
+        CComPtr<ID3D11Texture2D> texture = request.sample_view.second[i].sample.buffer->texture;
+        const media_sample_videoprocessor2::params_t& params = 
+            request.sample_view.second[i].sample.params;
         const media_sample_videoprocessor2::params_t& user_params = 
-            stream.first.valid_user_params ? stream.first.user_params_cached : params;
+            request.sample_view.second[i].valid_user_params ? 
+            request.sample_view.second[i].user_params : params;
 
         // use the earliest timestamp;
         // actually, max must be used so that the timestamp stays incremental
@@ -266,19 +280,11 @@ done:
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     }
 
-    sample.buffer = this->output_buffer;
+    sample.buffer = output_buffer;
     sample.timestamp = timestamp;
 
-    // reset the sample view from the input stream packets so it is unlocked;
-    // reset the rps so that there aren't any circular dependencies at shutdown
-    for(auto&& stream : this->input_streams)
-    {
-        stream.first.sample.buffer = NULL;
-        stream.first.sample.timestamp = -1;
-        stream.first.rp = request_packet();
-    }
-
-    this->transform->session->give_sample(this, sample, rp, false);
+    this->unlock();
+    this->transform->session->give_sample(request.stream, sample, request.rp, false);
 }
 
 void stream_videoprocessor2::connect_streams(
@@ -286,8 +292,10 @@ void stream_videoprocessor2::connect_streams(
     const stream_videoprocessor2_controller_t& user_params,
     const media_topology_t& topology)
 {
-    this->input_streams.insert(this->input_streams.begin(), std::make_pair(packet(), from.get()));
-    this->input_streams.front().first.user_params = user_params;
+    input_stream_props_t props;
+    props.input_stream = from.get();
+    props.user_params = user_params;
+    this->input_stream_props.insert(this->input_stream_props.begin(), props);
 
     media_stream::connect_streams(from, topology);
 }
@@ -295,13 +303,27 @@ void stream_videoprocessor2::connect_streams(
 media_stream::result_t stream_videoprocessor2::request_sample(
     request_packet& rp, const media_stream*)
 {
-    // for this to work, the dispatching to work queue should happen in source component
-    for(auto&& stream : this->input_streams)
+    this->requests.initialize_queue(rp);
+
+    // build the request partially
+    request_t packets;
+    packets.first = 0;
+    // TODO: array pool could be used
+    packets.second.reset(new packet[this->input_stream_props.size()]);
+    for(size_t i = 0; i < this->input_stream_props.size(); i++)
     {
-        stream.first.valid_user_params = !!stream.first.user_params;
-        if(stream.first.valid_user_params)
-            stream.first.user_params->get_params(stream.first.user_params_cached);
+        packets.second[i].input_stream = this->input_stream_props[i].input_stream;
+        packets.second[i].valid_user_params = !!this->input_stream_props[i].user_params;
+        if(packets.second[i].valid_user_params)
+            this->input_stream_props[i].user_params->get_params(packets.second[i].user_params);
     }
+
+    // add the new request to the queue
+    request_queue::request_t request;
+    request.rp = rp;
+    request.stream = this;
+    request.sample_view = packets;
+    this->requests.push(request);
 
     if(!this->transform->session->request_sample(this, rp, false))
         return FATAL_ERROR;
@@ -311,33 +333,52 @@ media_stream::result_t stream_videoprocessor2::request_sample(
 media_stream::result_t stream_videoprocessor2::process_sample(
     const media_sample& sample_, request_packet& rp, const media_stream* prev_stream)
 {
+    this->lock();
+
     const media_sample_videoprocessor2& sample =
         static_cast<const media_sample_videoprocessor2&>(sample_);
 
-    // this function needs to be locked because multiple inputs
-    // might be running simultaneously
-    std::unique_lock<std::recursive_mutex> lock(this->mutex);
+    request_queue::request_t* request = this->requests.get(rp.packet_number);
+    assert_(request);
 
-    {
-        // TODO: sample view could include an index so that the input stream
-        // doesn't need to be searched for
-        auto it = std::find_if(this->input_streams.begin(), this->input_streams.end(),
-            [prev_stream](const input_stream_t& e) {
-            return e.second == prev_stream && e.first.sample.timestamp == -1;});
-        assert_(it != this->input_streams.end());
+    /*Sleep(10);*/
 
-        it->first.rp = rp;
-        it->first.sample = sample;
-        this->samples_received++;
-
-        assert_(this->samples_received <= (int)this->input_streams.size());
-        if(this->samples_received == (int)this->input_streams.size())
+    // find the right packet from the list
+    packet* p = NULL;
+    for(size_t i = 0; i < this->input_stream_props.size(); i++)
+        if(request->sample_view.second[i].input_stream == prev_stream &&
+            request->sample_view.second[i].sample.timestamp == -1)
         {
-            this->samples_received = 0;
-            this->process();
-        }
+            p = request->sample_view.second.get() + i;
+            break;
+        };
+    assert_(p);
+
+    request->sample_view.first++;
+    p->sample = sample;
+
+    // TODO: drop topology branching and store the queue in stream;
+    // that way the items in the queue are from the same stream
+
+    // TODO: drop topology branching all together; the current model is a superset of that;
+    // buffer pools provide similar functionality to duplicated stream resources that are
+    // non locking
+
+    // dispatch all requests that are ready
+    for(request_queue::request_t* next_request = this->requests.get();
+        next_request && next_request->sample_view.first == this->input_stream_props.size();
+        next_request = this->requests.get())
+    {
+        assert_(next_request->stream == this);
+
+        request_queue::request_t request;
+        this->requests.pop(request);
+
+        this->process(request);
+        this->lock();
     }
 
+    this->unlock();
     return OK;
 }
 

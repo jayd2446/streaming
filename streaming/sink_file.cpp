@@ -219,7 +219,8 @@ media_stream::result_t stream_file::request_sample(request_packet& rp, const med
 media_stream::result_t stream_file::process_sample(
     const media_sample& sample, request_packet& rp, const media_stream*)
 {
-    HRESULT hr = S_OK;
+    this->lock();
+
     if(this->sink->video)
     {
         const media_sample_h264* sample_h264 = static_cast<const media_sample_h264*>(&sample);
@@ -275,13 +276,10 @@ media_stream::result_t stream_file::process_sample(
         //    CHECK_HR(hr = this->sink->write_callback->mf_put_work_item(this->sink));
     }
 
+    this->unlock();
     this->sink->process();
 
     /*this->sink->session->give_sample(this, sample, rp, false);*/
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 
     return OK;
 }

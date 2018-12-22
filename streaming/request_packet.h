@@ -30,11 +30,13 @@ struct request_packet
 class media_stream;
 
 // TODO: change the name in request_t from sample_view to sample
+// TODO: after dropping topology branching, the queue works for streams aswell
 template<class SampleView>
 class request_queue
 {
 public:
     typedef SampleView sample_view_t;
+    // TODO: request_t assumes single input stream only
     struct request_t
     {
         media_stream* stream;
@@ -66,12 +68,23 @@ public:
     // initialization
     void initialize_queue(const request_packet&);
 
-    // rp needs to be valid
+    // rp needs to be valid;
+    // if a request with the same packet number already exists, the old request is replaced;
+    // NOTE: the returned item is only valid until pop is called, which will lead to undefined
+    // behaviour without explicit locking
+    // TODO: remove return value
     request_t& push(const request_t&);
     // pop will use move semantics
     bool pop(request_t&);
+    bool pop();
     // NOTE: get is slow for non trivial sample types
     bool get(request_t&);
+
+    // NOTE: the returned item is only valid until pop is called, which will lead to undefined
+    // behaviour without explicit locking
+    // returns NULL if couldn't get
+    request_t* get();
+    request_t* get(int packet_number);
 };
 
 
@@ -156,6 +169,20 @@ bool request_queue<T>::pop(request_t& request)
 }
 
 template<class T>
+bool request_queue<T>::pop()
+{
+    scoped_lock lock(this->requests_mutex);
+    if(this->can_pop())
+    {
+        this->requests.pop_front();
+        this->first_packet_number++;
+        return true;
+    }
+
+    return false;
+}
+
+template<class T>
 bool request_queue<T>::get(request_t& request)
 {
     scoped_lock lock(this->requests_mutex);
@@ -166,4 +193,27 @@ bool request_queue<T>::get(request_t& request)
     }
 
     return false;
+}
+
+template<class T>
+typename request_queue<T>::request_t* request_queue<T>::get()
+{
+    scoped_lock lock(this->requests_mutex);
+    if(this->can_pop())
+        return &this->requests[0];
+
+    return NULL;
+}
+
+template<class T>
+typename request_queue<T>::request_t* request_queue<T>::get(int packet_number)
+{
+    scoped_lock lock(this->requests_mutex);
+    const int index = this->get_index(packet_number);
+    assert_(index >= 0);
+
+    if(index < this->requests.size())
+        return &this->requests[index];
+
+    return NULL;
 }

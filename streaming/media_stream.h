@@ -2,6 +2,7 @@
 #include "media_sample.h"
 #include "enable_shared_from_this.h"
 #include <memory>
+#include <condition_variable>
 
 class media_topology;
 class media_stream;
@@ -15,6 +16,7 @@ struct request_packet;
 class media_stream : public virtual enable_shared_from_this
 {
 public:
+    typedef std::unique_lock<std::mutex> scoped_lock;
     enum result_t
     {
         OK,
@@ -30,6 +32,16 @@ public:
     };
 private:
     const stream_t stream_type;
+
+    volatile bool locked;
+    std::mutex mutex;
+    std::condition_variable cv;
+protected:
+    // requesting stage doesn't need locking unless it modifies fields that are accessed in the
+    // processing stage
+    void lock();
+    void unlock();
+    bool is_locked() const {return this->locked;}
 public:
     explicit media_stream(stream_t = PROCESS_REQUEST);
     virtual ~media_stream() {}
@@ -48,7 +60,9 @@ public:
     virtual result_t request_sample(request_packet&, const media_stream* previous_stream) = 0;
     // processes the new sample and optionally calls media_session::give_sample;
     // implements output stream functionality;
-    // process_sample is single threaded until media_session::give_sample is called
+    // the passed rp(and media session which initiates the call) 
+    // stores a reference to this stream, which guarantees that this stream
+    // won't be deleted prematurely
     virtual result_t process_sample(
         const media_sample&, request_packet&, const media_stream* previous_stream) = 0;
 };

@@ -1,4 +1,5 @@
 #include "presentation_clock.h"
+#include "media_stream.h"
 #include <Mferror.h>
 #include "assert.h"
 #include <limits>
@@ -320,7 +321,6 @@ void presentation_clock::register_sink(
     scoped_lock lock(this->mutex_sinks);
     this->sinks[key].first.push_back(clock_sink);
     this->sinks[key].second = false;
-    
 }
 
 void presentation_clock::clock_start(time_unit time_point)
