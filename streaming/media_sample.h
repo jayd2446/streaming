@@ -26,7 +26,7 @@ typedef int64_t time_unit;
 // relative to the time source
 typedef int64_t frame_unit;
 
-class media_buffer
+class media_buffer : public enable_shared_from_this
 {
 public:
     virtual ~media_buffer() {}
@@ -40,8 +40,9 @@ enum class buffer_lock_t
     LOCK
 };
 
+// buffer must inherit from enable_shared_from_this
 template<typename Buffer>
-class media_buffer_trackable : public Buffer, public virtual enable_shared_from_this
+class media_buffer_trackable : public Buffer
 {
 public:
     typedef Buffer buffer_raw_t;

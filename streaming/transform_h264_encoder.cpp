@@ -270,7 +270,7 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     {
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
-            request.sample_view.sample.buffer->texture, 0, FALSE, &buffer));
+            request.sample.sample.buffer->texture, 0, FALSE, &buffer));
     }
     else
     {
@@ -279,16 +279,16 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
 
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
-            request.sample_view.sample.buffer->texture, 0, FALSE, &dxgi_buffer));
+            request.sample.sample.buffer->texture, 0, FALSE, &dxgi_buffer));
         CHECK_HR(hr = dxgi_buffer->QueryInterface(&buffer2d));
         buffer.Attach(new media_buffer_wrapper(
-            this->context_mutex, request.sample_view.sample, buffer2d));
+            this->context_mutex, request.sample.sample, buffer2d));
     }
 
     const LONGLONG sample_duration = (LONGLONG)
         (SECOND_IN_TIME_UNIT / (double)(frame_rate_num / frame_rate_den));
 
-    time_unit sample_time = request.sample_view.sample.timestamp - this->time_shift;
+    time_unit sample_time = request.sample.sample.timestamp - this->time_shift;
     if(sample_time < 0)
     {
         sample_time = 0;
@@ -310,7 +310,7 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     /*else
         CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, FALSE));*/
     // add the tracker attribute to the sample
-    sample_tracker.Attach(new media_sample_tracker(request.sample_view.sample));
+    sample_tracker.Attach(new media_sample_tracker(request.sample.sample));
     CHECK_HR(hr = sample->SetUnknown(media_sample_tracker_guid, sample_tracker));
 
     // feed the encoder
@@ -398,8 +398,8 @@ void transform_h264_encoder::processing_cb(void*)
     request_t request;
     while((this->encoder_requests || this->software) && this->requests.pop(request))
     {
-        assert_(request.sample_view.sample.buffer->texture);
-        const time_unit timestamp = request.sample_view.sample.timestamp;
+        assert_(request.sample.sample.buffer->texture);
+        const time_unit timestamp = request.sample.sample.timestamp;
 
         if(timestamp <= this->last_time_stamp)
         {
@@ -430,7 +430,7 @@ void transform_h264_encoder::processing_cb(void*)
         assert_(this->encoder_requests >= 0);
 
         // event callback will dispatch the last request
-        if(!request.sample_view.drain || this->software)
+        if(!request.sample.drain || this->software)
         {
             media_buffer_h264_t out_buffer;
             {
@@ -480,7 +480,7 @@ void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, 
     sample.software = this->software;
 
     // reset the sample so that the contained buffer can be reused
-    request.sample_view.sample = media_sample_texture();
+    request.sample.sample = media_sample_texture();
 
     this->session->give_sample(stream, sample, rp, false);
 
@@ -760,8 +760,8 @@ media_stream::result_t stream_h264_encoder::process_sample(
 
     transform_h264_encoder::request_t request;
     request.stream = this;
-    request.sample_view.drain = (rp.request_time == this->drain_point);
-    request.sample_view.sample = static_cast<const media_sample_texture&>(sample_view);
+    request.sample.drain = (rp.request_time == this->drain_point);
+    request.sample.sample = static_cast<const media_sample_texture&>(sample_view);
     request.rp = rp;
 
     this->transform->requests.push(request);

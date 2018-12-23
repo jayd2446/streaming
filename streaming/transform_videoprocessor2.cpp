@@ -122,12 +122,12 @@ void stream_videoprocessor2::process(request_queue::request_t& request)
 
     for(size_t i = 0; i < this->input_stream_props.size(); i++)
     {
-        CComPtr<ID3D11Texture2D> texture = request.sample_view.second[i].sample.buffer->texture;
+        CComPtr<ID3D11Texture2D> texture = request.sample.second[i].sample.buffer->texture;
         const media_sample_videoprocessor2::params_t& params = 
-            request.sample_view.second[i].sample.params;
+            request.sample.second[i].sample.params;
         const media_sample_videoprocessor2::params_t& user_params = 
-            request.sample_view.second[i].valid_user_params ? 
-            request.sample_view.second[i].user_params : params;
+            request.sample.second[i].valid_user_params ?
+            request.sample.second[i].user_params : params;
 
         // use the earliest timestamp;
         // actually, max must be used so that the timestamp stays incremental
@@ -322,7 +322,7 @@ media_stream::result_t stream_videoprocessor2::request_sample(
     request_queue::request_t request;
     request.rp = rp;
     request.stream = this;
-    request.sample_view = packets;
+    request.sample = packets;
     this->requests.push(request);
 
     if(!this->transform->session->request_sample(this, rp, false))
@@ -346,15 +346,15 @@ media_stream::result_t stream_videoprocessor2::process_sample(
     // find the right packet from the list
     packet* p = NULL;
     for(size_t i = 0; i < this->input_stream_props.size(); i++)
-        if(request->sample_view.second[i].input_stream == prev_stream &&
-            request->sample_view.second[i].sample.timestamp == -1)
+        if(request->sample.second[i].input_stream == prev_stream &&
+            request->sample.second[i].sample.timestamp == -1)
         {
-            p = request->sample_view.second.get() + i;
+            p = request->sample.second.get() + i;
             break;
         };
     assert_(p);
 
-    request->sample_view.first++;
+    request->sample.first++;
     p->sample = sample;
 
     // TODO: drop topology branching and store the queue in stream;
@@ -366,7 +366,7 @@ media_stream::result_t stream_videoprocessor2::process_sample(
 
     // dispatch all requests that are ready
     for(request_queue::request_t* next_request = this->requests.get();
-        next_request && next_request->sample_view.first == this->input_stream_props.size();
+        next_request && next_request->sample.first == this->input_stream_props.size();
         next_request = this->requests.get())
     {
         assert_(next_request->stream == this);

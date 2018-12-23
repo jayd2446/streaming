@@ -163,7 +163,7 @@ void stream_mpeg2::schedule_new(time_unit due_time)
         const time_unit current_time = t->get_current_time();
         time_unit scheduled_time = this->get_next_due_time(due_time);
 
-        if(!this->schedule_new_callback(scheduled_time))
+        if(!this->schedule_new_callback<stream_mpeg2>(scheduled_time))
         {
             if(scheduled_time > current_time)
             {
@@ -182,7 +182,7 @@ void stream_mpeg2::schedule_new(time_unit due_time)
                     std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
                     scheduled_time = this->get_next_due_time(scheduled_time);
                 }
-                while(!this->schedule_new_callback(scheduled_time));
+                while(!this->schedule_new_callback<stream_mpeg2>(scheduled_time));
             }
         }
     }

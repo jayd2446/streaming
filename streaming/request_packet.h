@@ -29,20 +29,19 @@ struct request_packet
 
 class media_stream;
 
-// TODO: change the name in request_t from sample_view to sample
 // TODO: after dropping topology branching, the queue works for streams aswell
-template<class SampleView>
+template<class Sample>
 class request_queue
 {
 public:
-    typedef SampleView sample_view_t;
-    // TODO: request_t assumes single input stream only
+    typedef Sample sample_t;
     struct request_t
     {
         media_stream* stream;
-        const media_stream* prev_stream;
+        // prev_stream really cannot be used because it excludes multi-input streams
+        /*const media_stream* prev_stream;*/
         request_packet rp;
-        sample_view_t sample_view;
+        sample_t sample;
 
         request_t() {}
         // TODO: decide if just remove the explicit defaults
@@ -69,16 +68,13 @@ public:
     void initialize_queue(const request_packet&);
 
     // rp needs to be valid;
-    // if a request with the same packet number already exists, the old request is replaced;
-    // NOTE: the returned item is only valid until pop is called, which will lead to undefined
-    // behaviour without explicit locking
-    // TODO: remove return value
-    request_t& push(const request_t&);
+    // if a request with the same packet number already exists, the old request is replaced
+    void push(const request_t&);
     // pop will use move semantics
     bool pop(request_t&);
     bool pop();
     // NOTE: get is slow for non trivial sample types
-    bool get(request_t&);
+    bool get(request_t&) const;
 
     // NOTE: the returned item is only valid until pop is called, which will lead to undefined
     // behaviour without explicit locking
@@ -130,7 +126,7 @@ void request_queue<T>::initialize_queue(const request_packet& rp)
 }
 
 template<class T>
-typename request_queue<T>::request_t& request_queue<T>::push(const request_t& request)
+void request_queue<T>::push(const request_t& request)
 {
     scoped_lock lock(this->requests_mutex);
 
@@ -148,9 +144,6 @@ typename request_queue<T>::request_t& request_queue<T>::push(const request_t& re
     }
     else
         this->requests[this->get_index(request.rp.packet_number)] = request;
-
-    // references to deque elements will stay valid
-    return this->requests[this->get_index(request.rp.packet_number)];
 }
 
 template<class T>
@@ -183,7 +176,7 @@ bool request_queue<T>::pop()
 }
 
 template<class T>
-bool request_queue<T>::get(request_t& request)
+bool request_queue<T>::get(request_t& request) const
 {
     scoped_lock lock(this->requests_mutex);
     if(this->can_pop())
@@ -200,6 +193,7 @@ typename request_queue<T>::request_t* request_queue<T>::get()
 {
     scoped_lock lock(this->requests_mutex);
     if(this->can_pop())
+        // references to deque elements will stay valid
         return &this->requests[0];
 
     return NULL;

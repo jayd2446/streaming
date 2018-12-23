@@ -339,7 +339,7 @@ void transform_audioprocessor::process()
         stream_audioprocessor* stream = static_cast<stream_audioprocessor*>(request.stream);
         media_sample_audio audio(stream->audio_buffer);
 
-        this->resample(audio, request.sample_view.audio, request.sample_view.drain);
+        this->resample(audio, request.sample.audio, request.sample.drain);
 
         lock.unlock();
         this->session->give_sample(request.stream, audio, request.rp, false);
@@ -402,8 +402,8 @@ media_stream::result_t stream_audioprocessor::process_sample(
     transform_audioprocessor::request_t request;
     request.rp = rp;
     request.stream = this;
-    request.sample_view.drain = (this->drain_point == rp.request_time);
-    request.sample_view.audio = sample;
+    request.sample.drain = (this->drain_point == rp.request_time);
+    request.sample.audio = sample;
 
     // empty the old buffer and pass the static buffer
     this->audio_buffer->samples.clear();

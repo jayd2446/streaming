@@ -8,6 +8,7 @@
 #include <mutex>
 #include <chrono>
 #include <mfapi.h>
+#include <Mferror.h>
 
 // times are truncated to microsecond resolution
 class presentation_time_source
@@ -45,7 +46,8 @@ typedef std::shared_ptr<presentation_clock> presentation_clock_t;
 // TODO: scheduling assumes clock increments based on real time(the time source should 
 // implement scheduling)
 // TODO: rename to scheduling
-class presentation_clock_sink : public virtual enable_shared_from_this
+// derived class must inherit from enable_shared_from_this
+class presentation_clock_sink
 {
     friend class presentation_clock;
 public:
@@ -67,6 +69,7 @@ private:
     time_unit get_remainder(time_unit t) const;
 
     // schedules the next callback in the list
+    template<typename Derived>
     bool schedule_callback(time_unit due_time);
     void callback_cb(void*);
 protected:
@@ -75,6 +78,7 @@ protected:
 
     // returns false if the time has already passed;
     // adds a new callback time to the list
+    template<typename Derived>
     bool schedule_new_callback(time_unit due_time);
 
     // a new callback shouldn't be scheduled if the topology isn't active anymore
@@ -135,3 +139,82 @@ public:
 
     void clear_clock_sinks();
 };
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+template<typename T>
+bool presentation_clock_sink::schedule_callback(time_unit due_time)
+{
+    scoped_lock lock(this->mutex_callbacks);
+    HRESULT hr = S_OK;
+
+    // return if there's no callbacks
+    if(this->callbacks.empty())
+    {
+        this->scheduled_time = std::numeric_limits<time_unit>::max();
+        return false;
+    }
+
+    // clear the queue if there's no clock available anymore
+    presentation_clock_t clock;
+    if(!this->get_clock(clock))
+    {
+        this->clear_queue();
+        return false;
+    }
+    // drop the callback if the time has already passed
+    const time_unit current_time = clock->get_current_time();
+    if(due_time <= current_time)
+    {
+        this->callbacks.erase(due_time);
+        return false;
+    }
+
+    // schedule the callback
+    if(due_time < this->scheduled_time)
+    {
+        this->scheduled_time = due_time;
+        LARGE_INTEGER due_time2;
+        due_time2.QuadPart = current_time - due_time;
+        if(SetWaitableTimer(this->wait_timer, &due_time2, 0, NULL, NULL, FALSE) == 0)
+            throw HR_EXCEPTION(hr = E_UNEXPECTED);
+
+        // create a new waiting work item if the old one expired
+        if(this->callback_key == 0)
+        {
+            // queue a waititem to wait for timer completion
+            CComPtr<IMFAsyncResult> asyncresult;
+            HRESULT hr;
+
+            if(FAILED(hr = MFCreateAsyncResult(NULL, &this->callback->native, NULL, &asyncresult)))
+            {
+                if(hr == MF_E_SHUTDOWN)
+                    return true;
+                throw HR_EXCEPTION(hr);
+            }
+            if(FAILED(hr = this->callback->mf_put_waiting_work_item(
+                static_cast<T*>(this)->shared_from_this<T>(),
+                this->wait_timer, 10, asyncresult, &this->callback_key)))
+            {
+                if(hr == MF_E_SHUTDOWN)
+                    return true;
+                throw HR_EXCEPTION(hr);
+            }
+        }
+    }
+
+    return true;
+}
+
+template<typename T>
+bool presentation_clock_sink::schedule_new_callback(time_unit t)
+{
+    scoped_lock lock(this->mutex_callbacks);
+    this->callbacks.insert(t);
+
+    return this->schedule_callback<T>(t);
+}

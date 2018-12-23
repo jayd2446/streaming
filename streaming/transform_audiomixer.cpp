@@ -276,11 +276,11 @@ void transform_audiomixer::process()
     while(this->requests.pop(request))
     {
         const double frame_duration = SECOND_IN_TIME_UNIT / (double)transform_aac_encoder::sample_rate;
-        const frame_unit drain_point = (frame_unit)(request.sample_view.drain_point / frame_duration);
+        const frame_unit drain_point = (frame_unit)(request.sample.drain_point / frame_duration);
         stream_audiomixer* stream = static_cast<stream_audiomixer*>(request.stream);
         media_sample_audio audio(stream->audio_buffer);
 
-        this->process(audio, *request.sample_view.audios, request.sample_view.drain, drain_point);
+        this->process(audio, *request.sample.audios, request.sample.drain, drain_point);
 
         lock.unlock();
         this->session->give_sample(request.stream, audio, request.rp, false);
@@ -355,9 +355,9 @@ media_stream::result_t stream_audiomixer::process_sample(
         transform_audiomixer::request_t request;
         request.rp = rp;
         request.stream = this;
-        request.sample_view.drain = (this->drain_point == rp.request_time);
-        request.sample_view.drain_point = this->drain_point;
-        request.sample_view.audios = &this->audios;
+        request.sample.drain = (this->drain_point == rp.request_time);
+        request.sample.drain_point = this->drain_point;
+        request.sample.audios = &this->audios;
 
         // clear the output buffer
         this->audio_buffer->samples.clear();

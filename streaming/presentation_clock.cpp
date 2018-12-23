@@ -1,18 +1,7 @@
 #include "presentation_clock.h"
 #include "media_stream.h"
-#include <Mferror.h>
 #include "assert.h"
 #include <limits>
-
-#ifdef max
-#undef max
-#endif
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
 
 presentation_time_source::presentation_time_source() : 
     running(false), elapsed(time_unit_t::zero()), offset(time_unit_t::zero())
@@ -117,69 +106,6 @@ presentation_clock_sink::~presentation_clock_sink()
     /*MFUnlockWorkQueue(this->callback.work_queue);*/
 }
 
-bool presentation_clock_sink::schedule_callback(time_unit due_time)
-{
-    scoped_lock lock(this->mutex_callbacks);
-    HRESULT hr = S_OK;
-
-    // return if there's no callbacks
-    if(this->callbacks.empty())
-    {
-        this->scheduled_time = std::numeric_limits<time_unit>::max();
-        return false;
-    }
-
-    // clear the queue if there's no clock available anymore
-    presentation_clock_t clock;
-    if(!this->get_clock(clock))
-    {
-        this->clear_queue();
-        return false;
-    }
-    // drop the callback if the time has already passed
-    const time_unit current_time = clock->get_current_time();
-    if(due_time <= current_time)
-    {
-        this->callbacks.erase(due_time);
-        return false;
-    }
-
-    // schedule the callback
-    if(due_time < this->scheduled_time)
-    {
-        this->scheduled_time = due_time;
-        LARGE_INTEGER due_time2;
-        due_time2.QuadPart = current_time - due_time;
-        if(SetWaitableTimer(this->wait_timer, &due_time2, 0, NULL, NULL, FALSE) == 0)
-            throw HR_EXCEPTION(hr = E_UNEXPECTED);
-
-        // create a new waiting work item if the old one expired
-        if(this->callback_key == 0)
-        {
-            // queue a waititem to wait for timer completion
-            CComPtr<IMFAsyncResult> asyncresult;
-            HRESULT hr;
-
-            if(FAILED(hr = MFCreateAsyncResult(NULL, &this->callback->native, NULL, &asyncresult)))
-            {
-                if(hr == MF_E_SHUTDOWN)
-                    return true;
-                throw HR_EXCEPTION(hr);
-            }
-            if(FAILED(hr = this->callback->mf_put_waiting_work_item(
-                this->shared_from_this<presentation_clock_sink>(),
-                this->wait_timer, 10, asyncresult, &this->callback_key)))
-            {
-                if(hr == MF_E_SHUTDOWN)
-                    return true;
-                throw HR_EXCEPTION(hr);
-            }
-        }
-    }
-
-    return true;
-}
-
 void presentation_clock_sink::callback_cb(void*)
 {
     time_unit due_time;
@@ -196,9 +122,11 @@ void presentation_clock_sink::callback_cb(void*)
         due_time = *this->callbacks.begin();
         this->callbacks.erase(due_time);
 
+        // TODO: drop multi callback queue
         // schedule the next item
         this->scheduled_time = std::numeric_limits<time_unit>::max();
-        while(!this->callbacks.empty() && !this->schedule_callback(*this->callbacks.begin()));
+        assert_(this->callbacks.empty());
+        /*while(!this->callbacks.empty() && !this->schedule_callback(*this->callbacks.begin()));*/
     }
 
     // invoke the callback
@@ -221,14 +149,6 @@ bool presentation_clock_sink::clear_queue()
 
     //this->callback_key = 0;
     return true;
-}
-
-bool presentation_clock_sink::schedule_new_callback(time_unit t)
-{
-    scoped_lock lock(this->mutex_callbacks);
-    this->callbacks.insert(t);
-
-    return this->schedule_callback(t);
 }
 
 void presentation_clock_sink::scheduled_callback(time_unit)

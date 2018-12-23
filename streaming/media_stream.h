@@ -13,7 +13,7 @@ typedef std::shared_ptr<media_topology> media_topology_t;
 typedef std::shared_ptr<presentation_clock> presentation_clock_t;
 struct request_packet;
 
-class media_stream : public virtual enable_shared_from_this
+class media_stream : public enable_shared_from_this
 {
 public:
     typedef std::unique_lock<std::mutex> scoped_lock;

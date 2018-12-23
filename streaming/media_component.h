@@ -13,7 +13,7 @@ class control_class;
 typedef std::shared_ptr<control_class> control_class_t;
 
 // TODO: sink and source component type classes probably useless
-class media_component : public virtual enable_shared_from_this
+class media_component : public enable_shared_from_this
 {
 public:
     // indicate whether multiple items use the same component instance

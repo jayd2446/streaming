@@ -64,17 +64,17 @@ void sink_file::write_cb(void*)
             CHECK_HR(hr = this->file_output->writer->SendStreamTick(0, this->last_timestamp));*/
 
         // TODO: the write_cb shouldn't be invoked when the buffer is empty
-        if(!request.sample_view.buffer)
+        if(!request.sample.buffer)
             return;
 
-        for(auto&& item : request.sample_view.buffer->samples)
+        for(auto&& item : request.sample.buffer->samples)
         {
             LONGLONG timestamp;
             CHECK_HR(hr = item->GetSampleTime(&timestamp));
 
             // (software encoder returns frames slightly in wrong order,
             // but mediawriter seems to deal with it)
-            if(timestamp <= this->last_timestamp && !request.sample_view.software)
+            if(timestamp <= this->last_timestamp && !request.sample.software)
             {
                 std::cout << "timestamp error in sink_file::write_cb video" << std::endl;
                 assert_(false);
@@ -100,9 +100,9 @@ void sink_file::write_cb(void*)
         }
 
         // TODO: the write_cb shouldn't be invoked when the buffer is empty
-        if(!request.sample_view.buffer)
+        if(!request.sample.buffer)
             return;
-        for(auto&& item : request.sample_view.buffer->samples)
+        for(auto&& item : request.sample.buffer->samples)
         {
             LONGLONG timestamp;
             CHECK_HR(hr = item->GetSampleTime(&timestamp));
@@ -132,16 +132,16 @@ void sink_file::process()
         request_video_t request;
         while(this->requests_video.pop(request))
         {
-            if(request.sample_view.buffer)
+            if(request.sample.buffer)
             {
-                for(auto&& item : request.sample_view.buffer->samples)
+                for(auto&& item : request.sample.buffer->samples)
                 {
                     LONGLONG timestamp;
                     CHECK_HR(hr = item->GetSampleTime(&timestamp));
 
                     // (software encoder returns frames slightly in wrong order,
                     // but mediawriter seems to deal with it)
-                    if(timestamp <= this->last_timestamp && !request.sample_view.software)
+                    if(timestamp <= this->last_timestamp && !request.sample.software)
                     {
                         std::cout << "timestamp error in sink_file::write_cb video" << std::endl;
                         assert_(false);
@@ -153,7 +153,7 @@ void sink_file::process()
             }
 
             lock.unlock();
-            this->session->give_sample(request.stream, request.sample_view, request.rp, false);
+            this->session->give_sample(request.stream, request.sample, request.rp, false);
             lock.lock();
         }
     }
@@ -162,9 +162,9 @@ void sink_file::process()
         request_audio_t request;
         while(this->requests_audio.pop(request))
         {
-            if(request.sample_view.buffer)
+            if(request.sample.buffer)
             {
-                for(auto&& item : request.sample_view.buffer->samples)
+                for(auto&& item : request.sample.buffer->samples)
                 {
                     LONGLONG timestamp;
                     CHECK_HR(hr = item->GetSampleTime(&timestamp));
@@ -180,7 +180,7 @@ void sink_file::process()
             }
 
             lock.unlock();
-            this->session->give_sample(request.stream, request.sample_view, request.rp, false);
+            this->session->give_sample(request.stream, request.sample, request.rp, false);
             lock.lock();
         }
     }
@@ -229,7 +229,7 @@ media_stream::result_t stream_file::process_sample(
         sink_file::request_video_t request;
         request.rp = rp;
         request.stream = this;
-        request.sample_view = *sample_h264;
+        request.sample = *sample_h264;
 
         // add the new sample to queue and drop oldest sample if the queue is full
         sink_file::scoped_lock lock(this->sink->requests_mutex);
@@ -256,7 +256,7 @@ media_stream::result_t stream_file::process_sample(
         sink_file::request_audio_t request;
         request.rp = rp;
         request.stream = this;
-        request.sample_view = *sample_aac;
+        request.sample = *sample_aac;
 
         // add the new sample to queue and drop oldest sample if the queue is full
         sink_file::scoped_lock lock(this->sink->requests_mutex);

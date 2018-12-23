@@ -22,7 +22,7 @@ void transform_aac_encoder::processing_cb(void*)
 
     while(this->requests.pop(request))
     {
-        media_sample_audio& audio = request.sample_view.audio;
+        media_sample_audio& audio = request.sample.audio;
         media_sample_aac out_audio(media_buffer_samples_t(new media_buffer_samples));
         out_audio.bit_depth = audio.bit_depth;
         out_audio.channels = audio.channels;
@@ -113,7 +113,7 @@ void transform_aac_encoder::processing_cb(void*)
                 CHECK_HR(hr)
         }
 
-        if(request.sample_view.drain)
+        if(request.sample.drain)
             CHECK_HR(hr = drain_all());
 
         lock.unlock();
@@ -275,8 +275,8 @@ media_stream::result_t stream_aac_encoder::process_sample(
 
     transform_aac_encoder::request_t request;
     request.rp = rp;
-    request.sample_view.audio = audio_sample;
-    request.sample_view.drain = (this->drain_point == rp.request_time);
+    request.sample.audio = audio_sample;
+    request.sample.drain = (this->drain_point == rp.request_time);
     request.stream = this;
 
     this->transform->requests.push(request);
