@@ -66,13 +66,15 @@ private:
 
     HRESULT copy_between_adapters(
         ID3D11Device* dst_dev,
-        ID3D11Texture2D* dst, 
+        ID3D11Texture2D* dst,
         ID3D11Device* src_dev,
         ID3D11Texture2D* src);
     HRESULT setup_initial_data(
         const media_buffer_texture_t&);
     HRESULT create_pointer_texture(
         const DXGI_OUTDUPL_FRAME_INFO&, const media_buffer_texture_t&);
+
+    media_buffer_texture_t acquire_buffer(const std::shared_ptr<buffer_pool>&);
 
     HRESULT reinitialize(UINT output_index);
 public:
@@ -84,7 +86,7 @@ public:
         DXGI_OUTDUPL_POINTER_POSITION&,
         media_buffer_texture_t& pointer,
         media_buffer_texture_t&,
-        time_unit& timestamp, 
+        time_unit& timestamp,
         const presentation_clock_t&);
 
     stream_displaycapture5_t create_stream();
@@ -94,14 +96,14 @@ public:
     // uses the d3d11 device for capturing that is used in the pipeline
     void initialize(
         const control_class_t&,
-        UINT output_index, 
+        UINT output_index,
         const CComPtr<ID3D11Device>&,
         const CComPtr<ID3D11DeviceContext>&);
     // creates a d3d11 device that is bound to the adapter index
     void initialize(
         const control_class_t&,
         UINT adapter_index,
-        UINT output_index, 
+        UINT output_index,
         const CComPtr<IDXGIFactory1>&,
         const CComPtr<ID3D11Device>&,
         const CComPtr<ID3D11DeviceContext>&);
@@ -124,7 +126,7 @@ private:
 public:
     explicit stream_displaycapture5(const source_displaycapture5_t& source);
 
-    void set_pointer_stream(const stream_displaycapture5_pointer_t& s) {this->pointer_stream = s;}
+    void set_pointer_stream(const stream_displaycapture5_pointer_t& s) { this->pointer_stream = s; }
 
     // called by media session
     result_t request_sample(request_packet&, const media_stream*);
@@ -144,7 +146,7 @@ public:
     explicit stream_displaycapture5_pointer(const source_displaycapture5_t& source);
 
     void dispatch(
-        bool new_pointer_shape, 
+        bool new_pointer_shape,
         const DXGI_OUTDUPL_POINTER_POSITION&,
         const D3D11_TEXTURE2D_DESC* desktop_desc,
         media_sample_videoprocessor2&,

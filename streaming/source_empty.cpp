@@ -83,7 +83,7 @@ media_stream_t source_empty_video::create_stream()
 /////////////////////////////////////////////////////////////////
 
 
-stream_empty_video::stream_empty_video(const source_empty_video_t& source) : 
+stream_empty_video::stream_empty_video(const source_empty_video_t& source) :
     source(source),
     buffer(new media_buffer_texture)
 {
@@ -93,6 +93,8 @@ stream_empty_video::stream_empty_video(const source_empty_video_t& source) :
 void stream_empty_video::callback_f(void*)
 {
     request_packet rp = std::move(this->rp);
+
+    this->unlock();
 
     stream_videoprocessor2_controller::params_t params;
     params.dest_rect.left = params.dest_rect.top = 0;
@@ -109,6 +111,7 @@ void stream_empty_video::callback_f(void*)
 
 media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
 {
+    this->lock();
     this->rp = rp;
 
     const HRESULT hr = this->callback->mf_put_work_item(
@@ -116,7 +119,10 @@ media_stream::result_t stream_empty_video::request_sample(request_packet& rp, co
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw HR_EXCEPTION(hr);
     else if(hr == MF_E_SHUTDOWN)
+    {
+        this->unlock();
         return FATAL_ERROR;
+    }
 
     return OK;
 }

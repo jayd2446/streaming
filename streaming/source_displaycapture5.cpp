@@ -31,7 +31,7 @@ class displaycapture_exception : public std::exception {};
 // (currently is not, since the videprocessor assumes a non null sample view)
 
 source_displaycapture5::source_displaycapture5(
-    const media_session_t& session, context_mutex_t context_mutex) : 
+    const media_session_t& session, context_mutex_t context_mutex) :
     media_source(session),
     newest_buffer(new media_buffer_texture),
     newest_pointer_buffer(new media_buffer_texture),
@@ -129,8 +129,8 @@ done:
 
 void source_displaycapture5::initialize(
     const control_class_t& ctrl_pipeline,
-    UINT output_index, 
-    const CComPtr<ID3D11Device>& d3d11dev, 
+    UINT output_index,
+    const CComPtr<ID3D11Device>& d3d11dev,
     const CComPtr<ID3D11DeviceContext>& devctx)
 {
     HRESULT hr = S_OK;
@@ -157,7 +157,7 @@ done:
 void source_displaycapture5::initialize(
     const control_class_t& ctrl_pipeline,
     UINT adapter_index,
-    UINT output_index, 
+    UINT output_index,
     const CComPtr<IDXGIFactory1>& factory,
     const CComPtr<ID3D11Device>& d3d11dev,
     const CComPtr<ID3D11DeviceContext>& devctx)
@@ -180,7 +180,7 @@ void source_displaycapture5::initialize(
     CHECK_HR(hr = D3D11CreateDevice(
         dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
-        feature_levels, ARRAYSIZE(feature_levels), 
+        feature_levels, ARRAYSIZE(feature_levels),
         D3D11_SDK_VERSION, &this->d3d11dev, &feature_level, &this->d3d11devctx));
 
     // currently initialization never fails
@@ -201,7 +201,7 @@ done:
 }
 
 HRESULT source_displaycapture5::copy_between_adapters(
-    ID3D11Device* dst_dev, ID3D11Texture2D* dst, 
+    ID3D11Device* dst_dev, ID3D11Texture2D* dst,
     ID3D11Device* src_dev, ID3D11Texture2D* src)
 {
     HRESULT hr = S_OK;
@@ -291,7 +291,7 @@ HRESULT source_displaycapture5::setup_initial_data(const media_buffer_texture_t&
 
         // predefined texture cannot really be used because the background for the pointer
         // might be a dark color
-        
+
         break;
     default:
         pointer->texture = NULL;
@@ -315,7 +315,7 @@ HRESULT source_displaycapture5::create_pointer_texture(
         UINT buffer_size_required;
 
         CHECK_HR(hr = this->output_duplication->GetFramePointerShape(
-            (UINT)this->pointer_buffer.size(), (void*)&this->pointer_buffer[0], &buffer_size_required, 
+            (UINT)this->pointer_buffer.size(), (void*)&this->pointer_buffer[0], &buffer_size_required,
             &this->pointer_shape_info));
     }
 
@@ -324,14 +324,35 @@ done:
     return hr;
 }
 
+media_buffer_texture_t source_displaycapture5::acquire_buffer(const std::shared_ptr<buffer_pool>& pool)
+{
+    buffer_pool::scoped_lock lock(pool->mutex);
+    if(pool->container.empty())
+    {
+        media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(pool));
+        /*std::cout << "creating new..." << std::endl;*/
+        return pooled_buffer->create_pooled_buffer();
+    }
+    else
+    {
+        media_buffer_texture_t pooled_buffer = pool->container.top()->create_pooled_buffer();
+        pool->container.pop();
+        /*std::cout << "reusing..." << std::endl;*/
+        return pooled_buffer;
+    }
+}
+
 bool source_displaycapture5::capture_frame(
     bool& new_pointer_shape,
     DXGI_OUTDUPL_POINTER_POSITION& pointer_position,
     media_buffer_texture_t& pointer,
     media_buffer_texture_t& buffer,
-    time_unit& timestamp, 
+    time_unit& timestamp,
     const presentation_clock_t& clock)
 {
+    assert_(!pointer);
+    assert_(!buffer);
+
     // dxgi functions need to be synchronized with the context mutex
     // just lock always, because the output duplication seems to deadlock otherwise
     std::unique_lock<std::recursive_mutex> lock(*this->context_mutex/*, std::defer_lock*/);
@@ -372,6 +393,11 @@ capture:
         this->last_timestamp = frame_info.LastPresentTime;
     }
 
+    // set the out buffers;
+    // set the out buffers here so that a new texture isn't allocated if the duplication
+    // didn't return a new frame
+    buffer = this->acquire_buffer(this->available_samples);
+
     if(!buffer->texture)
     {
         D3D11_TEXTURE2D_DESC screen_frame_desc;
@@ -392,10 +418,11 @@ capture:
 
     // if monochrome or masked pointer is used, the pointer texture needs to be recreated
     // every time
-    new_pointer_shape = (frame_info.PointerShapeBufferSize != 0 || 
+    new_pointer_shape = (frame_info.PointerShapeBufferSize != 0 ||
         this->pointer_shape_info.Type != DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR);
     if(new_pointer_shape)
     {
+        pointer = this->acquire_buffer(this->available_pointer_samples);
         CHECK_HR(hr = this->create_pointer_texture(frame_info, pointer));
         std::atomic_exchange(&this->newest_pointer_buffer, pointer);
     }
@@ -445,7 +472,7 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source) : 
+stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source) :
     source(source)
 {
     this->capture_frame_callback.Attach(
@@ -455,48 +482,14 @@ stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& s
 void stream_displaycapture5::capture_frame_cb(void*)
 {
     std::unique_lock<std::recursive_mutex> lock(this->source->capture_frame_mutex);
-    media_sample_videoprocessor2 sample;
-    media_sample_videoprocessor2 pointer_sample;
-    {
-        source_displaycapture5::buffer_pool::scoped_lock lock(this->source->available_samples->mutex);
-        if(this->source->available_samples->container.empty())
-        {
-            media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
-                this->source->available_samples));
-            sample.buffer = pooled_buffer->create_pooled_buffer();
-            /*std::cout << "creating new..." << std::endl;*/
-        }
-        else
-        {
-            sample.buffer = this->source->available_samples->container.top()->create_pooled_buffer();
-            this->source->available_samples->container.pop();
-            /*std::cout << "reusing..." << std::endl;*/
-        }
-    }
-    {
-        source_displaycapture5::buffer_pool::scoped_lock 
-            lock(this->source->available_pointer_samples->mutex);
-        if(this->source->available_pointer_samples->container.empty())
-        {
-            media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
-                this->source->available_pointer_samples));
-            pointer_sample.buffer = pooled_buffer->create_pooled_buffer();
-            /*std::cout << "creating new..." << std::endl;*/
-        }
-        else
-        {
-            pointer_sample.buffer = 
-                this->source->available_pointer_samples->container.top()->create_pooled_buffer();
-            this->source->available_pointer_samples->container.pop();
-            /*std::cout << "reusing..." << std::endl;*/
-        }
-    }
 
     bool frame_captured, new_pointer_shape;
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
     time_unit timestamp;
     presentation_clock_t clock;
     source_displaycapture5::request_t request;
+    media_sample_videoprocessor2 sample;
+    media_sample_videoprocessor2 pointer_sample;
 
     // the stream might serve the request on behalf of some other stream
     {
@@ -620,8 +613,8 @@ stream_displaycapture5_pointer::stream_displaycapture5_pointer(const source_disp
 }
 
 void stream_displaycapture5_pointer::dispatch(
-    bool new_pointer_shape, 
-    const DXGI_OUTDUPL_POINTER_POSITION& pointer_position, 
+    bool new_pointer_shape,
+    const DXGI_OUTDUPL_POINTER_POSITION& pointer_position,
     const D3D11_TEXTURE2D_DESC* desktop_desc,
     media_sample_videoprocessor2& sample_view,
     source_displaycapture5::request_t& request)
@@ -637,16 +630,16 @@ void stream_displaycapture5_pointer::dispatch(
 
         sample_view.params.dest_rect.left = (FLOAT)pointer_position.Position.x;
         sample_view.params.dest_rect.top = (FLOAT)pointer_position.Position.y;
-        sample_view.params.dest_rect.right = 
+        sample_view.params.dest_rect.right =
             sample_view.params.dest_rect.left + (FLOAT)desc.Width;
-        sample_view.params.dest_rect.bottom = 
+        sample_view.params.dest_rect.bottom =
             sample_view.params.dest_rect.top + (FLOAT)desc.Height;
         sample_view.params.source_m = D2D1::Matrix3x2F::Identity();
         sample_view.params.dest_m = D2D1::Matrix3x2F::Identity();
     }
     else
         sample_view.buffer = this->null_buffer;
-    
+
     sample_view.timestamp = request.rp.request_time;
 
     this->source->session->give_sample(this, sample_view, request.rp, true);
