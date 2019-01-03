@@ -12,6 +12,7 @@
 #include <vector>
 #include <mutex>
 #include <chrono>
+#include <atomic>
 
 #include <mfapi.h>
 #include <mfreadwrite.h>
@@ -63,13 +64,22 @@ public:
     typedef presentation_time_source::time_unit_t time_unit_t;
 private:
     sink_mpeg2_t sink;
-    bool running;
+    volatile bool requesting, processing;
+    /*bool running;*/
     bool discontinuity;
 
+    media_topology_t topology;
+    time_unit stop_point;
+
+    // TODO: obsolete
     std::recursive_mutex worker_streams_mutex;
-    std::vector<stream_worker_t> worker_streams;
+    // TODO: obsolete
+    stream_worker_t worker_stream;
     stream_audio_t audio_sink_stream;
     time_unit last_due_time;
+
+    std::atomic_int requests;
+    int max_requests;
 
     // for debug
     int unavailable;
@@ -85,7 +95,8 @@ private:
     void scheduled_callback(time_unit due_time);
 
     void schedule_new(time_unit due_time);
-    void dispatch_request(request_packet&, bool no_drop = false);
+    void dispatch_request(const request_packet&, bool no_drop = false);
+    void dispatch_process();
 public:
     stream_h264_encoder_t encoder_stream;
 

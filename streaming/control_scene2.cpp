@@ -14,7 +14,7 @@ control_scene2::control_scene2(control_set_t& active_controls, control_pipeline2
 {
 }
 
-void control_scene2::build_video_topology_branch(
+void control_scene2::build_video_topology(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
     // TODO: scene should include stream videoprocessor controller
@@ -34,13 +34,15 @@ void control_scene2::build_video_topology_branch(
             continue;
 
         no_video = false;
-        elem->build_video_topology_branch(videoprocessor_stream, topology);
+        elem->build_video_topology(from, videoprocessor_stream, topology);
     }
 
     if(no_video)
     {
         source_empty_video_t empty_source(new source_empty_video(this->pipeline.session));
         media_stream_t empty_stream = empty_source->create_stream();
+
+        empty_stream->connect_streams(from, topology);
         videoprocessor_stream->connect_streams(empty_stream, NULL, topology);
     }
 }
@@ -77,6 +79,8 @@ void control_scene2::build_audio_topology_branch(
     {
         source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
         media_stream_t empty_stream = empty_source->create_stream();
+
+        // empty_stream->connect_streams(from, topology)
         to->connect_streams(empty_stream, topology);
     }
 }

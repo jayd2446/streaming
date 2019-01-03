@@ -119,6 +119,7 @@ public:
 private:
     source_displaycapture5_t source;
     CComPtr<async_callback_t> capture_frame_callback;
+    bool serve_request;
 
     stream_displaycapture5_pointer_t pointer_stream;
 

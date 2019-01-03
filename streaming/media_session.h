@@ -59,7 +59,8 @@ public:
     void stop_playback(time_unit);*/
 
     // TODO: make request_sample call that's coming from sink
-    // its own function
+    // its own function;
+    // make give_sample that is coming from the sink its own function aswell
 
     // TODO: subsequent request sample and give calls must not fail;
     // failing might lead to deadlocks in sink
@@ -68,6 +69,8 @@ public:
 
     // request_sample returns false if the stream isn't found on the active topology;
     // request_sample won't fail when the is_sink is false
+    // TODO: remove is_sink&is_source flags
+    // TODO: make request_packet& const
     bool request_sample(
         const media_stream* this_input_stream, 
         request_packet&,
@@ -79,6 +82,12 @@ public:
         const media_sample& sample_view,
         request_packet&,
         bool is_source);
+
+    // begins and completes the request_sample call chain and handles topology switching;
+    // returns the topology that was used for the chain
+    media_topology_t begin_request_sample(const media_stream* this_stream, const request_packet&);
+    // begins the give_sample call chain
+    void begin_give_sample(const media_stream* this_stream, const media_topology_t&);
 
     // breaks the circular dependency between components and the session;
     // the session is considered invalid after calling this;

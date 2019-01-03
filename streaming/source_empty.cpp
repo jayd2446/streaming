@@ -106,7 +106,7 @@ void stream_empty_video::callback_f(void*)
     media_sample_videoprocessor2 sample_view(params, this->buffer);
     sample_view.timestamp = rp.request_time;
 
-    this->process_sample(sample_view, rp, NULL);
+    this->source->session->give_sample(this, sample_view, rp, true);
 }
 
 media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
@@ -114,21 +114,24 @@ media_stream::result_t stream_empty_video::request_sample(request_packet& rp, co
     this->lock();
     this->rp = rp;
 
-    const HRESULT hr = this->callback->mf_put_work_item(
-        this->shared_from_this<stream_empty_video>());
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw HR_EXCEPTION(hr);
-    else if(hr == MF_E_SHUTDOWN)
-    {
-        this->unlock();
-        return FATAL_ERROR;
-    }
-
     return OK;
 }
 
 media_stream::result_t stream_empty_video::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
+    const media_sample&, request_packet&, const media_stream*)
 {
-    return this->source->session->give_sample(this, sample_view, rp, true) ? OK : FATAL_ERROR;
+    if(this->rp.topology)
+    {
+        const HRESULT hr = this->callback->mf_put_work_item(
+            this->shared_from_this<stream_empty_video>());
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw HR_EXCEPTION(hr);
+        else if(hr == MF_E_SHUTDOWN)
+        {
+            this->unlock();
+            return FATAL_ERROR;
+        }
+    }
+
+    return OK;
 }

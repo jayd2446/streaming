@@ -13,7 +13,7 @@ control_displaycapture::control_displaycapture(control_set_t& active_controls,
 {
 }
 
-void control_displaycapture::build_video_topology_branch(
+void control_displaycapture::build_video_topology(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
     if(!this->component)
@@ -34,10 +34,15 @@ void control_displaycapture::build_video_topology_branch(
 
         displaycapture_stream->set_pointer_stream(displaycapture_pointer_stream);
 
-        videoprocessor_stream->connect_streams(
-            displaycapture_pointer_stream, this->videoprocessor_params, topology);
-        videoprocessor_stream->connect_streams(
-            displaycapture_stream, this->videoprocessor_params, topology);
+        // connect from the 'from' stream to this stream
+        displaycapture_pointer_stream->connect_streams(from, topology);
+        displaycapture_stream->connect_streams(from, topology);
+
+        // connect from this stream to 'to' stream
+        videoprocessor_stream->connect_streams(displaycapture_pointer_stream, 
+            this->videoprocessor_params, topology);
+        videoprocessor_stream->connect_streams(displaycapture_stream, 
+            this->videoprocessor_params, topology);
 
         this->stream = displaycapture_stream;
         this->pointer_stream = displaycapture_pointer_stream;
@@ -48,6 +53,8 @@ void control_displaycapture::build_video_topology_branch(
         assert_(this->reference->pointer_stream);
         assert_(!this->stream);
 
+        // only connect from this stream to 'to' stream
+        // (since this a duplicate control from the original)
         videoprocessor_stream->connect_streams(
             this->reference->pointer_stream, this->videoprocessor_params, topology);
         videoprocessor_stream->connect_streams(

@@ -10,6 +10,8 @@
 typedef std::shared_ptr<std::recursive_mutex> context_mutex_t;
 
 class control_class;
+// this typedef is only applicable for the pipeline control
+// TODO: rename this typedef to control_pipeline_t
 typedef std::shared_ptr<control_class> control_class_t;
 
 // TODO: sink and source component type classes probably useless

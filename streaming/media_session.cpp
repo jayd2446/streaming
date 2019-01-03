@@ -129,6 +129,18 @@ bool media_session::request_sample(
             return false;
 
     return true;
+
+    /*media_topology_t topology(rp.topology);
+    assert_(topology);
+
+    media_topology::topology_t::iterator it = topology->topology_reverse.find(stream);
+    assert_(it != rp.topology->topology_reverse.end());
+
+    for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
+        if((*jt)->request_sample(rp, stream) == media_stream::FATAL_ERROR)
+            return false;
+
+    return true;*/
 }
 
 bool media_session::give_sample(
@@ -146,10 +158,64 @@ bool media_session::give_sample(
     assert_(it != topology->topology.end());
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-    {
         if((*jt)->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
             return false;
-    }
 
     return true;
+}
+
+media_topology_t media_session::begin_request_sample(const media_stream* stream,
+    const request_packet& incomplete_rp)
+{
+    request_packet rp = incomplete_rp;
+
+    assert_(!rp.topology);
+
+    // it is assumed that no subsequent begin_request_sample
+    // calls are made before this has been processed
+
+    // packet numbers must be consecutive and newer packet number must correspond
+    // to the newest topology;
+    // after the clock stop call, the stream won't be able to dispatch new requests
+    // because the topology isn't active anymore
+
+    scoped_lock lock(this->topology_switch_mutex);
+
+    this->get_current_topology(rp.topology);
+    if(rp.topology->topology_reverse.find(stream) == rp.topology->topology_reverse.end())
+        return NULL;
+
+    rp.packet_number = rp.topology->packet_number++;
+    /*std::cout << rp.packet_number << std::endl;*/
+
+    // check if there's a topology switch and switch the session to it
+    if(this->new_topology)
+    {
+        this->switch_topology_immediate(this->new_topology, rp.timestamp);
+        std::cout << "topology switched" << std::endl;
+    }
+
+    // TODO: decide how to handle the return value
+    const bool ret = this->request_sample(stream, rp, false);
+    assert_(ret);
+
+    return rp.topology;
+}
+
+void media_session::begin_give_sample(const media_stream* stream, 
+    const media_topology_t& topology)
+{
+    // TODO: do not use dummy args;
+    // instead, make those args optional
+    assert_(topology);
+
+    media_topology::topology_t::iterator it = topology->topology.find(stream);
+    assert_(it != topology->topology.end());
+
+    for(auto&& item : it->second.next)
+    {
+        media_sample dummy;
+        request_packet dummy2;
+        item->process_sample(dummy, dummy2, stream);
+    }
 }

@@ -11,8 +11,6 @@
 class control_pipeline2;
 class control_scene2;
 class control_class;
-typedef std::shared_ptr<control_class> control_class_t;
-typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 
 /*
 
@@ -50,8 +48,9 @@ protected:
 
     // the root control must implement this
     virtual void build_and_switch_topology();
-    // source/scene control classes connect to videoprocessor stream only
-    virtual void build_video_topology_branch(const media_stream_t& /*to*/, const media_topology_t&) 
+    // source/scene control classes connect to videoprocessor stream only(or not)
+    virtual void build_video_topology(const media_stream_t& /*from*/,
+        const media_stream_t& /*to*/, const media_topology_t&) 
     {assert_(false);}
     virtual void build_audio_topology_branch(const media_stream_t& /*to*/, const media_topology_t&) 
     {assert_(false);}

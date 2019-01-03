@@ -73,7 +73,10 @@ public:
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
     control_scene2 root_scene;
-    std::vector<control_class_t> selected_items;
+
+    // the selected items must be contained in control_pipeline so that
+    // the lifetimes are managed
+    std::vector<control_class*> selected_items;
 
     control_pipeline2();
 

@@ -473,7 +473,7 @@ done:
 
 
 stream_displaycapture5::stream_displaycapture5(const source_displaycapture5_t& source) :
-    source(source)
+    source(source), serve_request(false)
 {
     this->capture_frame_callback.Attach(
         new async_callback_t(&stream_displaycapture5::capture_frame_cb));
@@ -574,21 +574,13 @@ void stream_displaycapture5::capture_frame_cb(void*)
 
 media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp, const media_stream*)
 {
-    {
-        scoped_lock lock(this->source->requests_mutex);
-        source_displaycapture5::request_t request;
-        request.rp = rp;
-        request.stream = this;
-        this->source->requests.push(request);
-    }
+    scoped_lock lock(this->source->requests_mutex);
+    source_displaycapture5::request_t request;
+    request.rp = rp;
+    request.stream = this;
+    this->source->requests.push(request);
 
-    // dispatch the capture request
-    const HRESULT hr = this->capture_frame_callback->mf_put_work_item(
-        this->shared_from_this<stream_displaycapture5>());
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw HR_EXCEPTION(hr);
-    else if(hr == MF_E_SHUTDOWN)
-        return FATAL_ERROR;
+    this->serve_request = true;
 
     return OK;
 }
@@ -596,7 +588,21 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
 media_stream::result_t stream_displaycapture5::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    assert_(false);
+    // the request_sample/process_sample pair for source streams is guaranteed
+    // to stay in sync(currently);
+    // there will be always less or equal amount of request calls compared to process calls
+    if(this->serve_request)
+    {
+        this->serve_request = false;
+
+        const HRESULT hr = this->capture_frame_callback->mf_put_work_item(
+            this->shared_from_this<stream_displaycapture5>());
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw HR_EXCEPTION(hr);
+        else if(hr == MF_E_SHUTDOWN)
+            return FATAL_ERROR;
+    }
+
     return OK;
 }
 
@@ -654,6 +660,6 @@ media_stream::result_t stream_displaycapture5_pointer::request_sample(request_pa
 media_stream::result_t stream_displaycapture5_pointer::process_sample(
     const media_sample&, request_packet&, const media_stream*)
 {
-    assert_(false);
+    // do nothing; the process sample is called from the stream displaycapture
     return OK;
 }

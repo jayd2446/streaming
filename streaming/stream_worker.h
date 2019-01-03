@@ -18,11 +18,13 @@ private:
     media_component_t component;
     int max_requests;
     volatile int requests;
+    bool is_used;
 public:
     explicit stream_worker(const media_component_t& component);
 
     bool is_available() const;
     void set_max_requests(int max_requests) {this->max_requests = max_requests;}
+    void not_used() {this->is_used = false;}
 
     result_t request_sample(request_packet&, const media_stream*);
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);

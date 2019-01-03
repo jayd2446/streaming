@@ -154,7 +154,7 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
         if(this->ctrl_pipeline->selected_items.empty())
             goto out;
         control_video2* video_control = 
-            dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0].get());
+            dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0]);
         if(!video_control)
             goto out;
 

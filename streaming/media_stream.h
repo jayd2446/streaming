@@ -23,30 +23,19 @@ public:
         // the topology encountered an unrecoverable error
         FATAL_ERROR
     };
-    // stream type is used to enable multiple outputs from a node while
-    // maintaining single request guarantee in the topology
-    enum stream_t
-    {
-        PROCESS_REQUEST,
-        PROCESS
-    };
 private:
-    const stream_t stream_type;
-
     volatile bool locked;
     std::mutex mutex;
     std::condition_variable cv;
 protected:
-    // requesting stage doesn't need locking unless it modifies fields that are accessed in the
-    // processing stage
+    // requesting stage shouldn't lock because it can cause a deadlock with the topology
+    // switch mutex
     void lock();
     void unlock();
     bool is_locked() const {return this->locked;}
 public:
-    explicit media_stream(stream_t = PROCESS_REQUEST);
+    media_stream();
     virtual ~media_stream() {}
-
-    stream_t get_stream_type() const {return this->stream_type;}
 
     // throws on error
     virtual void connect_streams(const media_stream_t& from, const media_topology_t&);

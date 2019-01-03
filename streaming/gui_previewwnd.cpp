@@ -32,7 +32,7 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
     {
         // it is assumed that the selected item is contained in the active scene
         control_video2* video_control = dynamic_cast<control_video2*>(
-            this->ctrl_pipeline->selected_items[0].get());
+            this->ctrl_pipeline->selected_items[0]);
         if(video_control)
         {
             bool is_video_control, found;
@@ -76,7 +76,7 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
         {
             // select the item
             first_selection = this->ctrl_pipeline->selected_items.empty();
-            this->dlg_sources.set_selected_item(*it);
+            this->dlg_sources.set_selected_item(it->get());
             item_selected = true;
             break;
         }
@@ -87,7 +87,7 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
 
     // unselect all items
     if(!item_selected)
-        this->dlg_sources.set_selected_item((control_class_t)NULL);
+        this->dlg_sources.set_selected_item(NULL);
 
     return item_selected;
 }
@@ -111,7 +111,7 @@ void gui_previewwnd::OnRButtonDown(UINT /*nFlags*/, CPoint /*point*/)
     if(this->ctrl_pipeline->selected_items.empty())
         return;
     control_video2* video_control = dynamic_cast<control_video2*>(
-        this->ctrl_pipeline->selected_items[0].get());
+        this->ctrl_pipeline->selected_items[0]);
     if(!video_control)
         return;
 
@@ -145,7 +145,7 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
         control_video2* video_control;
         if(!this->ctrl_pipeline->selected_items.empty() &&
             (video_control = 
-                dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0].get())))
+                dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0])))
         {
             dragging = video_control->get_highlighted_points();
         }
@@ -171,7 +171,7 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
         if(this->ctrl_pipeline->selected_items.empty())
             return;
         control_video2* video_control = dynamic_cast<control_video2*>(
-            this->ctrl_pipeline->selected_items[0].get());
+            this->ctrl_pipeline->selected_items[0]);
         if(!video_control)
             return;
 
@@ -202,7 +202,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     if(this->ctrl_pipeline->selected_items.empty())
         return;
     control_video2* video_control = dynamic_cast<control_video2*>(
-        this->ctrl_pipeline->selected_items[0].get());
+        this->ctrl_pipeline->selected_items[0]);
     if(!video_control)
         return;
 

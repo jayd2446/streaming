@@ -5,12 +5,14 @@
 #include "transform_videoprocessor2.h"
 #include <string>
 #include <vector>
+#include <memory>
 
 class control_pipeline2;
 
 class control_scene2 : public control_class
 {
     friend class control_pipeline2;
+    typedef std::unique_ptr<control_class> control_class_t;
 public:
     typedef std::vector<control_class_t> controls_t;
 private:
@@ -20,7 +22,8 @@ private:
     bool current_control_video;
     int current_control;
 
-    void build_video_topology_branch(const media_stream_t& to, const media_topology_t&);
+    void build_video_topology(const media_stream_t& from,
+        const media_stream_t& to, const media_topology_t&);
     void build_audio_topology_branch(const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 

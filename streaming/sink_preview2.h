@@ -3,7 +3,6 @@
 #include "media_sink.h"
 #include "media_stream.h"
 #include "transform_videoprocessor2.h"
-#include "control_class.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <d2d1_1.h>
@@ -15,6 +14,9 @@
 
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
+
+class control_pipeline2;
+typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 
 class sink_preview2 : public media_sink
 {

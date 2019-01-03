@@ -3,8 +3,7 @@
 #include "presentation_clock.h"
 #include "assert.h"
 
-media_stream::media_stream(stream_t stream_type) : 
-    stream_type(stream_type), locked(false)
+media_stream::media_stream() : locked(false)
 {
 }
 

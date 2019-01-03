@@ -66,7 +66,7 @@ public:
     gui_sourcedlg(gui_scenedlg&, const control_pipeline2_t&);
 
     void set_source_tree(const control_scene2*);
-    void set_selected_item(const control_class_t&);
+    void set_selected_item(const control_class*);
 
     BEGIN_MSG_MAP(gui_sourcedlg)
         COMMAND_HANDLER(IDC_ADDSRC, BN_CLICKED, OnBnClickedAddsrc)

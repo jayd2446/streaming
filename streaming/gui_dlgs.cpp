@@ -133,7 +133,7 @@ LRESULT gui_scenedlg::OnLbnSelchangeScenelist(WORD /*wNotifyCode*/, WORD /*wID*/
     this->dlg_sources.SetFocus();
 
     // unselect items
-    this->dlg_sources.set_selected_item((control_class_t)NULL);
+    this->dlg_sources.set_selected_item(NULL);
 
     return 0;
 }
@@ -184,7 +184,7 @@ void gui_sourcedlg::set_selected_item(CTreeItem item)
         if(found)
         {
             this->ctrl_pipeline->selected_items.clear();
-            this->ctrl_pipeline->selected_items.push_back(*it);
+            this->ctrl_pipeline->selected_items.push_back(it->get());
         }
     }
     else
@@ -193,7 +193,7 @@ void gui_sourcedlg::set_selected_item(CTreeItem item)
     }
 }
 
-void gui_sourcedlg::set_selected_item(const control_class_t& control)
+void gui_sourcedlg::set_selected_item(const control_class* control)
 {
     // pipeline lock is assumed when the control is passed as an argument
     CTreeItem first_item = this->wnd_sourcetree.GetNextItem(NULL, TVGN_ROOT);
@@ -400,7 +400,7 @@ LRESULT gui_sourcedlg::OnKillFocus(int /*idCtrl*/, LPNMHDR /*pNMHDR*/, BOOL& /*b
 LRESULT gui_sourcedlg::OnSetFocus(int /*idCtrl*/, LPNMHDR /*pNMHDR*/, BOOL& /*bHandled*/)
 {
     control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-    control_class_t selected_item;
+    control_class* selected_item = NULL;
     if(!this->ctrl_pipeline->selected_items.empty())
         selected_item = this->ctrl_pipeline->selected_items[0];
 

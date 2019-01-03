@@ -77,27 +77,29 @@ void control_pipeline2::activate(const control_set_t& last_set, control_set_t& n
     // catch all unhandled initialization exceptions
     try
     {
+        // selected items need to be cleared every time the active control set changes,
+        // otherwise the selected items might become invalid
+        this->selected_items.clear();
 
-    if(this->disabled)
-    {
-        const bool old_disabled = this->root_scene.disabled;
-        this->root_scene.disabled = true;
+        if(this->disabled)
+        {
+            const bool old_disabled = this->root_scene.disabled;
+            this->root_scene.disabled = true;
+            this->root_scene.activate(last_set, new_set);
+            this->root_scene.disabled = old_disabled;
+
+            this->deactivate_components();
+
+            return;
+        }
+
+        this->activate_components();
+
+        // add this to the new set
+        new_set.push_back(this);
+
+        // activate the root scene
         this->root_scene.activate(last_set, new_set);
-        this->root_scene.disabled = old_disabled;
-
-        this->deactivate_components();
-
-        return;
-    }
-
-    this->activate_components();
-
-    // add this to the new set
-    new_set.push_back(this);
-
-    // activate the root scene
-    this->root_scene.activate(last_set, new_set);
-
     }
     catch(streaming::exception e)
     {
@@ -301,8 +303,6 @@ void control_pipeline2::deactivate_components()
     if(this->is_recording())
         this->stop_recording();
 
-    this->selected_items.clear();
-
     // stop the playback by switching to empty topologies
     if(this->mpeg_sink)
     {
@@ -364,7 +364,8 @@ void control_pipeline2::build_and_switch_topology()
         audio_stream->add_worker_stream(audio_worker_stream);
 
         if(video_branch_not_build)
-            this->root_scene.build_video_topology_branch(videoprocessor_stream, this->video_topology);
+            this->root_scene.build_video_topology(mpeg_stream,
+                videoprocessor_stream, this->video_topology);
         this->root_scene.build_audio_topology_branch(audiomixer_stream, this->audio_topology);
 
         if(video_branch_not_build)
@@ -425,14 +426,16 @@ void control_pipeline2::build_and_switch_topology()
     }
     catch(streaming::exception e)
     {
-        typedef std::lock_guard<std::mutex> scoped_lock;
-        scoped_lock lock(::async_callback_error_mutex);
-        ::async_callback_error = true;
 
-        std::cout << e.what();
-        system("pause");
+    typedef std::lock_guard<std::mutex> scoped_lock;
+    scoped_lock lock(::async_callback_error_mutex);
+    ::async_callback_error = true;
 
-        abort();
+    std::cout << e.what();
+    system("pause");
+
+    abort();
+
     }
 }
 
