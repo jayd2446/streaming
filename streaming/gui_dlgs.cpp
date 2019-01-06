@@ -259,33 +259,37 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
                 std::abs(dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.bottom -
                     dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.top);
 
-            stream_videoprocessor2_controller::params_t params;
-            D2D1_RECT_F dest_rect;
-            const FLOAT dest_rot = -i * 100.f;
-            params.source_rect = { 0.f };
-            params.dest_rect = { 0.f };
-            params.source_rect.right = (FLOAT)display_w - i * 40.f;
-            params.source_rect.bottom = (FLOAT)display_h - i * 4.f;
-            params.source_rect.left = i * 4.f;
-            params.source_rect.top = i * 4.f;
-            params.source_m = D2D1::Matrix3x2F::Rotation(-i * 10.f);
+            //stream_videomixer_controller::params_t params;
+            //D2D1_RECT_F dest_rect;
+            //const FLOAT dest_rot = -i * 100.f;
+            //params.source_rect = { 0.f };
+            //params.dest_rect = { 0.f };
+            //params.source_rect.right = (FLOAT)display_w - i * 40.f;
+            //params.source_rect.bottom = (FLOAT)display_h - i * 4.f;
+            //params.source_rect.left = i * 4.f;
+            //params.source_rect.top = i * 4.f;
+            //params.source_m = D2D1::Matrix3x2F::Rotation(-i * 10.f);
 
-            params.dest_rect = D2D1::RectF(0.f, 0.f, 1.f, 1.f);
-            /*params.dest_angle = -i * 10.f;*/
-            dest_rect.left = i * 4.f;
-            dest_rect.top = i * 4.f;
-            dest_rect.right =
-                (FLOAT)std::min((LONG)transform_videoprocessor2::canvas_width, display_w) - i * 40.f;
-            dest_rect.bottom =
-                (FLOAT)std::min((LONG)transform_videoprocessor2::canvas_height, display_h) - i * 40.f;
+            //params.dest_rect = D2D1::RectF(0.f, 0.f, 1.f, 1.f);
+            ///*params.dest_angle = -i * 10.f;*/
+            //dest_rect.left = i * 4.f;
+            //dest_rect.top = i * 4.f;
+            //dest_rect.right =
+            //    (FLOAT)std::min((LONG)transform_videomixer::canvas_width, display_w) - i * 40.f;
+            //dest_rect.bottom =
+            //    (FLOAT)std::min((LONG)transform_videomixer::canvas_height, display_h) - i * 40.f;
 
-            params.dest_m = D2D1::Matrix3x2F::Scale(
-                dest_rect.right - dest_rect.left, dest_rect.bottom - dest_rect.top) *
-                D2D1::Matrix3x2F::Rotation(dest_rot) *
-                D2D1::Matrix3x2F::Translation(dest_rect.left, dest_rect.top);
+            //params.dest_m = D2D1::Matrix3x2F::Scale(
+            //    dest_rect.right - dest_rect.left, dest_rect.bottom - dest_rect.top) *
+            //    D2D1::Matrix3x2F::Rotation(dest_rot) *
+            //    D2D1::Matrix3x2F::Translation(dest_rect.left, dest_rect.top);
 
-            // axis aligned clip is faster if the dest rect is axis aligned
-            params.axis_aligned_clip = (dest_rot == 0.f);
+            //// axis aligned clip is faster if the dest rect is axis aligned
+            //params.axis_aligned_clip = (dest_rot == 0.f);
+
+            //// TODO:
+            //static short z_order = 0;
+            //params.z_order = z_order++;
 
             i += 1.f;
 

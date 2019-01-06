@@ -5,6 +5,7 @@
 #include "async_callback.h"
 #include "media_sample.h"
 #include "control_class.h"
+#include "transform_mixer.h"
 #include "transform_h264_encoder.h"
 #include "request_packet.h"
 #include <d3d11.h>

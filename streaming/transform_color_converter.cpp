@@ -160,9 +160,14 @@ done:
 void stream_color_converter::processing_cb(void*)
 {
     HRESULT hr = S_OK;
+    media_buffer_texture_t output_buffer;
+    media_sample_video sample;
+
+    // pass a null sample forward if the sample doesn't have textures
+    if(this->pending_packet.sample.is_null() || this->pending_packet.sample.silent)
+        goto done;
 
     // get output buffer from the pool or create a new one
-    media_buffer_texture_t output_buffer;
     {
         transform_color_converter::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
         if(this->transform->texture_pool->container.empty())
@@ -182,23 +187,22 @@ void stream_color_converter::processing_cb(void*)
         }
     }
 
-    media_sample_texture sample;
-    CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample_view.buffer->texture;
-    assert_(texture);
-
-    // create the output view
-    CComPtr<ID3D11VideoProcessorOutputView> output_view;
-    D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
-    view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-    view_desc.Texture2D.MipSlice = 0;
-    // TODO: include this outputview in the pool aswell
-    CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-        output_buffer->texture, this->transform->enumerator, &view_desc, &output_view));
-
     // scope is important here so that the context mutex is unlocked;
     // failure to unlock it before proceeding to next component
     // introduces a deadlock scenario
     {
+        CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample.single_buffer->texture;
+        assert_(texture);
+
+        // create the output view
+        CComPtr<ID3D11VideoProcessorOutputView> output_view;
+        D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
+        view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+        view_desc.Texture2D.MipSlice = 0;
+        // TODO: include this outputview in the pool aswell
+        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
+            output_buffer->texture, this->transform->enumerator, &view_desc, &output_view));
+
         // create the input view for the sample to be converted
         CComPtr<ID3D11VideoProcessorInputView> input_view;
         D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
@@ -260,23 +264,19 @@ done:
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     }
 
-    sample.buffer = output_buffer;
-    sample.timestamp = this->pending_packet.sample_view.timestamp;
+    sample = this->pending_packet.sample;
+    sample.single_buffer = output_buffer;
         
     request_packet rp = this->pending_packet.rp;
 
-    // reset the sample view from the pending packet so it is unlocked
-    this->pending_packet.sample_view.buffer = NULL;
+    // reset the sample from the pending packet so it is unlocked
+    this->pending_packet.sample = media_sample_video();
     // remove the rps so that there aren't any circular dependencies at shutdown
     this->pending_packet.rp = request_packet();
 
     // give the sample to downstream
     this->unlock();
     this->transform->session->give_sample(this, sample, rp, false);
-
-//done:
-//    if(FAILED(hr))
-//        throw HR_EXCEPTION(hr);
 }
 
 media_stream::result_t stream_color_converter::request_sample(request_packet& rp, const media_stream*)
@@ -287,17 +287,16 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_color_converter::process_sample(
-    const media_sample& sample_view_, request_packet& rp, const media_stream*)
+    const media_sample& sample_, request_packet& rp, const media_stream*)
 {
     this->lock();
 
-    const media_sample_texture& sample_view = 
-        static_cast<const media_sample_texture&>(sample_view_);
+    const media_sample_video& sample = static_cast<const media_sample_video&>(sample_);
 
     /*CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;*/
 
     this->pending_packet.rp = rp;
-    this->pending_packet.sample_view = sample_view;
+    this->pending_packet.sample = sample;
 
     this->processing_cb(NULL);
     return OK;

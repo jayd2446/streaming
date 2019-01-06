@@ -132,16 +132,16 @@ void control_pipeline2::activate_components()
         this->audio_session.reset(new media_session(this->time_source));
 
     // create videoprocessor transform
-    if(!this->videoprocessor_transform ||
-        this->videoprocessor_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
+    if(!this->videomixer_transform ||
+        this->videomixer_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
-        transform_videoprocessor2_t videoprocessor_transform(
-            new transform_videoprocessor2(this->session, this->context_mutex));
-        videoprocessor_transform->initialize(this->shared_from_this<control_class>(),
+        transform_videomixer_t videomixer_transform(
+            new transform_videomixer(this->session, this->context_mutex));
+        videomixer_transform->initialize(this->shared_from_this<control_class>(),
             this->d2d1factory, this->d2d1dev,
             this->d3d11dev, this->devctx);
 
-        this->videoprocessor_transform = videoprocessor_transform;
+        this->videomixer_transform = videomixer_transform;
     }
 
     // create h264 transform
@@ -311,7 +311,7 @@ void control_pipeline2::deactivate_components()
         this->mpeg_sink->switch_topologies(this->video_topology, this->audio_topology);
     }
 
-    this->videoprocessor_transform = NULL;
+    this->videomixer_transform = NULL;
     this->h264_encoder_transform = NULL;
     this->color_converter_transform = NULL;
     this->preview_sink = NULL;
@@ -356,20 +356,20 @@ void control_pipeline2::build_and_switch_topology()
         stream_worker_t audio_worker_stream = this->audio_sink->create_worker_stream();
         media_stream_t audiomixer_stream = this->audiomixer_transform->create_stream(
             this->audio_topology->get_clock());
-        stream_videoprocessor2_t videoprocessor_stream = 
-            this->videoprocessor_transform->create_stream();
+        stream_videomixer_base_t videomixer_stream = 
+            this->videomixer_transform->create_stream(this->video_topology->get_clock());
 
         if(video_branch_not_build)
             mpeg_stream->add_worker_stream(mpeg_worker_stream);
         audio_stream->add_worker_stream(audio_worker_stream);
 
         if(video_branch_not_build)
-            this->root_scene.build_video_topology(mpeg_stream,
-                videoprocessor_stream, this->video_topology);
+            this->root_scene.build_video_topology(mpeg_stream, 
+                videomixer_stream, this->video_topology);
         this->root_scene.build_audio_topology_branch(audiomixer_stream, this->audio_topology);
 
         if(video_branch_not_build)
-            preview_stream->connect_streams(videoprocessor_stream, this->video_topology);
+            preview_stream->connect_streams(videomixer_stream, this->video_topology);
 
         if(!this->recording)
         {

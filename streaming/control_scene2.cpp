@@ -17,14 +17,14 @@ control_scene2::control_scene2(control_set_t& active_controls, control_pipeline2
 void control_scene2::build_video_topology(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
-    // TODO: scene should include stream videoprocessor controller
+    // TODO: scene should include stream videoprocessor controller(or not)
 
     if(this->disabled)
         return;
 
-    stream_videoprocessor2_t videoprocessor_stream = 
-        std::dynamic_pointer_cast<stream_videoprocessor2>(to);
-    if(!videoprocessor_stream)
+    stream_videomixer_base_t videomixer_stream = 
+        std::dynamic_pointer_cast<stream_videomixer_base>(to);
+    if(!videomixer_stream)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
     bool no_video = true;
@@ -34,7 +34,7 @@ void control_scene2::build_video_topology(const media_stream_t& from,
             continue;
 
         no_video = false;
-        elem->build_video_topology(from, videoprocessor_stream, topology);
+        elem->build_video_topology(from, videomixer_stream, topology);
     }
 
     if(no_video)
@@ -43,7 +43,7 @@ void control_scene2::build_video_topology(const media_stream_t& from,
         media_stream_t empty_stream = empty_source->create_stream();
 
         empty_stream->connect_streams(from, topology);
-        videoprocessor_stream->connect_streams(empty_stream, NULL, topology);
+        videomixer_stream->connect_streams(empty_stream, NULL, topology);
     }
 }
 

@@ -43,6 +43,7 @@ protected:
 
     control_video2(control_set_t& active_controls, control_pipeline2&);
     // passed transformation is either dst or src transformation
+    // TODO: change rvalue reference to lvalue reference
     virtual void apply_transformation(const D2D1::Matrix3x2F&&, bool dest_params) = 0;
     virtual void set_default_video_params(video_params_t&, bool dest_params) = 0;
 public:

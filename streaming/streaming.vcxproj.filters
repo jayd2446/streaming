@@ -141,6 +141,9 @@
     <ClCompile Include="stream_worker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="transform_videomixer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -277,6 +280,12 @@
     </ClInclude>
     <ClInclude Include="control_video2.h">
       <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="transform_mixer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="transform_videomixer.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

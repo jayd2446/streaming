@@ -2,6 +2,7 @@
 #include "control_class.h"
 #include "control_video2.h"
 #include "source_displaycapture5.h"
+#include "transform_videomixer.h"
 #include <vector>
 
 class control_displaycapture : public control_video2
@@ -18,7 +19,7 @@ private:
     /*control_pipeline2& pipeline;*/
     displaycapture_params params;
     source_displaycapture5_t component;
-    stream_videoprocessor2_controller_t videoprocessor_params;
+    stream_videomixer_controller_t videomixer_params;
 
     media_stream_t stream, pointer_stream;
     const control_displaycapture* reference;

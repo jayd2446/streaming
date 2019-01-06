@@ -6,7 +6,7 @@
 control_displaycapture::control_displaycapture(control_set_t& active_controls, 
     control_pipeline2& pipeline) :
     control_video2(active_controls, pipeline),
-    videoprocessor_params(new stream_videoprocessor2_controller),
+    videomixer_params(new stream_videomixer_controller),
     /*control_class(active_controls, pipeline.mutex),
     pipeline(pipeline),*/
     reference(NULL)
@@ -21,9 +21,9 @@ void control_displaycapture::build_video_topology(const media_stream_t& from,
 
     assert_(!this->disabled);
 
-    stream_videoprocessor2_t videoprocessor_stream =
-        std::dynamic_pointer_cast<stream_videoprocessor2>(to);
-    if(!videoprocessor_stream)
+    stream_videomixer_base_t videomixer_stream =
+        std::dynamic_pointer_cast<stream_videomixer_base>(to);
+    if(!videomixer_stream)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
     if(!this->reference)
@@ -39,10 +39,10 @@ void control_displaycapture::build_video_topology(const media_stream_t& from,
         displaycapture_stream->connect_streams(from, topology);
 
         // connect from this stream to 'to' stream
-        videoprocessor_stream->connect_streams(displaycapture_pointer_stream, 
-            this->videoprocessor_params, topology);
-        videoprocessor_stream->connect_streams(displaycapture_stream, 
-            this->videoprocessor_params, topology);
+        videomixer_stream->connect_streams(displaycapture_pointer_stream,
+            this->videomixer_params, topology);
+        videomixer_stream->connect_streams(displaycapture_stream,
+            this->videomixer_params, topology);
 
         this->stream = displaycapture_stream;
         this->pointer_stream = displaycapture_pointer_stream;
@@ -55,10 +55,10 @@ void control_displaycapture::build_video_topology(const media_stream_t& from,
 
         // only connect from this stream to 'to' stream
         // (since this a duplicate control from the original)
-        videoprocessor_stream->connect_streams(
-            this->reference->pointer_stream, this->videoprocessor_params, topology);
-        videoprocessor_stream->connect_streams(
-            this->reference->stream, this->videoprocessor_params, topology);
+        videomixer_stream->connect_streams(
+            this->reference->pointer_stream, this->videomixer_params, topology);
+        videomixer_stream->connect_streams(
+            this->reference->stream, this->videomixer_params, topology);
     }
 }
 
@@ -183,9 +183,9 @@ void control_displaycapture::apply_transformation(
     const D2D1::Matrix3x2F&& transformation, bool dest_params)
 {
     const D2D1_RECT_F rect = this->get_rectangle(dest_params);
-    stream_videoprocessor2_controller::params_t params;
+    stream_videomixer_controller::params_t params;
 
-    this->videoprocessor_params->get_params(params);
+    this->videomixer_params->get_params(params);
 
     if(dest_params)
     {
@@ -194,6 +194,10 @@ void control_displaycapture::apply_transformation(
         params.dest_m = transformation;
         params.axis_aligned_clip = ((video_params.rotate / 90.f) ==
             round(video_params.rotate / 90.f));
+
+        // TODO:
+        static short order = 0;
+        params.z_order = order++;
     }
     else
     {
@@ -201,7 +205,7 @@ void control_displaycapture::apply_transformation(
         params.source_m = transformation;
     }
 
-    this->videoprocessor_params->set_params(params);
+    this->videomixer_params->set_params(params);
 }
 
 void control_displaycapture::set_default_video_params(video_params_t& video_params, bool dest_params)

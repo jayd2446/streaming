@@ -1,7 +1,7 @@
 #include "source_empty.h"
 #include "transform_aac_encoder.h"
 #include "transform_h264_encoder.h"
-#include "transform_videoprocessor2.h"
+#include "transform_videomixer.h"
 #include "transform_audioprocessor.h"
 #include <Mferror.h>
 
@@ -96,17 +96,23 @@ void stream_empty_video::callback_f(void*)
 
     this->unlock();
 
-    stream_videoprocessor2_controller::params_t params;
+    stream_videomixer_controller::params_t params;
     params.dest_rect.left = params.dest_rect.top = 0;
     params.dest_rect.right = transform_h264_encoder::frame_width;
     params.dest_rect.bottom = transform_h264_encoder::frame_height;
     params.source_rect = params.dest_rect;
     params.source_m = params.dest_m = D2D1::Matrix3x2F::Identity();
+    params.z_order = 0;
 
-    media_sample_videoprocessor2 sample_view(params, this->buffer);
-    sample_view.timestamp = rp.request_time;
+    media_sample_videomixer sample(params);
+    sample.timestamp = rp.request_time;
+    sample.frame_end = convert_to_frame_unit(sample.timestamp,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
+    sample.frame_start = sample.frame_end - 1;
+    sample.silent = true;
 
-    this->source->session->give_sample(this, sample_view, rp, true);
+    this->source->session->give_sample(this, sample, rp, true);
 }
 
 media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)

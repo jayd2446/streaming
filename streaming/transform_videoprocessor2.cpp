@@ -343,6 +343,20 @@ media_stream::result_t stream_videoprocessor2::process_sample(
 
     /*Sleep(10);*/
 
+    // TODO: transform mixer base class which handles the mixing
+
+    // raw audio and video samples should use frame unit,
+    // encoded data uses timestamps
+
+    // TODO: the mixing of video and audio should be unified, and frame unit should
+    // be used for both;
+    // sample rate converter should be also used for both
+    // (practically, video source does the frame rate conversion for improved performance)
+
+    // TODO: collect all the rps;
+    // build a sample that has all the ready mixes and pass that with the
+    // newest rp
+
     // find the right packet from the list
     packet* p = NULL;
     for(size_t i = 0; i < this->input_stream_props.size(); i++)

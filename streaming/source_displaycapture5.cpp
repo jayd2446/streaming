@@ -488,8 +488,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     time_unit timestamp;
     presentation_clock_t clock;
     source_displaycapture5::request_t request;
-    media_sample_videoprocessor2 sample;
-    media_sample_videoprocessor2 pointer_sample;
+    media_sample_videomixer sample;
+    media_sample_videomixer pointer_sample;
 
     // the stream might serve the request on behalf of some other stream
     {
@@ -514,8 +514,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     try
     {
         frame_captured = this->source->capture_frame(
-            new_pointer_shape, pointer_position, pointer_sample.buffer,
-            sample.buffer, timestamp, clock);
+            new_pointer_shape, pointer_position, pointer_sample.single_buffer,
+            sample.single_buffer, timestamp, clock);
     }
     catch(displaycapture_exception)
     {
@@ -528,22 +528,24 @@ void stream_displaycapture5::capture_frame_cb(void*)
     }
 
     if(!frame_captured)
-        sample.buffer = this->source->newest_buffer;
+        sample.single_buffer = this->source->newest_buffer;
 
     if(!new_pointer_shape)
-        pointer_sample.buffer = this->source->newest_pointer_buffer;
+        pointer_sample.single_buffer = this->source->newest_pointer_buffer;
 
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
-    if(sample.buffer->texture)
+    if(sample.single_buffer->texture)
     {
-        sample.buffer->texture->GetDesc(ptr_desc = &desc);
+        sample.single_buffer->texture->GetDesc(ptr_desc = &desc);
 
         sample.params.source_rect.top = sample.params.source_rect.left = 0.f;
         sample.params.source_rect.right = (FLOAT)desc.Width;
         sample.params.source_rect.bottom = (FLOAT)desc.Height;
         sample.params.dest_rect = sample.params.source_rect;
         sample.params.source_m = sample.params.dest_m = D2D1::Matrix3x2F::Identity();
+        // pointer is drawn on top of desktop image
+        sample.params.z_order = 0;
 
         using namespace D2D1;
         switch(this->source->outdupl_desc.Rotation)
@@ -564,6 +566,13 @@ void stream_displaycapture5::capture_frame_cb(void*)
     }
 
     sample.timestamp = request.rp.request_time;
+    sample.frame_end = convert_to_frame_unit(sample.timestamp,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
+    sample.frame_start = sample.frame_end - 1;
+    // the newest buffer might be null for the first few requests, so set the silent flag to
+    // true to indicate that the request is served without an actual buffer
+    sample.silent = !sample.single_buffer->texture;
 
     lock.unlock();
 
@@ -622,33 +631,39 @@ void stream_displaycapture5_pointer::dispatch(
     bool new_pointer_shape,
     const DXGI_OUTDUPL_POINTER_POSITION& pointer_position,
     const D3D11_TEXTURE2D_DESC* desktop_desc,
-    media_sample_videoprocessor2& sample_view,
+    media_sample_videomixer& sample,
     source_displaycapture5::request_t& request)
 {
-    if(pointer_position.Visible && desktop_desc && sample_view.buffer->texture)
+    if(pointer_position.Visible && desktop_desc && sample.single_buffer->texture)
     {
         D3D11_TEXTURE2D_DESC desc;
-        sample_view.buffer->texture->GetDesc(&desc);
+        sample.single_buffer->texture->GetDesc(&desc);
 
-        sample_view.params.source_rect.left = sample_view.params.source_rect.top = 0.f;
-        sample_view.params.source_rect.right = (FLOAT)desc.Width;
-        sample_view.params.source_rect.bottom = (FLOAT)desc.Height;
+        sample.params.source_rect.left = sample.params.source_rect.top = 0.f;
+        sample.params.source_rect.right = (FLOAT)desc.Width;
+        sample.params.source_rect.bottom = (FLOAT)desc.Height;
 
-        sample_view.params.dest_rect.left = (FLOAT)pointer_position.Position.x;
-        sample_view.params.dest_rect.top = (FLOAT)pointer_position.Position.y;
-        sample_view.params.dest_rect.right =
-            sample_view.params.dest_rect.left + (FLOAT)desc.Width;
-        sample_view.params.dest_rect.bottom =
-            sample_view.params.dest_rect.top + (FLOAT)desc.Height;
-        sample_view.params.source_m = D2D1::Matrix3x2F::Identity();
-        sample_view.params.dest_m = D2D1::Matrix3x2F::Identity();
+        sample.params.dest_rect.left = (FLOAT)pointer_position.Position.x;
+        sample.params.dest_rect.top = (FLOAT)pointer_position.Position.y;
+        sample.params.dest_rect.right = sample.params.dest_rect.left + (FLOAT)desc.Width;
+        sample.params.dest_rect.bottom = sample.params.dest_rect.top + (FLOAT)desc.Height;
+        sample.params.source_m = D2D1::Matrix3x2F::Identity();
+        sample.params.dest_m = D2D1::Matrix3x2F::Identity();
+
+        // pointer is drawn on top of desktop image
+        sample.params.z_order = 1;
     }
     else
-        sample_view.buffer = this->null_buffer;
+        sample.single_buffer = this->null_buffer;
 
-    sample_view.timestamp = request.rp.request_time;
+    sample.timestamp = request.rp.request_time;
+    sample.frame_end = convert_to_frame_unit(sample.timestamp,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
+    sample.frame_start = sample.frame_end - 1;
+    sample.silent = !sample.single_buffer->texture;
 
-    this->source->session->give_sample(this, sample_view, request.rp, true);
+    this->source->session->give_sample(this, sample, request.rp, true);
 }
 
 media_stream::result_t stream_displaycapture5_pointer::request_sample(request_packet&, const media_stream*)

@@ -8,7 +8,8 @@
 #include "transform_h264_encoder.h"
 #include "transform_color_converter.h"
 #include "transform_audiomixer.h"
-#include "transform_videoprocessor2.h"
+//#include "transform_videoprocessor2.h"
+#include "transform_videomixer.h"
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
 #include "sink_preview2.h"
@@ -43,7 +44,9 @@ private:
     presentation_time_source_t time_source;
     media_topology_t video_topology, audio_topology;
     // these components are present in every scene
-    transform_videoprocessor2_t videoprocessor_transform;
+    // TODO: videomixer transform should have a restart flag aswell
+    transform_videomixer_t videomixer_transform;
+    /*transform_videoprocessor2_t videoprocessor_transform;*/
     transform_h264_encoder_t h264_encoder_transform;
     transform_color_converter_t color_converter_transform;
     transform_aac_encoder_t aac_encoder_transform;

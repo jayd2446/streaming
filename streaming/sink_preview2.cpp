@@ -135,15 +135,14 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet&)
+void sink_preview2::draw_sample(const media_sample& sample_, request_packet&)
 {
     if(!this->render)
         return;
 
     HRESULT hr = S_OK;
 
-    const media_sample_texture& sample_view =
-        static_cast<const media_sample_texture&>(sample_view_);
+    const media_sample_video& sample = static_cast<const media_sample_video&>(sample_);
     bool has_video_control = false;
     int highlighted_points;
     D2D1_RECT_F dest_rect;
@@ -166,18 +165,20 @@ void sink_preview2::draw_sample(const media_sample& sample_view_, request_packet
     }
 
 out:
-    CComPtr<ID3D11Texture2D> texture = sample_view.buffer->texture;
-    if(texture)
+    // TODO: decide if the outlines are drawn even if the buffer is null;
+    // the outlines should be drawn even when the sample is silent
+    if(!sample.is_null() && !sample.silent)
     {
         using namespace D2D1;
         scoped_lock lock(this->d2d1_context_mutex);
 
+        CComPtr<ID3D11Texture2D> texture = sample.single_buffer->texture;
         D2D1_RECT_F preview_rect = this->get_preview_rect();
         bool invert;
 
         Matrix3x2F canvas_to_preview = 
-            Matrix3x2F::Scale((FLOAT)transform_videoprocessor2::canvas_width, 
-            (FLOAT)transform_videoprocessor2::canvas_height);
+            Matrix3x2F::Scale((FLOAT)transform_videomixer::canvas_width, 
+            (FLOAT)transform_videomixer::canvas_height);
         invert = canvas_to_preview.Invert();
         canvas_to_preview = canvas_to_preview * 
             Matrix3x2F::Scale(preview_rect.right - preview_rect.left,
@@ -204,8 +205,8 @@ out:
             // draw preview rect
             this->d2d1devctx->SetTransform(canvas_to_preview);
             this->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f, 
-                (FLOAT)transform_videoprocessor2::canvas_width, 
-                (FLOAT)transform_videoprocessor2::canvas_height));
+                (FLOAT)transform_videomixer::canvas_width,
+                (FLOAT)transform_videomixer::canvas_height));
 
             if(has_video_control)
             {
@@ -338,8 +339,8 @@ D2D1_RECT_F sink_preview2::get_preview_rect() const
 {
     scoped_lock lock(this->size_mutex);
 
-    const FLOAT canvas_w = (FLOAT)transform_videoprocessor2::canvas_width;
-    const FLOAT canvas_h = (FLOAT)transform_videoprocessor2::canvas_height;
+    const FLOAT canvas_w = (FLOAT)transform_videomixer::canvas_width;
+    const FLOAT canvas_h = (FLOAT)transform_videomixer::canvas_height;
     const FLOAT preview_w = (FLOAT)(this->width - this->padding_width * 2);
     const FLOAT preview_h = (FLOAT)(this->height - this->padding_height * 2);
 

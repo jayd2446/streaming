@@ -2,7 +2,8 @@
 #include "control_class.h"
 #include "control_displaycapture5.h"
 #include "control_wasapi.h"
-#include "transform_videoprocessor2.h"
+//#include "transform_videoprocessor2.h"
+#include "transform_videomixer.h"
 #include <string>
 #include <vector>
 #include <memory>

@@ -76,8 +76,8 @@ public:
     // NOTE: get is slow for non trivial sample types
     bool get(request_t&) const;
 
-    // NOTE: the returned item is only valid until pop is called, which will lead to undefined
-    // behaviour without explicit locking
+    // NOTE: the returned item is only valid until it is popped, which can lead to
+    // undefined behaviour without explicit locking
     // returns NULL if couldn't get
     request_t* get();
     request_t* get(int packet_number);

@@ -1,10 +1,26 @@
 #include "media_sample.h"
 #include "assert.h"
+#include <cmath>
 #include <atomic>
 #include <limits>
 
-#undef min
-#undef max
+frame_unit convert_to_frame_unit(time_unit t, frame_unit frame_rate_num, frame_unit frame_rate_den)
+{
+    assert_(frame_rate_num >= 0);
+    assert_(frame_rate_den > 0);
+
+    const double frame_duration = SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den);
+    return (frame_unit)std::round(t / frame_duration);
+}
+
+time_unit convert_to_time_unit(frame_unit pos, frame_unit frame_rate_num, frame_unit frame_rate_den)
+{
+    assert_(frame_rate_num >= 0);
+    assert_(frame_rate_den > 0);
+
+    const double frame_duration = SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den);
+    return (frame_unit)std::round(pos * frame_duration);
+}
 
 template<typename Buffer>
 class media_buffer_lockable : public media_buffer_trackable<Buffer>
@@ -134,10 +150,10 @@ media_sample::media_sample(time_unit timestamp) : timestamp(timestamp)
 /////////////////////////////////////////////////////////////////
 
 
-media_sample_texture::media_sample_texture(const media_buffer_texture_t& texture_buffer) :
-    buffer(texture_buffer)
-{
-}
+//media_sample_texture::media_sample_texture(const media_buffer_texture_t& texture_buffer) :
+//    buffer(texture_buffer)
+//{
+//}
 
 
 /////////////////////////////////////////////////////////////////

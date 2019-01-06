@@ -2,7 +2,7 @@
 #include "async_callback.h"
 #include "media_sink.h"
 #include "media_stream.h"
-#include "transform_videoprocessor2.h"
+#include "transform_videomixer.h"
 #include <Windows.h>
 #include <d3d11.h>
 #include <d2d1_1.h>
@@ -50,7 +50,7 @@ private:
     CComPtr<ID2D1SolidColorBrush> highlighted_brush;
     CComPtr<ID2D1StrokeStyle1> stroke_style;
 
-    void draw_sample(const media_sample& sample_view, request_packet& rp);
+    void draw_sample(const media_sample& sample_, request_packet& rp);
 public:
     sink_preview2(const media_session_t& session, context_mutex_t context_mutex);
 

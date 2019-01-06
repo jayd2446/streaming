@@ -26,7 +26,7 @@ class transform_h264_encoder : public media_source
 {
     friend class stream_h264_encoder;
 public:
-    struct packet {bool drain; media_sample_texture sample;};
+    struct packet {bool drain; media_sample_video sample;};
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
     typedef request_queue<packet> request_queue;
