@@ -124,11 +124,6 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     /*this->running = false;
     this->clear_queue();*/
 
-    // TODO: the time point for the last audio request could be modified so that
-    // the audio switch will happen after the last video frame has been presented;
-    // currently the audio will switch virtually at the same time when the last video
-    // frame is presented
-
     // the audio topology will be switched in this call
     assert_(this->sink->pending_audio_topology);
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);

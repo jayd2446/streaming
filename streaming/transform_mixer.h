@@ -13,10 +13,23 @@
 #include <mutex>
 #include <iostream>
 
+// TODO: mixer could be converted to set the cut point on stream stop and
+// move the leftover and cutoff point to stream, if sample rate converter
+// is moved to source for audio;
+// the sample rate converter could be an utility class so that the pipeline will have
+// same frame rate;
+
+// in principle, on stream stop the component should serve requests to the request point, so that
+// a component that might stop receives enough samples;
+// TODO: the wasapi source needs to serve samples up to the request point on stream stop so that
+// the mixer gets enough samples on component stop
+
 /*
 
 on stream stop event every source should serve samples up to the request time point
-(or not);
+(or not(TODO: decide on this));
+the user params controller will be affected by this choice
+
 on component stop the source should serve requests up to the stop point
 
 requests are processed and served in chronological order
@@ -132,7 +145,6 @@ public:
     explicit stream_mixer(const transform_mixer_t& transform);
     virtual ~stream_mixer() {}
 
-    // TODO: the controller will have an index that tells the z ordering
     // user_params can be NULL
     void connect_streams(
         const media_stream_t& from,

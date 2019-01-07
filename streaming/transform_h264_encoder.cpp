@@ -303,8 +303,8 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     sample_time -= this->time_shift;
     if(sample_time < 0)
     {
+        std::cout << "h264 encoder time shift was off by " << sample_time << std::endl;
         sample_time = 0;
-        std::cout << "h264 encoder time shift was off" << std::endl;
     }
 
     // create sample
@@ -422,6 +422,7 @@ void transform_h264_encoder::processing_cb(void*)
     back:
         // TODO: decide how to handle silent sample
         assert_(!request.sample.sample.silent);
+        assert_(!request.sample.sample.is_null());
         if(!request.sample.sample.is_null())
             hr = this->feed_encoder(request);
 

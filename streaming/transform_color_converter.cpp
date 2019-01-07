@@ -163,6 +163,7 @@ void stream_color_converter::processing_cb(void*)
     media_buffer_texture_t output_buffer;
     media_sample_video sample;
 
+    assert_(!this->pending_packet.sample.is_null() && !this->pending_packet.sample.silent);
     // pass a null sample forward if the sample doesn't have textures
     if(this->pending_packet.sample.is_null() || this->pending_packet.sample.silent)
         goto done;
