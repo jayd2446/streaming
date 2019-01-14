@@ -1,7 +1,7 @@
 #pragma once
 #include "control_class.h"
-#include "source_wasapi.h"
-#include "transform_audioprocessor.h"
+#include "source_wasapi2.h"
+#include "transform_audiomixer2.h"
 #include <vector>
 
 class control_wasapi : public control_class
@@ -17,8 +17,9 @@ public:
 private:
     control_pipeline2& pipeline;
     wasapi_params params;
-    source_wasapi_t component;
-    transform_audioprocessor_t transform;
+    source_wasapi2_t component;
+    stream_audiomixer2_controller_t audiomixer_params;
+
     // stream and reference enable multiple controls to use the same
     // component;
     // for this to work, the topology building must have the same order
@@ -27,7 +28,8 @@ private:
     media_stream_t stream;
     const control_wasapi* reference;
 
-    void build_audio_topology_branch(const media_stream_t& to, const media_topology_t&);
+    void build_audio_topology_branch(const media_stream_t& from,
+        const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
     control_wasapi(control_set_t& active_controls, control_pipeline2&);

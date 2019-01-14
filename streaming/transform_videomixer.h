@@ -16,6 +16,8 @@
 class stream_videomixer;
 typedef std::shared_ptr<stream_videomixer> stream_videomixer_t;
 
+// TODO: z order and sorting in videomixer is no longer necessary
+
 // controls how the stream should process the input sample
 class stream_videomixer_controller
 {
@@ -43,23 +45,25 @@ public:
 
 typedef std::shared_ptr<stream_videomixer_controller> stream_videomixer_controller_t;
 
-class media_sample_videomixer : public media_sample_video
+class media_component_videomixer_args : public media_component_video_args
 {
 public:
     stream_videomixer_controller::params_t params;
 
-    media_sample_videomixer() {}
-    explicit media_sample_videomixer(const media_buffer_texture_t& single_buffer) :
-        media_sample_video(single_buffer) {}
-    explicit media_sample_videomixer(const stream_videomixer_controller::params_t& params) :
+    media_component_videomixer_args() {}
+    explicit media_component_videomixer_args(const media_buffer_texture_t& single_buffer) :
+        media_component_video_args(single_buffer) {}
+    explicit media_component_videomixer_args(const stream_videomixer_controller::params_t& params) :
         params(params) {}
-    media_sample_videomixer(const stream_videomixer_controller::params_t& params, 
+    media_component_videomixer_args(const stream_videomixer_controller::params_t& params,
         const media_buffer_texture_t& single_buffer) :
-        params(params), media_sample_video(single_buffer) {}
+        params(params), media_component_video_args(single_buffer) {}
 };
 
-typedef transform_mixer<media_sample_videomixer, stream_videomixer_controller, media_sample_video>
-transform_videomixer_base;
+typedef std::optional<media_component_videomixer_args> media_component_videomixer_args_t;
+
+typedef transform_mixer<media_component_videomixer_args_t, stream_videomixer_controller, 
+    media_component_video_args_t> transform_videomixer_base;
 typedef stream_mixer<transform_videomixer_base> stream_videomixer_base;
 typedef std::shared_ptr<stream_videomixer_base> stream_videomixer_base_t;
 
@@ -107,8 +111,8 @@ private:
     void initialize_buffer(const media_buffer_texture_t& buffer);
     media_buffer_texture_t acquire_buffer(const std::shared_ptr<transform_videomixer::buffer_pool>&);
 
-    bool move_frames(sample_t& sample, sample_t& old_sample, frame_unit end);
-    void mix(out_sample_t& sample, request_t&, frame_unit first, frame_unit end);
+    bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded);
+    void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end);
 public:
     explicit stream_videomixer(const transform_videomixer_t& transform);
 };

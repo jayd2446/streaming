@@ -2,7 +2,7 @@
 #include "media_stream.h"
 #include "media_component.h"
 
-#define DEFAULT_MAX_REQUESTS 1
+//#define DEFAULT_MAX_REQUESTS 1
 // TODO: audio can have more concurrent requests once it is ported from branch level locking
 // granularity to stream level
 #define VIDEO_MAX_REQUESTS 3

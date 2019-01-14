@@ -15,7 +15,7 @@ public:
 
     typedef std::lock_guard<std::mutex> scoped_lock;
     typedef request_queue<media_sample_h264> request_queue_video;
-    typedef request_queue<media_sample_aac> request_queue_audio;
+    typedef request_queue<media_component_aac_audio_args_t> request_queue_audio;
     typedef request_queue_video::request_t request_video_t;
     typedef request_queue_audio::request_t request_audio_t;
     typedef async_callback<sink_file> async_callback_t;
@@ -24,14 +24,13 @@ private:
     request_queue_video requests_video;
     request_queue_audio requests_audio;
     std::mutex requests_mutex, process_mutex;
-    DWORD work_queue_id;
+    /*DWORD work_queue_id;*/
     bool video;
     int requests;
 
     LONGLONG last_timestamp;
 
-    CComPtr<async_callback_t> write_callback;
-    void write_cb(void*);
+    /*CComPtr<async_callback_t> write_callback;*/
     void process();
 public:
     explicit sink_file(const media_session_t& session);

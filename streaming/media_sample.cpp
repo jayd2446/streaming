@@ -1,8 +1,18 @@
 #include "media_sample.h"
 #include "assert.h"
+#include "IUnknownImpl.h"
+#include <mfapi.h>
+#include <Mferror.h>
+#include <initguid.h>
 #include <cmath>
 #include <atomic>
 #include <limits>
+#include <algorithm>
+
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
+
+DEFINE_GUID(media_sample_lifetime_tracker_guid,
+    0xd84fe03a, 0xcb44, 0x43ec, 0x10, 0xac, 0x94, 0x00, 0xb, 0xcc, 0xef, 0x38);
 
 frame_unit convert_to_frame_unit(time_unit t, frame_unit frame_rate_num, frame_unit frame_rate_den)
 {
@@ -19,120 +29,181 @@ time_unit convert_to_time_unit(frame_unit pos, frame_unit frame_rate_num, frame_
     assert_(frame_rate_den > 0);
 
     const double frame_duration = SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den);
-    return (frame_unit)std::round(pos * frame_duration);
+    return (time_unit)std::round(pos * frame_duration);
 }
 
-template<typename Buffer>
-class media_buffer_lockable : public media_buffer_trackable<Buffer>
+class media_sample_lifetime_tracker : public IUnknown, IUnknownImpl
 {
-private:
-    volatile int read_lock;
-    volatile bool write_lock;
-    std::condition_variable cv;
-    mutable std::mutex mutex;
-
-    // waits for write and read to complete
-    void lock();
-    // waits only for the write to complete
-    void lock_read();
-    // unlocks the write and read lock
-    void unlock();
-
-    // unlocks the Buffer
-    void on_delete();
 public:
-    media_buffer_lockable();
-    virtual ~media_buffer_lockable();
+    media_buffer_t sample;
 
-    // creates the trackable buffer
-    buffer_t lock_buffer(buffer_lock_t = buffer_lock_t::LOCK);
+    explicit media_sample_lifetime_tracker(const media_buffer_t& sample) : sample(sample) {}
 
-    // unlocks the write lock
-    void unlock_write();
+    ULONG STDMETHODCALLTYPE AddRef() { return IUnknownImpl::AddRef(); }
+    ULONG STDMETHODCALLTYPE Release() { return IUnknownImpl::Release(); }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
+    {
+        if(!ppv)
+            return E_POINTER;
+        if(riid == __uuidof(IUnknown))
+            *ppv = static_cast<IUnknown*>(this);
+        else
+        {
+            *ppv = NULL;
+            return E_NOINTERFACE;
+        }
 
-    bool is_locked() const;
+        this->AddRef();
+        return S_OK;
+    }
 };
 
-template<typename T>
-media_buffer_lockable<T>::media_buffer_lockable() :
-    read_lock(0),
-    write_lock(false)
+CComPtr<IUnknown> create_lifetime_tracker(const media_buffer_t& sample)
 {
+    // TODO: this
+    CComPtr<IUnknown> ret;
+    ret.Attach(new media_sample_lifetime_tracker(sample));
+
+    return ret;
 }
 
-template<typename T>
-media_buffer_lockable<T>::~media_buffer_lockable()
+void media_buffer_memory::initialize(DWORD len)
 {
-    assert_(!this->is_locked());
-}
+    static const DWORD alignment = 16;
 
-template<typename T>
-void media_buffer_lockable<T>::on_delete()
-{
-    this->unlock();
-}
-
-template<typename T>
-typename media_buffer_lockable<T>::buffer_t
-media_buffer_lockable<T>::lock_buffer(buffer_lock_t lock_t)
-{
-    if(lock_t == buffer_lock_t::LOCK)
-        this->lock();
+    HRESULT hr = S_OK;
+    // allocate a new buffer
+    if(!this->buffer)
+    {
+        CHECK_HR(hr = MFCreateAlignedMemoryBuffer(len, alignment, &this->buffer));
+        CHECK_HR(hr = this->buffer->SetCurrentLength(0));
+    }
     else
-        this->lock_read();
+    {
+        DWORD buf_len;
+        CHECK_HR(hr = this->buffer->GetMaxLength(&buf_len));
 
-    return this->create_tracked_buffer();
+        // allocate a new buffer that satisfies the len
+        if(buf_len < len)
+        {
+            this->buffer = NULL;
+            this->initialize(len);
+        }
+        else
+            // the length might be greater than asked for, which is fine
+            CHECK_HR(hr = this->buffer->SetCurrentLength(0));
+    }
+
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
 }
 
-template<typename T>
-void media_buffer_lockable<T>::lock()
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+bool media_sample_audio_frames::move_frames_to(media_sample_audio_frames* to,
+    frame_unit end, UINT32 block_align)
 {
-    scoped_lock lock(this->mutex);
-    while(this->read_lock > 0 || this->write_lock)
-        // wait unlocks the mutex and reacquires the lock when it is notified
-        this->cv.wait(lock);
-    this->read_lock = 1;
-    this->write_lock = true;
-}
+    assert_(this->end == 0 || !this->frames.empty());
 
-template<typename T>
-void media_buffer_lockable<T>::lock_read()
-{
-    scoped_lock lock(this->mutex);
-    while(this->write_lock)
-        this->cv.wait(lock);
-    this->read_lock++;
-}
+    // TODO: for best performance, a list of preallocated elements should be used for frames,
+    // and std remove if performs this loop and instead of clearing the elem from 'from',
+    // it is erased from the list;
+    // this would allow for constant time removal without the need of allocating a new list element
+    // from heap
+    // (or not)
+    
+    bool moved = false;
 
-template<typename T>
-void media_buffer_lockable<T>::unlock_write()
-{
-    scoped_lock lock(this->mutex);
-    assert_(this->write_lock);
-    assert_(this->read_lock > 0);
-    this->write_lock = false;
-    this->cv.notify_all();
-}
+    // the media_sample_audio_consecutive_frames should be lightweight, because it seems that
+    // the value is moved within the container
+    // https://en.wikipedia.org/wiki/Erase%E2%80%93remove_idiom
+    this->frames.erase(std::remove_if(this->frames.begin(), this->frames.end(), 
+        [&](media_sample_audio_consecutive_frames& elem)
+    {
+        if(!elem.buffer)
+            throw HR_EXCEPTION(E_UNEXPECTED);
 
-template<typename T>
-void media_buffer_lockable<T>::unlock()
-{
-    scoped_lock lock(this->mutex);
-    this->write_lock = false;
-    this->read_lock--;
-    assert_(this->read_lock >= 0);
-    this->cv.notify_all();
-}
+        HRESULT hr = S_OK;
+        bool remove = false;
+        CComPtr<IMFSample> sample;
+        CComPtr<IMFMediaBuffer> buffer, old_buffer;
+        DWORD buflen;
+        media_sample_audio_consecutive_frames new_frames;
 
-template<typename T>
-bool media_buffer_lockable<T>::is_locked() const
-{
-    scoped_lock lock(this->mutex);
-    return (this->write_lock || this->read_lock);
-}
+        const frame_unit frame_pos = elem.pos;
+        const frame_unit frame_dur = elem.dur;
+        const frame_unit frame_end = frame_pos + frame_dur;
 
-typedef media_buffer_lockable<media_buffer_texture> media_buffer_lockable_texture;
-typedef std::shared_ptr<media_buffer_lockable_texture> media_buffer_lockable_texture_t;
+        // TODO: sample could have a flag that indicates whether the frames are ordered,
+        // so that the whole list doesn't need to be iterated;
+        // this sample would retain the ordered flag only if this was null when
+        // frames were moved
+        if(frame_pos >= end)
+            return false;
+
+        moved = true;
+
+        old_buffer = elem.buffer;
+        CHECK_HR(hr = old_buffer->GetCurrentLength(&buflen));
+
+        const frame_unit frame_diff_end = std::max(frame_end - end, 0LL);
+        const DWORD offset_end = (DWORD)frame_diff_end * block_align;
+        const frame_unit new_frame_pos = frame_pos;
+        const frame_unit new_frame_dur = frame_dur - frame_diff_end;
+
+        assert_(((int)buflen - (int)offset_end) > 0);
+        CHECK_HR(hr = MFCreateMediaBufferWrapper(old_buffer, 0, buflen - offset_end, &buffer));
+        CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+        if(offset_end > 0)
+        {
+            // remove the moved part of the old buffer
+            CComPtr<IMFMediaBuffer> new_buffer;
+            CHECK_HR(hr = MFCreateMediaBufferWrapper(
+                old_buffer, buflen - offset_end, offset_end, &new_buffer));
+            CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+
+            const frame_unit new_frame_dur = offset_end / block_align;
+            const frame_unit new_frame_pos = frame_pos + frame_dur - new_frame_dur;
+
+            elem.buffer = new_buffer;
+            elem.pos = new_frame_pos;
+            elem.dur = new_frame_dur;
+        }
+        else
+            remove = true;
+
+        new_frames.memory_host = elem.memory_host;
+        new_frames.buffer = buffer;
+        new_frames.pos = new_frame_pos;
+        new_frames.dur = new_frame_dur;
+
+        if(to)
+        {
+            to->frames.push_back(new_frames);
+            to->end = std::max(to->end, new_frames.pos + new_frames.dur);
+        }
+
+    done:
+        if(FAILED(hr))
+            throw HR_EXCEPTION(hr);
+
+        return remove;
+    }), this->frames.end());
+
+    /*if(to)
+        to->end = std::max(to->end, std::min(end, this->end));*/
+    if(end >= this->end)
+    {
+        assert_(this->frames.empty());
+        this->uninitialize();
+    }
+
+    return moved;
+}
 
 
 /////////////////////////////////////////////////////////////////
@@ -162,28 +233,6 @@ media_sample::media_sample(time_unit timestamp) : timestamp(timestamp)
 
 
 media_sample_h264::media_sample_h264(const media_buffer_h264_t& buffer) :
-    buffer(buffer)
-{
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
-media_sample_audio::media_sample_audio(const media_buffer_samples_t& buffer) :
-    buffer(buffer)
-{
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
-media_sample_aac::media_sample_aac(const media_buffer_samples_t& buffer) :
     buffer(buffer)
 {
 }

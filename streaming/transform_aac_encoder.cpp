@@ -9,115 +9,194 @@
 transform_aac_encoder::transform_aac_encoder(const media_session_t& session) : 
     media_source(session),
     last_time_stamp(std::numeric_limits<frame_unit>::min()),
-    time_shift(-1)
+    time_shift(-1),
+    buffer_pool_memory(new buffer_pool_memory_t),
+    encoded_audio(new media_sample_aac_frames)
 {
+}
+
+transform_aac_encoder::~transform_aac_encoder()
+{
+    buffer_pool_memory_t::scoped_lock lock(this->buffer_pool_memory->mutex);
+    this->buffer_pool_memory->dispose();
+}
+
+bool transform_aac_encoder::encode(const media_sample_audio_frames& in_frames,
+    media_sample_aac_frames& out_frames, bool drain)
+{
+    assert_(out_frames.frames.empty());
+
+    HRESULT hr = S_OK;
+    media_buffer_memory_t buffer;
+    CComPtr<IMFSample> out_sample;
+    CComPtr<IMFMediaBuffer> out_buffer;
+
+    // this is just a specialized case of audio resampler's reset_sample
+    auto reset_sample = [&]()
+    {
+        HRESULT hr = S_OK;
+        DWORD buflen = 0, max_len = 0;
+        CComPtr<IMFMediaBuffer> mf_buffer = out_buffer;
+
+        out_sample = NULL;
+        out_buffer = NULL;
+
+        if(mf_buffer)
+        {
+            CHECK_HR(hr = mf_buffer->GetCurrentLength(&buflen));
+            CHECK_HR(hr = mf_buffer->GetMaxLength(&max_len));
+        }
+
+        if((buflen + this->output_stream_info.cbSize) <= max_len)
+        {
+            CHECK_HR(hr = mf_buffer->SetCurrentLength(max_len));
+            // create a wrapper of buffer for out_buffer
+            CHECK_HR(hr = MFCreateMediaBufferWrapper(
+                mf_buffer, buflen, max_len - buflen, &out_buffer));
+        }
+        else
+        {
+            // TODO: the sink writer should call a place marker method for knowing
+            // when the output buffer is safe to reuse;
+            // currently, a new buffer must be allocated each time
+            buffer_pool_memory_t::scoped_lock lock(this->buffer_pool_memory->mutex);
+            buffer.reset(new media_buffer_memory);
+            /*buffer = this->buffer_pool_memory->acquire_buffer();*/
+            buffer->initialize(this->output_stream_info.cbSize);
+            out_buffer = buffer->buffer;
+        }
+
+        CHECK_HR(hr = out_buffer->SetCurrentLength(0));
+        CHECK_HR(hr = MFCreateSample(&out_sample));
+        CHECK_HR(hr = out_sample->AddBuffer(out_buffer));
+
+    done:
+        if(FAILED(hr))
+            throw HR_EXCEPTION(hr);
+    };
+    auto process_sample = [&]()
+    {
+        // set the new duration and timestamp for the out sample
+        CComPtr<IMFMediaBuffer> mf_buffer;
+        DWORD buflen;
+        HRESULT hr = S_OK;
+        media_sample_aac_frame frame;
+        LONGLONG ts, dur;
+
+        CHECK_HR(hr = out_sample->GetBufferByIndex(0, &mf_buffer));
+        CHECK_HR(hr = mf_buffer->GetCurrentLength(&buflen));
+
+        CHECK_HR(hr = out_sample->GetSampleTime(&ts));
+        CHECK_HR(hr = out_sample->GetSampleDuration(&dur));
+
+        frame.memory_host = buffer;
+        frame.ts = (time_unit)ts;
+        frame.dur = (time_unit)dur;
+        frame.buffer = mf_buffer;
+
+        out_frames.frames.push_back(std::move(frame));
+
+        // by empirical evidence, it seems that the encoder doesn't buffer input samples
+        this->memory_hosts.clear();
+
+    done:
+        return hr;
+    };
+    auto drain_all = [&]()
+    {
+        std::cout << "drain on aac encoder" << std::endl;
+
+        HRESULT hr = S_OK;
+        CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
+        while(reset_sample(), this->process_output(out_sample))
+            CHECK_HR(hr = process_sample());
+
+    done:
+        return hr;
+    };
+
+    // currently, the audio mixer only outputs one frame
+    for(auto&& elem : in_frames.frames)
+    {
+        assert_(elem.buffer);
+
+        // create a sample that has time and duration converted from frame unit to time unit
+        CComPtr<IMFSample> in_sample;
+        CComPtr<IMFMediaBuffer> in_buffer;
+        frame_unit frame_pos, frame_dur;
+        LONGLONG time, dur;
+
+        CHECK_HR(hr = MFCreateSample(&in_sample));
+        in_buffer = elem.buffer;
+        CHECK_HR(hr = in_sample->AddBuffer(in_buffer));
+
+        frame_pos = elem.pos;
+        frame_dur = elem.dur;
+        time = (LONGLONG)(convert_to_time_unit(frame_pos, sample_rate, 1) - this->time_shift);
+        dur = (LONGLONG)convert_to_time_unit(frame_dur, sample_rate, 1);
+
+        if(time < 0)
+        {
+            LONGLONG off = time;
+            time = 0;
+            std::cout << "aac encoder time shift was off by " << off << std::endl;
+        }
+
+        CHECK_HR(hr = in_sample->SetSampleTime(time));
+        CHECK_HR(hr = in_sample->SetSampleDuration(dur));
+
+    back:
+        hr = this->encoder->ProcessInput(this->input_id, in_sample, 0);
+        if(hr == MF_E_NOTACCEPTING)
+        {
+            if(reset_sample(), this->process_output(out_sample))
+                CHECK_HR(hr = process_sample());
+
+            goto back;
+        }
+        else
+        {
+            CHECK_HR(hr);
+            this->memory_hosts.push_back(elem.memory_host);
+        }
+    }
+
+    if(drain)
+        CHECK_HR(hr = drain_all());
+
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
+
+    return !out_frames.frames.empty();
 }
 
 void transform_aac_encoder::processing_cb(void*)
 {
     HRESULT hr = S_OK;
 
+    // this is similar to the serve_cb in source_wasapi
+
     std::unique_lock<std::recursive_mutex> lock(this->encoder_mutex);
     request_t request;
 
     while(this->requests.pop(request))
     {
-        media_sample_audio& audio = request.sample.audio;
-        media_sample_aac out_audio(media_buffer_samples_t(new media_buffer_samples));
-        out_audio.bit_depth = audio.bit_depth;
-        out_audio.channels = audio.channels;
-        out_audio.sample_rate = audio.sample_rate;
-
-        const double sample_duration = SECOND_IN_TIME_UNIT / (double)audio.sample_rate;
-
-        assert_(audio.bit_depth == (sizeof(bit_depth_t) * 8) &&
-            audio.channels == channels &&
-            audio.sample_rate == sample_rate);
-
-        CComPtr<IMFSample> out_sample;
-        CComPtr<IMFMediaBuffer> out_buffer;
-        auto reset_sample = [&out_sample, &out_buffer, this]()
+        media_component_aac_encoder_args_t& args = request.sample.args;
+        media_component_aac_audio_args_t out_args;
+        if(args)
         {
-            HRESULT hr = S_OK;
-            CHECK_HR(hr = MFCreateSample(&out_sample));
-            CHECK_HR(hr = MFCreateMemoryBuffer(
-                this->output_stream_info.cbSize, &out_buffer));
-            CHECK_HR(hr = out_sample->AddBuffer(out_buffer));
-
-        done:
-            return hr;
-        };
-        auto process_sample = [&out_sample, &out_buffer, &reset_sample, &out_audio, this]()
-        {
-            HRESULT hr = S_OK;
-
-            out_audio.buffer->samples.push_back(out_sample);
-            out_sample = NULL;
-            out_buffer = NULL;
-
-            CHECK_HR(hr = reset_sample());
-        done:
-            return hr;
-        };
-        auto drain_all = [&]()
-        {
-            std::cout << "drain on aac encoder" << std::endl;
-
-            HRESULT hr = S_OK;
-            CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
-            while(this->process_output(out_sample))
-                CHECK_HR(hr = process_sample());
-
-        done:
-            return hr;
-        };
-
-        CHECK_HR(hr = reset_sample());
-        for(auto it = audio.buffer->samples.begin(); it != audio.buffer->samples.end(); it++)
-        {
-            // convert the frame units to time units
-            frame_unit ts, dur;
-            CHECK_HR(hr = (*it)->GetSampleTime(&ts));
-            CHECK_HR(hr = (*it)->GetSampleDuration(&dur));
-
-            if(ts < this->last_time_stamp)
+            assert_(args->is_valid());
+            if(this->encode(*args->sample, *request.sample.out_sample, request.sample.drain))
             {
-                std::cout << "timestamp error in transform_aac_encoder::processing_cb" << std::endl;
-                assert_(false);
+                out_args = std::make_optional<media_component_aac_audio_args>();
+                out_args->sample = std::move(request.sample.out_sample);
             }
-            this->last_time_stamp = ts + dur;
-
-            ts = (time_unit)(ts * sample_duration) - this->time_shift;
-            dur = (time_unit)(dur * sample_duration);
-            if(ts < 0)
-            {
-                time_unit off = ts;
-                ts = 0;
-                std::cout << "aac encoder time shift was off by " << off << std::endl;
-            }
-            CHECK_HR(hr = (*it)->SetSampleTime(ts));
-            CHECK_HR(hr = (*it)->SetSampleDuration(dur));
-               
-            /*std::cout << "ts: " << ts << ", dur+ts: " << ts + dur << std::endl;*/
-
-        back:
-            hr = this->encoder->ProcessInput(this->input_id, *it, 0);
-            if(hr == MF_E_NOTACCEPTING)
-            {
-                if(this->process_output(out_sample))
-                    CHECK_HR(hr = process_sample());
-
-                goto back;
-            }
-            else
-                CHECK_HR(hr)
         }
 
-        if(request.sample.drain)
-            CHECK_HR(hr = drain_all());
-
         lock.unlock();
-        this->session->give_sample(request.stream, out_audio, request.rp, false);
+        this->session->give_sample(request.stream, 
+            reinterpret_cast<const media_sample&>(out_args), request.rp);
         lock.lock();
     }
 
@@ -130,18 +209,28 @@ bool transform_aac_encoder::process_output(IMFSample* sample)
 {
     HRESULT hr = S_OK;
 
-    const DWORD mft_provides_samples =
-        this->output_stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
-
+    DWORD mft_provides_samples;
+    DWORD alignment;
+    DWORD min_size, buflen;
     MFT_OUTPUT_DATA_BUFFER output;
     DWORD status = 0;
+    CComPtr<IMFMediaBuffer> buffer;
+
+    mft_provides_samples =
+        this->output_stream_info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES;
+    alignment = this->output_stream_info.cbAlignment;
+    min_size = this->output_stream_info.cbSize;
+
+    CHECK_HR(hr = sample->GetBufferByIndex(0, &buffer));
+    CHECK_HR(hr = buffer->SetCurrentLength(0));
+    CHECK_HR(hr = buffer->GetMaxLength(&buflen));
 
     if(mft_provides_samples)
         throw HR_EXCEPTION(hr);
-    if(this->output_stream_info.cbAlignment)
+    if(buflen < min_size)
         throw HR_EXCEPTION(hr);
 
-    output.dwStreamID = this->output_id;
+    output.dwStreamID = 0;
     output.dwStatus = 0;
     output.pEvents = NULL;
     output.pSample = sample;
@@ -215,7 +304,11 @@ void transform_aac_encoder::initialize(bitrate_t bitrate)
     CHECK_HR(hr = this->encoder->GetInputStreamInfo(this->input_id, &this->input_stream_info));
     CHECK_HR(hr = this->encoder->GetOutputStreamInfo(this->output_id, &this->output_stream_info));
 
+    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, NULL));
     CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, NULL));
+    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, NULL));
+
+    /*CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, NULL));*/
 
 done:
     if(activate)
@@ -247,8 +340,15 @@ media_stream_t transform_aac_encoder::create_stream(presentation_clock_t&& clock
 stream_aac_encoder::stream_aac_encoder(const transform_aac_encoder_t& transform) : 
     media_stream_clock_sink(transform.get()),
     transform(transform),
-    drain_point(std::numeric_limits<time_unit>::min())
+    drain_point(std::numeric_limits<time_unit>::min()),
+    buffer_pool_aac_frames(new buffer_pool_aac_frames_t)
 {
+}
+
+stream_aac_encoder::~stream_aac_encoder()
+{
+    buffer_pool_aac_frames_t::scoped_lock lock(this->buffer_pool_aac_frames->mutex);
+    this->buffer_pool_aac_frames->dispose();
 }
 
 void stream_aac_encoder::on_component_start(time_unit t)
@@ -259,28 +359,47 @@ void stream_aac_encoder::on_component_start(time_unit t)
 
 void stream_aac_encoder::on_component_stop(time_unit t)
 {
+    this->lock();
     this->drain_point = t;
+    this->unlock();
 }
 
 media_stream::result_t stream_aac_encoder::request_sample(request_packet& rp, const media_stream*)
 {
     this->transform->requests.initialize_queue(rp);
-    return this->transform->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
+    return this->transform->session->request_sample(this, rp) ? OK : FATAL_ERROR;
 }
 
 media_stream::result_t stream_aac_encoder::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& args_, request_packet& rp, const media_stream*)
 {
-    const media_sample_audio& audio_sample = static_cast<const media_sample_audio&>(sample_view);
+    const media_component_aac_encoder_args_t& args =
+        reinterpret_cast<const media_component_aac_encoder_args_t&>(args_);
+
+    media_sample_aac_frames_t out_sample;
+    if(args)
+    {
+        // aac encoder expects full buffers, so the args should include the full buffer
+        // (is_valid call tests this)
+        assert_(args->is_valid());
+
+        buffer_pool_aac_frames_t::scoped_lock lock(this->buffer_pool_aac_frames->mutex);
+        out_sample = this->buffer_pool_aac_frames->acquire_buffer();
+        out_sample->initialize();
+    }
+
+    this->lock();
 
     transform_aac_encoder::request_t request;
     request.rp = rp;
-    request.sample.audio = audio_sample;
+    request.sample.args = args;
     request.sample.drain = (this->drain_point == rp.request_time);
     request.stream = this;
+    request.sample.out_sample = out_sample;
 
     this->transform->requests.push(request);
 
+    this->unlock();
     this->transform->processing_cb(NULL);
     return OK;
 }

@@ -25,7 +25,8 @@ private:
 
     void build_video_topology(const media_stream_t& from,
         const media_stream_t& to, const media_topology_t&);
-    void build_audio_topology_branch(const media_stream_t& to, const media_topology_t&);
+    void build_audio_topology_branch(const media_stream_t& from,
+        const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
     control_class* find_control(bool is_control_video, int control_index) const;

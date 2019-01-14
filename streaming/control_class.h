@@ -52,7 +52,8 @@ protected:
     virtual void build_video_topology(const media_stream_t& /*from*/,
         const media_stream_t& /*to*/, const media_topology_t&) 
     {assert_(false);}
-    virtual void build_audio_topology_branch(const media_stream_t& /*to*/, const media_topology_t&) 
+    virtual void build_audio_topology_branch(const media_stream_t& /*from*/,
+        const media_stream_t& /*to*/, const media_topology_t&) 
     {assert_(false);}
     // activate function can throw;
     // activate function searches the last set for a component and the new set

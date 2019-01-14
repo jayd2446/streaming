@@ -31,26 +31,48 @@ stream_worker_t sink_audio::create_worker_stream()
 
 
 stream_audio::stream_audio(const sink_audio_t& sink) : 
-    sink(sink), unavailable(0), running(false), media_stream_clock_sink(sink.get()), ran_once(false),
-    stopped(false)
+    sink(sink), unavailable(0), /*running(false),*/ 
+    media_stream_clock_sink(sink.get()), 
+    stop_point(std::numeric_limits<time_unit>::min()),
+    requesting(false), processing(false),
+    requests(0), max_requests(VIDEO_MAX_REQUESTS)
 {
 }
 
 void stream_audio::on_stream_start(time_unit)
 {
-    this->running = true;
-    this->ran_once = true;
+    this->requesting = this->processing = true;
+    this->topology = this->sink->session->get_current_topology();
 }
 
-void stream_audio::on_stream_stop(time_unit)
+void stream_audio::on_stream_stop(time_unit t)
 {
-    this->running = false;
-    this->stopped = true;
+    this->requesting = false;
+    this->stop_point = t;
 }
 
-void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
+void stream_audio::dispatch_request(const request_packet& incomplete_rp, bool no_drop)
 {
     assert_(this->unavailable <= 240);
+
+    // initiate the video request
+    scoped_lock lock(this->worker_streams_mutex);
+
+    const int requests = this->requests.load();
+    if(requests < this->max_requests || no_drop)
+    {
+        this->requests++;
+        this->unavailable = 0;
+
+        this->sink->session->begin_request_sample(this, incomplete_rp);
+        assert_(this->topology);
+    }
+    else
+    {
+        this->unavailable++;
+    }
+
+    /*assert_(this->unavailable <= 240);
     assert_(this->running);
 
     const int j = no_drop ? 0 : 1;
@@ -72,34 +94,33 @@ void stream_audio::dispatch_request(request_packet& rp, bool no_drop)
 
     assert_(!no_drop);
     std::cout << "--SAMPLE REQUEST DROPPED IN AUDIO_SINK--" << std::endl;
-    this->unavailable++;
+    this->unavailable++;*/
+}
+
+void stream_audio::dispatch_process()
+{
+    this->sink->session->begin_give_sample(this, this->topology);
 }
 
 void stream_audio::add_worker_stream(const stream_worker_t& worker_stream)
 {
     scoped_lock lock(this->worker_streams_mutex);
-    this->worker_streams.push_back(worker_stream);
-}
 
-media_stream::result_t stream_audio::request_sample_last(time_unit t)
-{
-    request_packet rp;
-    rp.request_time = t;
-    rp.timestamp = t;
+    worker_stream->set_max_requests(VIDEO_MAX_REQUESTS);
+    worker_stream->not_used();
 
-    this->dispatch_request(rp, true);
-    return OK;
-}
-
-media_stream::result_t stream_audio::request_sample(
-    request_packet& rp, const media_stream*)
-{
-    this->dispatch_request(rp);
-    return OK;
+    this->worker_stream = worker_stream;
 }
 
 media_stream::result_t stream_audio::process_sample(
-    const media_sample&, request_packet&, const media_stream*)
+    const media_sample&, request_packet& rp, const media_stream*)
 {
+    this->requests--;
+
+    // the last request has been processed;
+    // stop further processing
+    if(rp.request_time == this->stop_point)
+        this->processing = false;
+
     return OK;
 }

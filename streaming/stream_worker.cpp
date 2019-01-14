@@ -1,7 +1,7 @@
 #include "stream_worker.h"
 
 stream_worker::stream_worker(const media_component_t& component) : 
-    component(component), max_requests(DEFAULT_MAX_REQUESTS), requests(0),
+    component(component), /*max_requests(DEFAULT_MAX_REQUESTS), */requests(0),
     is_used(true)
 {
 }
@@ -18,10 +18,10 @@ media_stream::result_t stream_worker::request_sample(request_packet& rp, const m
         assert_(this->requests >= 0);
 
         this->requests++;
-        this->component->session->request_sample(this, rp, true);
+        this->component->session->request_sample(this, rp);
     }
     else
-        this->component->session->request_sample(this, rp, false);
+        this->component->session->request_sample(this, rp);
 
     return OK;
 }
@@ -38,7 +38,7 @@ media_stream::result_t stream_worker::process_sample(
 
         this->unlock();
     }
-    this->component->session->give_sample(this, sample, rp, false);
+    this->component->session->give_sample(this, sample, rp);
 
     return OK;
 }

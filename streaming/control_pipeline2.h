@@ -7,9 +7,8 @@
 #include "transform_aac_encoder.h"
 #include "transform_h264_encoder.h"
 #include "transform_color_converter.h"
-#include "transform_audiomixer.h"
-//#include "transform_videoprocessor2.h"
 #include "transform_videomixer.h"
+#include "transform_audiomixer2.h"
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
 #include "sink_preview2.h"
@@ -36,7 +35,9 @@ class control_pipeline2 : public control_class
     friend class control_scene2;
 private:
     // restart audio mixer is used so that the audio is cut when recording starts/stops
-    bool recording, restart_audiomixer;
+    // TODO: make use of restart_videomixer;
+    // TODO: actually, restart audiomixer and videomixer can be removed after refactor
+    bool recording, restart_audiomixer, restart_videomixer;
     HWND preview_hwnd;
     CHandle stopped_signal;
     std::recursive_mutex pipeline_mutex;
@@ -44,13 +45,11 @@ private:
     presentation_time_source_t time_source;
     media_topology_t video_topology, audio_topology;
     // these components are present in every scene
-    // TODO: videomixer transform should have a restart flag aswell
     transform_videomixer_t videomixer_transform;
-    /*transform_videoprocessor2_t videoprocessor_transform;*/
     transform_h264_encoder_t h264_encoder_transform;
     transform_color_converter_t color_converter_transform;
     transform_aac_encoder_t aac_encoder_transform;
-    transform_audiomixer_t audiomixer_transform;
+    transform_audiomixer2_t audiomixer_transform;
     sink_preview2_t preview_sink;
     sink_mp4_t mp4_sink;
     sink_mpeg2_t mpeg_sink;

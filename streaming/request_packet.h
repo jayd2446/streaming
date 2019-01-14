@@ -41,10 +41,17 @@ public:
         // prev_stream really cannot be used because it excludes multi-input streams
         /*const media_stream* prev_stream;*/
         request_packet rp;
+        // TODO: rename to args and args_t
         sample_t sample;
 
-        request_t() {}
-        // TODO: decide if just remove the explicit defaults
+        request_t() = default;
+        // TODO: decide if just remove the explicit defaults;
+        // if there are no user defined special constructors apart from the 'constructor',
+        // the move constructor should be implicitly declared;
+        // same goes for the move assignment
+
+        // implicit copy constructor and assignment are deleted if move semantics are
+        // explicitly declared
         request_t(const request_t&) = default;
         request_t& operator=(const request_t&) = default;
         request_t(request_t&&) = default;
@@ -68,7 +75,8 @@ public:
     void initialize_queue(const request_packet&);
 
     // rp needs to be valid;
-    // if a request with the same packet number already exists, the old request is replaced
+    // if a request with the same packet number already exists, the old request is replaced;
+    // NOTE: push is slow for non trivial arg types
     void push(const request_t&);
     // pop will use move semantics
     bool pop(request_t&);

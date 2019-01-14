@@ -47,14 +47,18 @@ void control_scene2::build_video_topology(const media_stream_t& from,
     }
 }
 
-void control_scene2::build_audio_topology_branch(
+void control_scene2::build_audio_topology_branch(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
     if(this->disabled)
         return;
 
-    bool no_audio = true;
+    stream_audiomixer2_base_t audiomixer_stream =
+        std::dynamic_pointer_cast<stream_audiomixer2_base>(to);
+    if(!audiomixer_stream)
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
+    bool no_audio = true;
     // build the subscene audio topology
     for(auto&& elem : this->video_controls)
     {
@@ -62,7 +66,7 @@ void control_scene2::build_audio_topology_branch(
         if(scene && !scene->disabled)
         {
             no_audio = false;
-            scene->build_audio_topology_branch(to, topology);
+            scene->build_audio_topology_branch(from, audiomixer_stream, topology);
         }
     }
 
@@ -72,7 +76,7 @@ void control_scene2::build_audio_topology_branch(
             continue;
 
         no_audio = false;
-        elem->build_audio_topology_branch(to, topology);
+        elem->build_audio_topology_branch(from, audiomixer_stream, topology);
     }
 
     if(no_audio)
@@ -80,8 +84,8 @@ void control_scene2::build_audio_topology_branch(
         source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
         media_stream_t empty_stream = empty_source->create_stream();
 
-        // empty_stream->connect_streams(from, topology)
-        to->connect_streams(empty_stream, topology);
+        empty_stream->connect_streams(from, topology);
+        audiomixer_stream->connect_streams(empty_stream, NULL, topology);
     }
 }
 

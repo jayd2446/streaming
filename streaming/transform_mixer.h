@@ -12,74 +12,47 @@
 #include <algorithm>
 #include <mutex>
 #include <iostream>
+#include <atomic>
 
-// TODO: mixer could be converted to set the cut point on stream stop and
-// move the leftover and cutoff point to stream, if sample rate converter
-// is moved to source for audio;
-// the sample rate converter could be an utility class so that the pipeline will have
-// same frame rate;
+// on stream stop the component should serve requests to the request point, so that
+// a component that might stop receives enough samples
 
-// in principle, on stream stop the component should serve requests to the request point, so that
-// a component that might stop receives enough samples;
-// TODO: the wasapi source needs to serve samples up to the request point on stream stop so that
-// the mixer gets enough samples on component stop
-
-/*
-
-on stream stop event every source should serve samples up to the request time point
-(or not(TODO: decide on this));
-the user params controller will be affected by this choice
-
-on component stop the source should serve requests up to the stop point
-
-requests are processed and served in chronological order
-
-derived class is given a range of frame units and it will handle the actual mixing
-
-
-left over buffer is the size of input streams
-
-*/
+// TODO: remove z order in video mixer
+// TODO: investigate reserve calls
 
 template<class TransformMixer> 
 class stream_mixer;
 
-template<class Sample, class UserParamsController, class OutSample>
+template<class InArg, class UserParamsController, class OutArg>
 class transform_mixer : public media_source
 {
-    friend class stream_mixer<transform_mixer<Sample, UserParamsController, OutSample>>;
+    friend class stream_mixer<transform_mixer<InArg, UserParamsController, OutArg>>;
 public:
-    typedef stream_mixer<transform_mixer<Sample, UserParamsController, OutSample>> stream_mixer;
+    typedef stream_mixer<transform_mixer<InArg, UserParamsController, OutArg>> stream_mixer;
     typedef std::shared_ptr<stream_mixer> stream_mixer_t;
-    typedef std::lock_guard<std::mutex> scoped_lock;
-    typedef Sample sample_t;
-    typedef OutSample out_sample_t;
+    typedef InArg in_arg_t;
+    typedef OutArg out_arg_t;
     typedef std::shared_ptr<UserParamsController> user_params_controller_t;
     typedef typename UserParamsController::params_t user_params_t;
 
+    // since the packet_t is copied to the leftover buffer, it should be lightweight;
+    // packet_t is the augmented args for each input stream
     struct packet_t
     {
         media_stream* input_stream;
-        sample_t sample;
+        in_arg_t arg;
         bool valid_user_params;
         user_params_t user_params;
+        size_t stream_index;
     };
-    struct request_t
+    struct args_t
     {
-        bool drain;
-        time_unit drain_point;
-        unsigned short samples_received;
         std::vector<packet_t> container;
     };
-    //typedef std::pair<size_t /*samples received*/, std::vector<packet_t>> request_t;
+    typedef std::pair<unsigned short /*samples received*/, args_t> request_t;
 private:
     bool initialized;
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
-
-    // frames below cutoff are dismissed
-    frame_unit cutoff;
-    request_t leftover;
-    std::mutex mutex;
 protected:
     // derived class must call this
     void initialize(frame_unit frame_rate_num, frame_unit frame_rate_den);
@@ -100,11 +73,12 @@ class stream_mixer : public media_stream_clock_sink
 public:
     typedef TransformMixer transform_mixer;
     typedef std::shared_ptr<transform_mixer> transform_mixer_t;
-    typedef typename transform_mixer::sample_t sample_t;
-    typedef typename transform_mixer::out_sample_t out_sample_t;
+    typedef typename transform_mixer::in_arg_t in_arg_t;
+    typedef typename transform_mixer::out_arg_t out_arg_t;
     typedef typename transform_mixer::user_params_controller_t user_params_controller_t;
     typedef typename transform_mixer::user_params_t user_params_t;
     typedef typename transform_mixer::packet_t packet_t;
+    typedef typename transform_mixer::args_t args_t;
     typedef typename transform_mixer::request_t request_t;
 
     struct input_stream_props_t
@@ -112,35 +86,35 @@ public:
         media_stream* input_stream;
         user_params_controller_t user_params_controller;
     };
+
     typedef request_queue<request_t> request_queue;
 private:
     transform_mixer_t transform;
-    time_unit drain_point;
+    std::atomic<time_unit> drain_point;
     std::vector<input_stream_props_t> input_streams_props;
     request_queue requests;
 
-    void on_component_start(time_unit);
-    void on_component_stop(time_unit);
-    /*void on_stream_start(time_unit);
-    void on_stream_stop(time_unit);*/
+    // frames below cutoff are dismissed
+    frame_unit cutoff;
+    std::unique_ptr<args_t[]> leftover;
 
-    // TODO: on drain(component stop), the cutoff should be at the component stop point
+    void on_stream_start(time_unit);
+    void on_stream_stop(time_unit);
 
     // converts by using the frame rate in component
     frame_unit convert_to_frame_unit(time_unit);
-    void initialize_packet(packet_t&, size_t input_stream_index);
-    frame_unit find_common_frame_end(const request_t&);
-    void process(typename request_queue::request_t&);
+    void initialize_packet(packet_t&);
+    frame_unit find_common_frame_end(const args_t&);
+    void process(typename request_queue::request_t&, bool drain);
 protected:
-    // moves all frames from the old_sample buffer to the sample buffer up to end(exclusive)
-    // and updates the fields for sample&old_sample;
-    // the old_sample is assumed to be non null;
-    // returns whether the old_sample became null(all frames were moved)
-    virtual bool move_frames(sample_t& sample, sample_t& old_sample, frame_unit end) = 0;
-    // mixes all the frames in the request;
-    // end is not mixed;
-    // mix function needs to sort the request_t list
-    virtual void mix(out_sample_t& sample, request_t&, frame_unit first, frame_unit end) = 0;
+    // moves all frames from the sample in old_in_arg to the sample in in_arg up to end
+    // and updates the fields for in_arg and old_in_arg;
+    // the sample in old_in_arg is assumed to be non null;
+    // returns whether the old_in_arg became null(all frames were moved);
+    // discarded flags indicates whether the sample is immediately discarded
+    virtual bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded) = 0;
+    // mixes all the frames in args to out up to end
+    virtual void mix(out_arg_t& out, args_t&, frame_unit first, frame_unit end) = 0;
 public:
     explicit stream_mixer(const transform_mixer_t& transform);
     virtual ~stream_mixer() {}
@@ -190,50 +164,27 @@ template<class T>
 stream_mixer<T>::stream_mixer(const transform_mixer_t& transform) :
     media_stream_clock_sink(transform.get()),
     transform(transform),
-    drain_point(std::numeric_limits<time_unit>::min())
+    drain_point(std::numeric_limits<time_unit>::min()),
+    cutoff(std::numeric_limits<time_unit>::min())
 {
 }
 
 template<class T>
-void stream_mixer<T>::on_component_start(time_unit t)
+void stream_mixer<T>::on_stream_start(time_unit t)
 {
     assert_(this->transform->initialized);
-    this->transform->cutoff = this->convert_to_frame_unit(t);
+    this->cutoff = this->convert_to_frame_unit(t);
+
+    // initialize the leftover buffer
+    assert_(this->input_streams_props.size() > 0);
+    this->leftover.reset(new args_t[this->input_streams_props.size()]);
 }
 
 template<class T>
-void stream_mixer<T>::on_component_stop(time_unit t)
+void stream_mixer<T>::on_stream_stop(time_unit t)
 {
     this->drain_point = t;
 }
-
-//template<class T, class U>
-//void stream_mixer<T, U>::on_stream_start(time_unit t)
-//{
-//    // initialize the leftover buffer
-//    this->leftover.first = this->input_streams_props.size();
-//    this->leftover.second.reset(new packet_t[this->input_streams_props.size()]);
-//    for(size_t i = 0; i < this->input_streams_props.size(); i++)
-//        this->initialize_packet(this->leftover.second[i], i);
-//
-//    // allocate the output buffer
-//    this->output.first = this->input_streams_props.size();
-//    this->output.second.reset(new packet_t[this->input_streams_props.size()]);
-//
-//    // set the first cutoff point
-//    assert_(this->transform->initialized);
-//    this->cutoff = this->transform->last_stream_stop;
-//}
-
-//template<class T, class U>
-//void stream_mixer<T, U>::on_stream_stop(time_unit t)
-//{
-//    // set the last stream pos for component
-//    assert_(component);
-//    assert_(this->transform->initialized);
-//
-//    this->transform->last_stream_stop = this->convert_to_frame_unit(t);
-//}
 
 template<class T>
 frame_unit stream_mixer<T>::convert_to_frame_unit(time_unit t)
@@ -245,27 +196,37 @@ frame_unit stream_mixer<T>::convert_to_frame_unit(time_unit t)
 }
 
 template<class T>
-void stream_mixer<T>::initialize_packet(packet_t& packet, size_t input_stream_index)
+void stream_mixer<T>::initialize_packet(packet_t& packet)
 {
-    assert_(input_stream_index < this->input_streams_props.size());
-
-    packet.input_stream = this->input_streams_props[input_stream_index].input_stream;
-    packet.valid_user_params = !!this->input_streams_props[input_stream_index].user_params_controller;
+    packet.input_stream = this->input_streams_props[packet.stream_index].input_stream;
+    packet.valid_user_params = !!this->input_streams_props[packet.stream_index].user_params_controller;
     if(packet.valid_user_params)
-        this->input_streams_props[input_stream_index].user_params_controller->get_params(
+        this->input_streams_props[packet.stream_index].user_params_controller->get_params(
             packet.user_params);
 }
 
 template<class T>
-frame_unit stream_mixer<T>::find_common_frame_end(const request_t& request)
+frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args)
 {
-    assert_(!request.container.empty());
+    assert_(args.container.size() == this->input_streams_props.size());
 
     frame_unit frame_end = std::numeric_limits<frame_unit>::max();
-    for(auto&& item : request.container)
+    for(size_t i = 0; i < this->input_streams_props.size(); i++)
     {
-        if(!item.sample.is_null())
-            frame_end = std::min(frame_end, item.sample.frame_end);
+        frame_unit leftover_frame_end = std::numeric_limits<frame_unit>::min();
+        bool leftover_found = false;
+        for(auto&& item : this->leftover[i].container)
+        {
+            assert_(item.arg);
+            leftover_found = true;
+            leftover_frame_end = std::max(leftover_frame_end, item.arg->frame_end);
+        }
+
+        auto&& item = args.container[i];
+        if(item.arg)
+            frame_end = std::min(frame_end, std::max(item.arg->frame_end, leftover_frame_end));
+        else if(leftover_found)
+            frame_end = std::min(frame_end, leftover_frame_end);
         else
             // common frame end cannot be found if a request is lacking samples
             return std::numeric_limits<frame_unit>::min();
@@ -275,75 +236,75 @@ frame_unit stream_mixer<T>::find_common_frame_end(const request_t& request)
 }
 
 template<class T>
-void stream_mixer<T>::process(typename request_queue::request_t& request)
+void stream_mixer<T>::process(typename request_queue::request_t& request, bool drain)
 {
-    assert_(!request.sample.container.empty());
+    assert_(request.sample.second.container.size() == this->input_streams_props.size());
 
-    request_t& packets = request.sample;
-    frame_unit old_cutoff, new_cutoff;
-
+    args_t& packets = request.sample.second;
+    const frame_unit old_cutoff = this->cutoff;
+    this->cutoff = std::max(this->find_common_frame_end(packets), old_cutoff);
+    if(drain)
     {
-        typename transform_mixer::scoped_lock lock(this->transform->mutex);
-
-        // audio mixer shouldn't set the cutoff point on stream stop; only on component stop
-
-        // add the left over buffer to the request
-        std::move(this->transform->leftover.container.begin(),
-            this->transform->leftover.container.end(),
-            std::back_inserter(packets.container));
-        this->transform->leftover.container.clear();
-        this->transform->leftover.container.reserve(packets.container.size());
-
-        // discard frames that are below the old cutoff point
-        for(auto&& item : packets.container)
-        {
-            // TODO: add print for all discarded frames
-            sample_t discarded_sample;
-            if(!item.sample.is_null())
-            {
-                const bool ret = 
-                    this->move_frames(discarded_sample, item.sample, this->transform->cutoff);
-                assert_((ret && item.sample.is_null()) || (!ret && !item.sample.is_null()));
-            }
-        }
-
-        new_cutoff = std::max(this->find_common_frame_end(packets), this->transform->cutoff);
-        if(packets.drain)
-        {
-            // the initialized value of new_cutoff above should be either lower or equal 
-            // to drain point, since the sources are allowed to serve samples up to the 
-            // request point only
-            new_cutoff = std::max(new_cutoff, this->convert_to_frame_unit(packets.drain_point));
-            std::cout << "drain on mixer" << std::endl;
-        }
-
-        // add frames to the output request that are between the old and the new cutoff point
-        for(auto&& item : packets.container)
-        {
-            sample_t new_sample;
-            if(!item.sample.is_null())
-            {
-                bool ret;
-                if(!(ret = this->move_frames(new_sample, item.sample, new_cutoff)))
-                    // assign the rest of the old sample to the leftover buffer
-                    this->transform->leftover.container.push_back(item);
-                assert_((ret && item.sample.is_null()) || (!ret && !item.sample.is_null()));
-            }
-
-            // assign the new sample to the request
-            item.sample = new_sample;
-        }
-
-        old_cutoff = this->transform->cutoff;
-        this->transform->cutoff = new_cutoff;
+        const frame_unit drain_cutoff = this->convert_to_frame_unit(request.rp.request_time);
+        // the initialized value of new_cutoff above should be either lower or equal 
+        // to drain point, since the sources are allowed to serve samples up to the 
+        // request point only;
+        // for no gaps in the stream, the drain cutoff should be the same as new_cutoff
+        assert_(drain_cutoff >= this->cutoff);
+        if(drain_cutoff > this->cutoff)
+            std::cout << "warning: a source didn't serve samples up to the drain point" << std::endl;
+        this->cutoff = drain_cutoff;
+        std::cout << "drain on mixer" << std::endl;
     }
 
-    out_sample_t out_sample;
-    assert_(old_cutoff <= new_cutoff);
-    this->mix(out_sample, packets, old_cutoff, new_cutoff);
+    // move the leftover packets to the request
+    for(size_t i = 0; i < this->input_streams_props.size(); i++)
+    {
+        std::move(this->leftover[i].container.begin(),
+            this->leftover[i].container.end(),
+            std::back_inserter(packets.container));
+        this->leftover[i].container.clear();
+    }
+
+    // discard frames that are below the old cutoff point
+    for(auto&& item : packets.container)
+    {
+        in_arg_t discarded;
+        if(item.arg)
+        {
+            const bool ret = 
+                this->move_frames(discarded, item.arg, old_cutoff, true);
+            /*assert_((ret && item.sample.is_null()) || (!ret && !item.sample.is_null()));*/
+        }
+    }
+
+    // add frames to the output request that are between the old and the new cutoff point
+    for(auto&& item : packets.container)
+    {
+        in_arg_t new_arg;
+
+        if(item.arg)
+        {
+            bool ret;
+            if(!(ret = this->move_frames(new_arg, item.arg, this->cutoff, false)))
+                // assign the item to the leftover buffer since it was only partly moved
+                this->leftover[item.stream_index].container.push_back(item);
+            // TODO: re enable the asserts once video mixer properly sets the properties
+            // of the input args
+            /*assert_((ret && item.sample.is_null()) || (!ret && !item.sample.is_null()));*/
+        }
+
+        // assign the processed arg to the request
+        item.arg = new_arg;
+    }
+
+    out_arg_t out;
+    assert_(old_cutoff <= this->cutoff);
+    this->mix(out, packets, old_cutoff, this->cutoff);
 
     this->unlock();
-    this->transform->session->give_sample(request.stream, out_sample, request.rp, false);
+    this->transform->session->give_sample(request.stream, 
+        reinterpret_cast<const media_sample&>(out), request.rp);
 }
 
 template<class T>
@@ -364,39 +325,41 @@ typename stream_mixer<T>::result_t stream_mixer<T>::request_sample(
 {
     this->requests.initialize_queue(rp);
 
-    // build the request partially
-    request_t packets;
-    packets.samples_received = 0;
-    packets.drain = (this->drain_point == rp.request_time);
-    packets.drain_point = this->drain_point;
+    // push the request partially
+    {
+        typename request_queue::request_t request;
+        request.rp = rp;
+        request.stream = this;
+        this->requests.push(request);
+    }
+    typename request_queue::request_t* request = this->requests.get(rp.packet_number);
+    assert_(request->sample.second.container.empty());
+
+    request->sample.first = 0;
+    args_t& packets = request->sample.second;
+
     // reserve twice the size to accommodate for leftover buffer merging
     packets.container.reserve(this->input_streams_props.size() * 2);
     for(size_t i = 0; i < this->input_streams_props.size(); i++)
     {
         packet_t packet;
-        this->initialize_packet(packet, i);
-        packets.container.push_back(std::move(packet));
+        packet.stream_index = i;
+        this->initialize_packet(packet);
+        packets.container.push_back(packet);
     }
 
-    // add the new request to the queue
-    typename request_queue::request_t request;
-    request.rp = rp;
-    request.stream = this;
-    request.sample = packets;
-    this->requests.push(request);
-
-    if(!this->transform->session->request_sample(this, rp, false))
+    if(!this->transform->session->request_sample(this, rp))
         return FATAL_ERROR;
     return OK;
 }
 
 template<class T>
 typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
-    const media_sample& sample_, request_packet& rp, const media_stream* prev_stream)
+    const media_sample& arg_, request_packet& rp, const media_stream* prev_stream)
 {
     this->lock();
 
-    const sample_t& sample = static_cast<const sample_t&>(sample_);
+    const in_arg_t& arg = reinterpret_cast<const in_arg_t&>(arg_);
     typename request_queue::request_t* request = this->requests.get(rp.packet_number);
     assert_(request);
 
@@ -404,11 +367,11 @@ typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
 
     // find the right packet from the list and assign the sample to it
     bool found = false;
-    for(auto&& item : request->sample.container)
-        if(item.input_stream == prev_stream && item.sample.timestamp == -1)
+    for(auto&& item : request->sample.second.container)
+        if(item.input_stream == prev_stream && !item.arg)
         {
-            request->sample.samples_received++;
-            item.sample = sample;
+            request->sample.first++;
+            item.arg = arg;
             found = true;
             break;
         };
@@ -417,7 +380,7 @@ typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
     // dispatch all requests that are ready
     for(typename request_queue::request_t* next_request = this->requests.get();
         next_request && 
-        (size_t)next_request->sample.samples_received == this->input_streams_props.size();
+        (size_t)next_request->sample.first == this->input_streams_props.size();
         next_request = this->requests.get())
     {
         assert_(next_request->stream == this);
@@ -425,7 +388,7 @@ typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
         typename request_queue::request_t request;
         this->requests.pop(request);
 
-        this->process(request);
+        this->process(request, (request.rp.request_time == this->drain_point.load()));
 
         this->lock();
     }

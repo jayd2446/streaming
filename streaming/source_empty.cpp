@@ -2,7 +2,6 @@
 #include "transform_aac_encoder.h"
 #include "transform_h264_encoder.h"
 #include "transform_videomixer.h"
-#include "transform_audioprocessor.h"
 #include <Mferror.h>
 
 source_empty_audio::source_empty_audio(const media_session_t& session) : media_source(session)
@@ -21,7 +20,7 @@ media_stream_t source_empty_audio::create_stream()
 
 
 stream_empty_audio::stream_empty_audio(const source_empty_audio_t& source) :
-    source(source), buffer(new media_buffer_samples)
+    source(source)
 {
     this->callback.Attach(new async_callback_t(&stream_empty_audio::callback_f));
 }
@@ -30,28 +29,23 @@ void stream_empty_audio::callback_f(void*)
 {
     request_packet rp = std::move(this->rp);
 
-    const double frame_duration = SECOND_IN_TIME_UNIT / (double)transform_aac_encoder::sample_rate;
-    media_sample_audio audio(media_buffer_samples_t(this->buffer));
-    audio.timestamp = rp.request_time;
-    audio.bit_depth = sizeof(transform_audioprocessor::bit_depth_t) * 8;
-    audio.channels = transform_aac_encoder::channels;
-    audio.sample_rate = transform_aac_encoder::sample_rate;
-    audio.frame_end = (frame_unit)(rp.request_time / frame_duration);
-    audio.silent = true;
+    this->unlock();
 
-    this->process_sample(audio, rp, NULL);
+    // TODO: the sample should be an audiomixer sample
+    media_component_audio_args_t args = std::make_optional<media_component_audio_args>();
+    args->frame_end = convert_to_frame_unit(rp.request_time,
+        transform_aac_encoder::sample_rate, 1);
+
+    this->source->session->give_sample(this, 
+        reinterpret_cast<const media_sample&>(args), rp);
 }
 
 media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, const media_stream*)
 {
-    this->rp = rp;
+    this->lock();
 
-    const HRESULT hr = this->callback->mf_put_work_item(
-        this->shared_from_this<stream_empty_audio>());
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw HR_EXCEPTION(hr);
-    else if(hr == MF_E_SHUTDOWN)
-        return FATAL_ERROR;
+    assert_(!this->rp.topology);
+    this->rp = rp;
 
     return OK;
 }
@@ -59,7 +53,20 @@ media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, co
 media_stream::result_t stream_empty_audio::process_sample(
     const media_sample& sample_view, request_packet& rp, const media_stream*)
 {
-    return this->source->session->give_sample(this, sample_view, rp, true) ? OK : FATAL_ERROR;
+    if(this->rp.topology)
+    {
+        const HRESULT hr = this->callback->mf_put_work_item(
+            this->shared_from_this<stream_empty_audio>());
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            throw HR_EXCEPTION(hr);
+        else if(hr == MF_E_SHUTDOWN)
+        {
+            this->unlock();
+            return FATAL_ERROR;
+        }
+    }
+
+    return OK;
 }
 
 
@@ -104,20 +111,21 @@ void stream_empty_video::callback_f(void*)
     params.source_m = params.dest_m = D2D1::Matrix3x2F::Identity();
     params.z_order = 0;
 
-    media_sample_videomixer sample(params);
-    sample.timestamp = rp.request_time;
-    sample.frame_end = convert_to_frame_unit(sample.timestamp,
+    media_component_videomixer_args_t args = 
+        std::make_optional<media_component_videomixer_args>(params);
+    args->frame_end = convert_to_frame_unit(rp.request_time,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
-    sample.frame_start = sample.frame_end - 1;
-    sample.silent = true;
 
-    this->source->session->give_sample(this, sample, rp, true);
+    this->source->session->give_sample(this, 
+        reinterpret_cast<const media_sample&>(args), rp);
 }
 
 media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
 {
     this->lock();
+
+    assert_(!this->rp.topology);
     this->rp = rp;
 
     return OK;

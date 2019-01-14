@@ -7,12 +7,13 @@
 
 control_wasapi::control_wasapi(control_set_t& active_controls, control_pipeline2& pipeline) :
     control_class(active_controls, pipeline.mutex),
+    audiomixer_params(new stream_audiomixer2_controller),
     pipeline(pipeline),
     reference(NULL)
 {
 }
 
-void control_wasapi::build_audio_topology_branch(
+void control_wasapi::build_audio_topology_branch(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
     if(!this->component)
@@ -20,29 +21,36 @@ void control_wasapi::build_audio_topology_branch(
 
     assert_(!this->disabled);
 
+    stream_audiomixer2_base_t audiomixer_stream =
+        std::dynamic_pointer_cast<stream_audiomixer2_base>(to);
+    if(!audiomixer_stream)
+        throw HR_EXCEPTION(E_UNEXPECTED);
+
     if(!this->reference)
     {
-        media_stream_t wasapi_stream = this->component->create_stream();
-        media_stream_t audioprocessor_stream = this->transform->create_stream(topology->get_clock());
+        media_stream_t wasapi_stream = this->component->create_stream(topology->get_clock());
 
-        audioprocessor_stream->connect_streams(wasapi_stream, topology);
-        to->connect_streams(audioprocessor_stream, topology);
+        wasapi_stream->connect_streams(from, topology);
+        audiomixer_stream->connect_streams(wasapi_stream, this->audiomixer_params, topology);
 
-        this->stream = audioprocessor_stream;
+        this->stream = wasapi_stream;
     }
     else
     {
         // the topology branch for the referenced control must have been established beforehand
         assert_(this->reference->stream);
         assert_(!this->stream);
-        to->connect_streams(this->reference->stream, topology);
+
+        // only connect from this stream to 'to' stream
+        // (since this a duplicate control from the original)
+        audiomixer_stream->connect_streams(
+            this->reference->stream, this->audiomixer_params, topology);
     }
 }
 
 void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_set)
 {
-    source_wasapi_t component;
-    transform_audioprocessor_t transform;
+    source_wasapi2_t component;
 
     this->stream = NULL;
     this->reference = NULL;
@@ -58,7 +66,6 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
             const control_wasapi* wasapi_control = (const control_wasapi*)control;
             this->reference = wasapi_control;
             component = wasapi_control->component;
-            transform = wasapi_control->transform;
 
             return true;
         }
@@ -74,7 +81,6 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
             {
                 const control_wasapi* wasapi_control = (const control_wasapi*)control;
                 component = wasapi_control->component;
-                transform = wasapi_control->transform;
 
                 return true;
             }
@@ -84,16 +90,12 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
         if(!component)
         {
             // create a new component since it was not found in the last or in the new set
-            source_wasapi_t wasapi_source(new source_wasapi(this->pipeline.audio_session));
-            transform_audioprocessor_t audioprocessor_transform(
-                new transform_audioprocessor(this->pipeline.audio_session));
+            source_wasapi2_t wasapi_source(new source_wasapi2(this->pipeline.audio_session));
 
             wasapi_source->initialize(this->pipeline.shared_from_this<control_pipeline2>(),
                 this->params.device_id, this->params.capture);
-            audioprocessor_transform->initialize();
 
             component = wasapi_source;
-            transform = audioprocessor_transform;
         }
     }
 
@@ -101,7 +103,6 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
 
 out:
     this->component = component;
-    this->transform = transform;
 }
 
 void control_wasapi::list_available_wasapi_params(

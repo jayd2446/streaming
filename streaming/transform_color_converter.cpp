@@ -161,38 +161,33 @@ void stream_color_converter::processing_cb(void*)
 {
     HRESULT hr = S_OK;
     media_buffer_texture_t output_buffer;
-    media_sample_video sample;
+    media_component_video_args_t args = std::make_optional<media_component_video_args>();
 
-    assert_(!this->pending_packet.sample.is_null() && !this->pending_packet.sample.silent);
-    // pass a null sample forward if the sample doesn't have textures
-    if(this->pending_packet.sample.is_null() || this->pending_packet.sample.silent)
-        goto done;
+    //assert_(!this->pending_packet.sample.is_null() && !this->pending_packet.sample.silent);
+    //// pass a null sample forward if the sample doesn't have textures
+    //if(this->pending_packet.sample.is_null() || this->pending_packet.sample.silent)
+    //    goto done;
 
     // get output buffer from the pool or create a new one
     {
         transform_color_converter::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
-        if(this->transform->texture_pool->container.empty())
+        
+        if(this->transform->texture_pool->is_empty())
         {
             // create new buffer
-            media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(
-                this->transform->texture_pool));
-            output_buffer = pooled_buffer->create_pooled_buffer();
+            output_buffer = this->transform->texture_pool->acquire_buffer();
             this->initialize_buffer(output_buffer);
             /*std::cout << "creating new..." << std::endl;*/
         }
         else
-        {
-            output_buffer = this->transform->texture_pool->container.top()->create_pooled_buffer();
-            this->transform->texture_pool->container.pop();
-            /*std::cout << "reusing..." << std::endl;*/
-        }
+            output_buffer = this->transform->texture_pool->acquire_buffer();
     }
 
     // scope is important here so that the context mutex is unlocked;
     // failure to unlock it before proceeding to next component
     // introduces a deadlock scenario
     {
-        CComPtr<ID3D11Texture2D> texture = this->pending_packet.sample.single_buffer->texture;
+        CComPtr<ID3D11Texture2D> texture = this->pending_packet.args->single_buffer->texture;
         assert_(texture);
 
         // create the output view
@@ -265,39 +260,42 @@ done:
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     }
 
-    sample = this->pending_packet.sample;
-    sample.single_buffer = output_buffer;
+    args = this->pending_packet.args;
+    args->single_buffer = output_buffer;
+    // set the args to null so that the sample can be reused
+    this->pending_packet.args.reset();
         
     request_packet rp = this->pending_packet.rp;
 
-    // reset the sample from the pending packet so it is unlocked
-    this->pending_packet.sample = media_sample_video();
+    // TODO: std move should be used
     // remove the rps so that there aren't any circular dependencies at shutdown
     this->pending_packet.rp = request_packet();
 
     // give the sample to downstream
     this->unlock();
-    this->transform->session->give_sample(this, sample, rp, false);
+    this->transform->session->give_sample(this, 
+        reinterpret_cast<const media_sample&>(args), rp);
 }
 
 media_stream::result_t stream_color_converter::request_sample(request_packet& rp, const media_stream*)
 {
-    if(!this->transform->session->request_sample(this, rp, false))
+    if(!this->transform->session->request_sample(this, rp))
         return FATAL_ERROR;
     return OK;
 }
 
 media_stream::result_t stream_color_converter::process_sample(
-    const media_sample& sample_, request_packet& rp, const media_stream*)
+    const media_sample& args_, request_packet& rp, const media_stream*)
 {
     this->lock();
 
-    const media_sample_video& sample = static_cast<const media_sample_video&>(sample_);
+    const media_component_video_args_t& args = 
+        reinterpret_cast<const media_component_video_args_t&>(args_);
 
     /*CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;*/
 
     this->pending_packet.rp = rp;
-    this->pending_packet.sample = sample;
+    this->pending_packet.args = args;
 
     this->processing_cb(NULL);
     return OK;

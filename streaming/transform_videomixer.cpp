@@ -99,43 +99,35 @@ media_buffer_texture_t stream_videomixer::acquire_buffer(
     const std::shared_ptr<transform_videomixer::buffer_pool>& pool)
 {
     transform_videomixer::buffer_pool::scoped_lock lock(pool->mutex);
-    if(pool->container.empty())
+    if(pool->is_empty())
     {
-        media_buffer_pooled_texture_t pooled_buffer(new media_buffer_pooled_texture(pool));
-        media_buffer_texture_t buffer = pooled_buffer->create_pooled_buffer();
+        media_buffer_texture_t buffer = pool->acquire_buffer();
         this->initialize_buffer(buffer);
-
         /*std::cout << "creating new..." << std::endl;*/
         return buffer;
     }
     else
     {
-        media_buffer_texture_t pooled_buffer = pool->container.top()->create_pooled_buffer();
-        pool->container.pop();
+        media_buffer_texture_t buffer = pool->acquire_buffer();
         /*std::cout << "reusing..." << std::endl;*/
-        return pooled_buffer;
+        return buffer;
     }
 }
 
-bool stream_videomixer::move_frames(sample_t& sample, sample_t& old_sample, frame_unit end)
+bool stream_videomixer::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end,
+    bool discarded)
 {
-    assert_(!old_sample.is_null());
+    assert_(old_in_arg);
     // TODO: allow multiple buffer
+
+    in_arg = std::make_optional<in_arg_t::value_type>();
 
     // the parameters of the old sample must be updated when moving frames;
     // aswell as the parameters for the new sample must be set
 
-    if(old_sample.frame_start < end)
+    if(old_in_arg->frame_end <= end)
     {
-        // TODO: old_sample cannot be moved with std move
-        // because it isn't a trivial class
-        sample = old_sample;
-
-        // make the old_sample null since its contents were moved
-        // TODO: decide if should make a function that sets the sample as null
-        old_sample.buffer = NULL;
-        old_sample.single_buffer = NULL;
-        old_sample.silent = false;
+        in_arg = std::move(old_in_arg);
 
         /*sample.single_buffer = std::move(old_sample.single_buffer);*/
 
@@ -147,39 +139,41 @@ bool stream_videomixer::move_frames(sample_t& sample, sample_t& old_sample, fram
     return false;
 }
 
-void stream_videomixer::mix(out_sample_t& sample, request_t& packets,
+void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     frame_unit first, frame_unit end)
 {
     // the samples in packets might be null
 
     assert_(!packets.container.empty());
 
-    // sort the packets list
-    std::sort(packets.container.begin(), packets.container.end(), 
-        [](const packet_t& a, const packet_t& b)
-    {
-        // invalid packets are ordered first
-        if(!a.valid_user_params || a.sample.is_null() || a.sample.silent)
-            return false;
-        if(!b.valid_user_params || b.sample.is_null() || b.sample.silent)
-            return true;
+    //// sort the packets list
+    //std::sort(packets.container.begin(), packets.container.end(), 
+    //    [](const packet_t& a, const packet_t& b)
+    //{
+    //    // invalid packets are ordered first
+    //    if(!a.valid_user_params || a.sample.is_null() || a.sample.silent)
+    //        return false;
+    //    if(!b.valid_user_params || b.sample.is_null() || b.sample.silent)
+    //        return true;
 
-        static_assert(sizeof(short) * 2 == sizeof(int), "wrong size");
+    //    static_assert(sizeof(short) * 2 == sizeof(int), "wrong size");
 
-        int z_order_a = a.user_params.z_order << (sizeof(short) * 8);
-        z_order_a |= a.sample.params.z_order;
+    //    int z_order_a = a.user_params.z_order << (sizeof(short) * 8);
+    //    z_order_a |= a.sample.params.z_order;
 
-        int z_order_b = b.user_params.z_order << (sizeof(short) * 8);
-        z_order_b |= b.sample.params.z_order;
+    //    int z_order_b = b.user_params.z_order << (sizeof(short) * 8);
+    //    z_order_b |= b.sample.params.z_order;
 
-        return (z_order_a < z_order_b);
-    });
+    //    return (z_order_a < z_order_b);
+    //});
 
     // TODO: use media_buffer_textures
 
     HRESULT hr = S_OK;
     media_buffer_texture_t output_buffer = this->acquire_buffer(this->transform->texture_pool);
-    const time_unit timestamp = packets.container[0].sample.timestamp;
+    const time_unit timestamp = convert_to_time_unit(first,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
     
     // draw
     this->d2d1devctx->SetTarget(output_buffer->bitmap);
@@ -193,11 +187,11 @@ void stream_videomixer::mix(out_sample_t& sample, request_t& packets,
     // TODO: for non variable fps, videomixer should allocate frames from first to end
     for(auto&& item : packets.container)
     {
-        if(item.sample.is_null() || item.sample.silent)
+        if(!item.arg || !item.arg->single_buffer || !item.arg->single_buffer->texture)
             continue;
 
-        CComPtr<ID3D11Texture2D> texture = item.sample.single_buffer->texture;
-        const stream_videomixer_controller::params_t& params = item.sample.params;
+        CComPtr<ID3D11Texture2D> texture = item.arg->single_buffer->texture;
+        const stream_videomixer_controller::params_t& params = item.arg->params;
         const stream_videomixer_controller::params_t& user_params =
             item.valid_user_params ? item.user_params : params;
 
@@ -308,13 +302,9 @@ done:
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     }
 
-    sample.frame_start = first;
-    sample.frame_end = end;
-    sample.silent = false;
-    sample.timestamp = timestamp;
-    sample.single_buffer = output_buffer;
-
-    // TODO: use sample video in color converter and encoder
+    out_arg = std::make_optional<out_arg_t::value_type>();
+    out_arg->frame_end = end;
+    out_arg->single_buffer = output_buffer;
 }
 
 

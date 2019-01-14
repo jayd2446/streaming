@@ -5,6 +5,9 @@
 #include "transform_videomixer.h"
 #include <vector>
 
+class control_pipeline2;
+typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
+
 class control_displaycapture : public control_video2
 {
     friend class control_scene2;
@@ -35,8 +38,6 @@ private:
 
     control_displaycapture(control_set_t& active_controls, control_pipeline2&);
 public:
-    /*stream_videoprocessor2_controller_t videoprocessor_params;*/
-
     // control_video2
     D2D1_RECT_F get_rectangle(bool dest_params) const;
 

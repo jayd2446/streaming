@@ -135,14 +135,12 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-void sink_preview2::draw_sample(const media_sample& sample_, request_packet&)
+void sink_preview2::draw_sample(const media_component_video_args_t& args, request_packet&)
 {
     if(!this->render)
         return;
 
     HRESULT hr = S_OK;
-
-    const media_sample_video& sample = static_cast<const media_sample_video&>(sample_);
     bool has_video_control = false;
     int highlighted_points;
     D2D1_RECT_F dest_rect;
@@ -167,12 +165,12 @@ void sink_preview2::draw_sample(const media_sample& sample_, request_packet&)
 out:
     // TODO: decide if the outlines are drawn even if the buffer is null;
     // the outlines should be drawn even when the sample is silent
-    if(!sample.is_null() && !sample.silent)
+    if(args && args->single_buffer)
     {
         using namespace D2D1;
         scoped_lock lock(this->d2d1_context_mutex);
 
-        CComPtr<ID3D11Texture2D> texture = sample.single_buffer->texture;
+        CComPtr<ID3D11Texture2D> texture = args->single_buffer->texture;
         D2D1_RECT_F preview_rect = this->get_preview_rect();
         bool invert;
 
@@ -416,12 +414,13 @@ stream_preview2::stream_preview2(const sink_preview2_t& sink) : sink(sink)
 
 media_stream::result_t stream_preview2::request_sample(request_packet& rp, const media_stream*)
 {
-    return this->sink->session->request_sample(this, rp, false) ? OK : FATAL_ERROR;
+    return this->sink->session->request_sample(this, rp) ? OK : FATAL_ERROR;
 }
 
 media_stream::result_t stream_preview2::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
+    const media_sample& args, request_packet& rp, const media_stream*)
 {
-    this->sink->draw_sample(sample_view, rp);
-    return this->sink->session->give_sample(this, sample_view, rp, false) ? OK : FATAL_ERROR;
+    this->sink->draw_sample(
+        reinterpret_cast<const media_component_video_args_t&>(args), rp);
+    return this->sink->session->give_sample(this, args, rp) ? OK : FATAL_ERROR;
 }

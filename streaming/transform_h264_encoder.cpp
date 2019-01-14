@@ -25,17 +25,17 @@ DEFINE_GUID(media_sample_tracker_guid,
 class media_buffer_wrapper : public IMFMediaBuffer, IUnknownImpl
 {
 private:
-    media_sample_video sample;
+    media_component_video_args args;
     D3D11_TEXTURE2D_DESC desc;
 public:
     explicit media_buffer_wrapper(const context_mutex_t& context_mutex,
-        const media_sample_video& sample,
+        const media_component_video_args& args,
         const CComPtr<IMF2DBuffer>& buffer2d) :
-        sample(sample)
+        args(args)
     {
         transform_h264_encoder::scoped_lock lock(*context_mutex);
 
-        this->sample.single_buffer->texture->GetDesc(&this->desc);
+        this->args.single_buffer->texture->GetDesc(&this->desc);
         assert_(this->desc.Format == DXGI_FORMAT_NV12);
 
         HRESULT hr = S_OK;
@@ -49,17 +49,17 @@ public:
         // was when the texture_buffer was firstly allocated
         // (input type for the encoder implies that the desc won't change)
         CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
-        if(!this->sample.single_buffer->texture_buffer)
+        if(!this->args.single_buffer->texture_buffer)
         {
-            this->sample.single_buffer->texture_buffer_length = len;
-            this->sample.single_buffer->texture_buffer.reset(
-                new BYTE[this->sample.single_buffer->texture_buffer_length]);
+            this->args.single_buffer->texture_buffer_length = len;
+            this->args.single_buffer->texture_buffer.reset(
+                new BYTE[this->args.single_buffer->texture_buffer_length]);
         }
 
-        assert_(len == this->sample.single_buffer->texture_buffer_length);
+        assert_(len == this->args.single_buffer->texture_buffer_length);
         CHECK_HR(hr = buffer2d->ContiguousCopyTo(
-            this->sample.single_buffer->texture_buffer.get(),
-            this->sample.single_buffer->texture_buffer_length));
+            this->args.single_buffer->texture_buffer.get(),
+            this->args.single_buffer->texture_buffer_length));
 
     done:
         if(FAILED(hr))
@@ -100,7 +100,7 @@ public:
         if(pcbCurrentLength)
             CHECK_HR(hr = this->GetCurrentLength(pcbCurrentLength));
 
-        *ppbBuffer = this->sample.single_buffer->texture_buffer.get();
+        *ppbBuffer = this->args.single_buffer->texture_buffer.get();
 
     done:
         return hr;
@@ -116,7 +116,7 @@ public:
         if(!pcbCurrentLength)
             CHECK_HR(hr = E_POINTER);
 
-        *pcbCurrentLength = this->sample.single_buffer->texture_buffer_length;
+        *pcbCurrentLength = this->args.single_buffer->texture_buffer_length;
 
     done:
         return hr;
@@ -138,9 +138,9 @@ class media_sample_tracker : public IUnknown, IUnknownImpl
 public:
     // TODO: when converting to multiple buffers, 
     // this probably should be a single texture buffer only
-    media_sample_video sample;
+    media_component_video_args args;
 
-    explicit media_sample_tracker(const media_sample_video& sample) : sample(sample) {}
+    explicit media_sample_tracker(const media_component_video_args& args) : args(args) {}
     ULONG STDMETHODCALLTYPE AddRef() { return IUnknownImpl::AddRef(); }
     ULONG STDMETHODCALLTYPE Release() { return IUnknownImpl::Release(); }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
@@ -278,7 +278,7 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     {
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
-            request.sample.sample.single_buffer->texture, 0, FALSE, &buffer));
+            request.sample.args->single_buffer->texture, 0, FALSE, &buffer));
     }
     else
     {
@@ -287,17 +287,17 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
 
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
             IID_ID3D11Texture2D,
-            request.sample.sample.single_buffer->texture, 0, FALSE, &dxgi_buffer));
+            request.sample.args->single_buffer->texture, 0, FALSE, &dxgi_buffer));
         CHECK_HR(hr = dxgi_buffer->QueryInterface(&buffer2d));
         buffer.Attach(new media_buffer_wrapper(
-            this->context_mutex, request.sample.sample, buffer2d));
+            this->context_mutex, *request.sample.args, buffer2d));
     }
 
     const LONGLONG sample_duration = (LONGLONG)
         (SECOND_IN_TIME_UNIT / (double)(frame_rate_num / frame_rate_den));
 
     // TODO: use multiple buffers
-    time_unit sample_time = convert_to_time_unit(request.sample.sample.frame_start,
+    time_unit sample_time = convert_to_time_unit(request.sample.args->frame_end - 1,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
     sample_time -= this->time_shift;
@@ -322,7 +322,7 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     /*else
         CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, FALSE));*/
     // add the tracker to the sample
-    sample_tracker.Attach(new media_sample_tracker(request.sample.sample));
+    sample_tracker.Attach(new media_sample_tracker(*request.sample.args));
     CHECK_HR(hr = sample->SetUnknown(media_sample_tracker_guid, sample_tracker));
 
     // feed the encoder
@@ -410,8 +410,15 @@ void transform_h264_encoder::processing_cb(void*)
     request_t request;
     while((this->encoder_requests || this->software) && this->requests.pop(request))
     {
+        // TODO: decide how to handle silent sample
+        assert_(request.sample.args);
+        assert_(request.sample.args->single_buffer);
+        assert_(request.sample.args->single_buffer->texture);
+
         /*assert_(request.sample.sample.buffer->texture);*/
-        const time_unit timestamp = request.sample.sample.timestamp;
+        const time_unit timestamp = convert_to_time_unit(request.sample.args->frame_end - 1,
+            transform_h264_encoder::frame_rate_num,
+            transform_h264_encoder::frame_rate_den);
 
         if(timestamp <= this->last_time_stamp && timestamp >= 0)
         {
@@ -420,34 +427,27 @@ void transform_h264_encoder::processing_cb(void*)
         }
 
     back:
-        // TODO: decide how to handle silent sample
-        assert_(!request.sample.sample.silent);
-        assert_(!request.sample.sample.is_null());
-        if(!request.sample.sample.is_null())
-            hr = this->feed_encoder(request);
+        hr = this->feed_encoder(request);
 
         if(timestamp >= 0)
             this->last_time_stamp = timestamp;
 
-        if(!request.sample.sample.is_null())
+        if(!this->software)
+            this->encoder_requests--;
+        else if(hr == MF_E_NOTACCEPTING)
         {
-            if(!this->software)
-                this->encoder_requests--;
-            else if(hr == MF_E_NOTACCEPTING)
-            {
-                this->process_output_cb(NULL);
-                goto back;
-            }
-            else if(SUCCEEDED(hr))
-            {
-                DWORD status;
-                CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
-                if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
-                    this->process_output_cb(NULL);
-            }
-            CHECK_HR(hr);
-            assert_(this->encoder_requests >= 0);
+            this->process_output_cb(NULL);
+            goto back;
         }
+        else if(SUCCEEDED(hr))
+        {
+            DWORD status;
+            CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
+            if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
+                this->process_output_cb(NULL);
+        }
+        CHECK_HR(hr);
+        assert_(this->encoder_requests >= 0);
 
         // event callback will dispatch the last request
         if(!request.sample.drain || this->software)
@@ -501,9 +501,9 @@ void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, 
 
     // reset the sample so that the contained buffer can be reused
     // (optional)
-    request.sample.sample = media_sample_video();
+    request.sample.args.reset();
 
-    this->session->give_sample(stream, sample, rp, false);
+    this->session->give_sample(stream, sample, rp);
 
 done:
     if(FAILED(hr))
@@ -577,7 +577,7 @@ void transform_h264_encoder::process_output_cb(void*)
         hr = sample->GetUnknown(media_sample_tracker_guid, __uuidof(IUnknown), (LPVOID*)&obj);
         if(SUCCEEDED(hr))
             // release the buffer so that it is available for reuse
-            static_cast<media_sample_tracker*>(obj.p)->sample.single_buffer = NULL;
+            static_cast<media_sample_tracker*>(obj.p)->args.single_buffer = NULL;
         else if(hr != MF_E_ATTRIBUTENOTFOUND)
             CHECK_HR(hr);
         hr = S_OK;
@@ -760,6 +760,7 @@ void stream_h264_encoder::on_component_start(time_unit t)
 
 void stream_h264_encoder::on_component_stop(time_unit t)
 {
+    // TODO: these locks should be reconsidered here
     this->lock();
     this->drain_point = t;
     this->unlock();
@@ -769,20 +770,20 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, c
 {
     this->transform->requests.initialize_queue(rp);
 
-    if(!this->transform->session->request_sample(this, rp, false))
+    if(!this->transform->session->request_sample(this, rp))
         return FATAL_ERROR;
     return OK;
 }
 
 media_stream::result_t stream_h264_encoder::process_sample(
-    const media_sample& sample_, request_packet& rp, const media_stream*)
+    const media_sample& args_, request_packet& rp, const media_stream*)
 {
     this->lock();
 
     transform_h264_encoder::request_t request;
     request.stream = this;
     request.sample.drain = (rp.request_time == this->drain_point);
-    request.sample.sample = static_cast<const media_sample_video&>(sample_);
+    request.sample.args = reinterpret_cast<const media_component_video_args_t&>(args_);
     request.rp = rp;
 
     this->transform->requests.push(request);

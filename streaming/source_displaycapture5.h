@@ -18,8 +18,8 @@
 
 class stream_displaycapture5;
 class stream_displaycapture5_pointer;
-class control_pipeline2;
-typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
+//class control_pipeline2;
+//typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
 typedef std::shared_ptr<stream_displaycapture5> stream_displaycapture5_t;
 typedef std::shared_ptr<stream_displaycapture5_pointer> stream_displaycapture5_pointer_t;
 
@@ -150,7 +150,7 @@ public:
         bool new_pointer_shape,
         const DXGI_OUTDUPL_POINTER_POSITION&,
         const D3D11_TEXTURE2D_DESC* desktop_desc,
-        media_sample_videomixer&,
+        media_component_videomixer_args_t&,
         source_displaycapture5::request_t&);
 
     result_t request_sample(request_packet&, const media_stream*);

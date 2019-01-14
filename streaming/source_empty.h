@@ -19,7 +19,6 @@ public:
     typedef async_callback<stream_empty_audio> async_callback_t;
 private:
     source_empty_audio_t source;
-    media_buffer_samples_t buffer;
     CComPtr<async_callback_t> callback;
     request_packet rp;
     void callback_f(void*);

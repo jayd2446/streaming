@@ -108,6 +108,8 @@ void stream_mpeg2::on_stream_start(time_unit t)
 
     this->requesting = this->processing = true;
 
+    this->topology = this->sink->session->get_current_topology();
+
     /*this->running = true;*/
     this->last_due_time = t;
     this->schedule_new(t);
@@ -129,17 +131,19 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
     this->sink->pending_audio_topology = NULL;
 
-    this->audio_sink_stream->request_sample_last(t);
+    // dispatch the last request
+    request_packet incomplete_rp;
+    incomplete_rp.request_time = t;
+    incomplete_rp.timestamp = t;
+    incomplete_rp.flags = 0;
+
+    this->audio_sink_stream->dispatch_request(incomplete_rp, true);
 }
 
 void stream_mpeg2::scheduled_callback(time_unit due_time)
 {
-    // this lock makes sure that the video and audio topology are
-    // switched at the same time
+    // this lock makes sure that the video and audio topology are switched at the same time
     scoped_lock lock(this->sink->topology_switch_mutex);
-
-    /*if(!this->running)
-        return;*/
 
     request_packet incomplete_rp;
     incomplete_rp.request_time = due_time;
@@ -152,10 +156,16 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     // match consecutive request times
     if(this->requesting)
         this->dispatch_request(incomplete_rp);
+    // TODO: performance might be increased if audio is processed in batches of
+    // aac encoder frame granularity
+    if(this->audio_sink_stream->requesting)
+        this->audio_sink_stream->dispatch_request(incomplete_rp);
     if(this->processing)
         this->dispatch_process();
+    if(this->audio_sink_stream->processing)
+        this->audio_sink_stream->dispatch_process();
 
-    if(this->requesting)
+    /*if(this->requesting)
     {
         using namespace std::chrono;
         time_unit_t t2(this->last_due_time), t(due_time);
@@ -167,50 +177,47 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
             this->last_due_time = due_time;
             this->audio_sink_stream->request_sample(incomplete_rp);
         }
-    }
+    }*/
 
-    if(this->processing)
+    // schedule new until both pipelines have stopped processing
+    if(this->processing || this->audio_sink_stream->processing)
         this->schedule_new(due_time);
 
-    if(!this->processing)
+    // TODO: this design oddity should be fixed
+    // because this stream controls the audio sink, this topology must be destroyed after
+    // the audio topology is destroyed
+    if(!this->processing && !this->audio_sink_stream->processing)
         // the topology must be explicitly set to null so that the circular dependency
         // between the topology and this stream is broken
         this->topology = NULL;
+    if(!this->audio_sink_stream->processing)
+        this->audio_sink_stream->topology = NULL;
+}
+
+bool stream_mpeg2::get_clock(presentation_clock_t& clock)
+{
+    assert_(this->topology);
+    clock = this->topology->get_clock();
+    return !!clock;
 }
 
 void stream_mpeg2::schedule_new(time_unit due_time)
 {
     presentation_clock_t t;
-    if(this->get_clock(t))
+    const bool ret = this->get_clock(t);
+    assert_(ret);
+
+    time_unit scheduled_time = this->get_next_due_time(due_time);
+    while(!this->schedule_new_callback<stream_mpeg2>(scheduled_time))
     {
-        time_unit scheduled_time = this->get_next_due_time(due_time);
-        while(!this->schedule_new_callback<stream_mpeg2>(scheduled_time))
-        {
-            this->discontinuity = true;
+        this->discontinuity = true;
 
-            const time_unit current_time = t->get_current_time();
-            scheduled_time = current_time;
+        const time_unit current_time = t->get_current_time();
+        scheduled_time = current_time;
 
-            // at least one frame request was late
-            std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
-            scheduled_time = this->get_next_due_time(scheduled_time);
-        }
-
-
-        //if(!this->schedule_new_callback<stream_mpeg2>(scheduled_time))
-        //{
-        //    this->discontinuity = true;
-        //    do
-        //    {
-        //        const time_unit current_time = t->get_current_time();
-        //        scheduled_time = current_time;
-
-        //        // at least one frame request was late
-        //        std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
-        //        scheduled_time = this->get_next_due_time(scheduled_time);
-        //    }
-        //    while(!this->schedule_new_callback<stream_mpeg2>(scheduled_time));
-        //}
+        // at least one frame request was late
+        std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
+        scheduled_time = this->get_next_due_time(scheduled_time);
     }
 }
 
@@ -222,12 +229,12 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
     scoped_lock lock(this->worker_streams_mutex);
 
     const int requests = this->requests.load();
-    if(requests < this->max_requests)
+    if(requests < this->max_requests || no_drop)
     {
         this->requests++;
         this->unavailable = 0;
 
-        this->topology = this->sink->session->begin_request_sample(this, incomplete_rp);
+        this->sink->session->begin_request_sample(this, incomplete_rp);
         assert_(this->topology);
 
         /*const result_t res = this->worker_stream->request_sample(rp, this);
@@ -263,12 +270,6 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
         }*/
 
         this->discontinuity = true;
-
-        // TODO: remove no drop since clock start and clock stop requests cannot
-        // be dropped anymore
-        if(no_drop)
-            std::cout << "TODO: NO DROP REQUEST DROPPED ";
-        std::cout << "--SAMPLE REQUEST DROPPED IN MPEG_SINK--" << std::endl;
         this->unavailable++;
     }
 }

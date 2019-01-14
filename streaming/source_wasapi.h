@@ -35,7 +35,6 @@ class source_wasapi : public media_source
 public:
     typedef async_callback<source_wasapi> async_callback_t;
     typedef std::lock_guard<std::mutex> scoped_lock;
-    typedef std::list<CComPtr<IMFSample>> buffer_t;
 
     // wasapi is always 32 bit float in shared mode
     typedef float bit_depth_t;

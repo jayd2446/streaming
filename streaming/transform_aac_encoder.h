@@ -8,15 +8,21 @@
 
 #pragma comment(lib, "Mfplat.lib")
 
+// the encoder probably could be separated to an utility class similar to resampler, but
+// there's no use for that
+
 // aac encoder only accepts 48khz and 2 channel audio
 
 class transform_aac_encoder : public media_source
 {
     friend class stream_aac_encoder;
 public:
+    typedef buffer_pool<media_buffer_memory_pooled> buffer_pool_memory_t;
+
     struct packet
     {
-        media_sample_audio audio;
+        media_component_aac_encoder_args_t args;
+        media_sample_aac_frames_t out_sample;
         bool drain;
     };
 
@@ -37,7 +43,8 @@ public:
         rate_196 = (192 * 1000) / 8
     };
     typedef int16_t bit_depth_t;
-    static const UINT32 block_align = sizeof(bit_depth_t) * channels;
+    static const UINT32 bit_depth = sizeof(bit_depth_t) * 8;
+    /*static const UINT32 block_align = sizeof(bit_depth_t) * channels;*/
 private:
     CComPtr<IMFTransform> encoder;
     CComPtr<IMFMediaType> input_type;
@@ -46,6 +53,10 @@ private:
 
     std::recursive_mutex encoder_mutex;
     request_queue requests;
+
+    std::vector<media_buffer_memory_t> memory_hosts;
+    std::shared_ptr<buffer_pool_memory_t> buffer_pool_memory;
+    media_sample_aac_frames_t encoded_audio;
 
     DWORD input_id, output_id;
 
@@ -57,12 +68,14 @@ private:
     // debug
     frame_unit last_time_stamp;
 
+    bool encode(const media_sample_audio_frames&, media_sample_aac_frames&, bool drain);
     void processing_cb(void*);
     bool process_output(IMFSample*);
 public:
     CComPtr<IMFMediaType> output_type;
 
     explicit transform_aac_encoder(const media_session_t& session);
+    ~transform_aac_encoder();
 
     void initialize(bitrate_t bitrate = rate_128);
     media_stream_t create_stream(presentation_clock_t&&);
@@ -72,8 +85,12 @@ typedef std::shared_ptr<transform_aac_encoder> transform_aac_encoder_t;
 
 class stream_aac_encoder : public media_stream_clock_sink
 {
+public:
+    typedef buffer_pool<media_sample_aac_frames_pooled> buffer_pool_aac_frames_t;
 private:
     transform_aac_encoder_t transform;
+
+    std::shared_ptr<buffer_pool_aac_frames_t> buffer_pool_aac_frames;
 
     time_unit drain_point;
 
@@ -81,6 +98,7 @@ private:
     void on_component_stop(time_unit);
 public:
     explicit stream_aac_encoder(const transform_aac_encoder_t& transform);
+    ~stream_aac_encoder();
 
     result_t request_sample(request_packet&, const media_stream*);
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);

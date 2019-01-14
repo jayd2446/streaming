@@ -61,7 +61,7 @@ class stream_mpeg2 : public media_stream_clock_sink, public presentation_clock_s
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef presentation_time_source::time_unit_t time_unit_t;
+    /*typedef presentation_time_source::time_unit_t time_unit_t;*/
 private:
     sink_mpeg2_t sink;
     volatile bool requesting, processing;
@@ -106,7 +106,7 @@ public:
     void add_worker_stream(const stream_worker_t& worker_stream);
 
     // presentation_clock_sink
-    bool get_clock(presentation_clock_t& c) {return this->sink->session->get_current_clock(c);}
+    bool get_clock(presentation_clock_t&);
     // media_stream
     result_t request_sample(request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);

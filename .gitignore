@@ -264,3 +264,4 @@ __pycache__/
 /streaming/scene_item.h
 /streaming/control_video.h
 /streaming/control_video.cpp
+*.rar

@@ -25,9 +25,9 @@ class sink_audio : public media_sink
     friend class stream_audio;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef std::chrono::duration<time_unit, 
+    /*typedef std::chrono::duration<time_unit, 
         std::ratio<transform_aac_encoder::input_frames, transform_aac_encoder::sample_rate>>
-        periodicity_t;
+        periodicity_t;*/
 private:
 public:
     explicit sink_audio(const media_session_t& session);
@@ -42,33 +42,44 @@ public:
 
 class stream_audio : public media_stream_clock_sink
 {
+    friend class stream_mpeg2;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     sink_audio_t sink;
-    bool running;
+    volatile bool requesting, processing;
+    /*bool running;*/
 
+    media_topology_t topology;
+    time_unit stop_point;
+
+    // TODO: obsolete
     std::recursive_mutex worker_streams_mutex;
-    std::vector<stream_worker_t> worker_streams;
+    // TODO: obsolete
+    stream_worker_t worker_stream;
+
+    std::atomic_int requests;
+    int max_requests;
 
     // for debug
     int unavailable;
-    bool ran_once, stopped;
+    /*bool ran_once, stopped;*/
 
     // media_stream_clock_sink
     void on_stream_start(time_unit);
     void on_stream_stop(time_unit);
 
-    void dispatch_request(request_packet&, bool no_drop = false);
+    void dispatch_request(const request_packet&, bool no_drop = false);
+    void dispatch_process();
 public:
     explicit stream_audio(const sink_audio_t& sink);
 
     void add_worker_stream(const stream_worker_t& worker_stream);
 
     // uses a special stream branch so that the request won't be dropped
-    result_t request_sample_last(time_unit);
+    /*result_t request_sample_last(time_unit);*/
 
     // media_stream
-    result_t request_sample(request_packet&, const media_stream* = NULL);
+    result_t request_sample(request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
     result_t process_sample(const media_sample&, request_packet&, const media_stream*);
 };

@@ -190,6 +190,7 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
             CComPtr<IMFAsyncResult> asyncresult;
             HRESULT hr;
 
+            // TODO: create the async result in function constructor
             if(FAILED(hr = MFCreateAsyncResult(NULL, &this->callback->native, NULL, &asyncresult)))
             {
                 if(hr == MF_E_SHUTDOWN)

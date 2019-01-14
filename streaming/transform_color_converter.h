@@ -46,7 +46,7 @@ class stream_color_converter : public media_stream
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<stream_color_converter> async_callback_t;
-    struct packet {request_packet rp; media_sample_video sample;};
+    struct packet {request_packet rp; media_component_video_args_t args;};
 private:
     transform_color_converter_t transform;
     CComPtr<ID3D11VideoProcessor> videoprocessor;

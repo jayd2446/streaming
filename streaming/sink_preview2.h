@@ -50,7 +50,7 @@ private:
     CComPtr<ID2D1SolidColorBrush> highlighted_brush;
     CComPtr<ID2D1StrokeStyle1> stroke_style;
 
-    void draw_sample(const media_sample& sample_, request_packet& rp);
+    void draw_sample(const media_component_video_args_t&, request_packet& rp);
 public:
     sink_preview2(const media_session_t& session, context_mutex_t context_mutex);
 
