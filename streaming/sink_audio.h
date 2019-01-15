@@ -1,7 +1,6 @@
 #pragma once
 #include "media_sink.h"
 #include "media_stream.h"
-#include "stream_worker.h"
 #include "request_packet.h"
 #include "async_callback.h"
 #include "output_file.h"
@@ -10,10 +9,6 @@
 #include <vector>
 #include <mutex>
 #include <chrono>
-
-#include <mfapi.h>
-#include <mfreadwrite.h>
-#include <mfidl.h>
 
 class sink_audio;
 class stream_audio;
@@ -25,9 +20,6 @@ class sink_audio : public media_sink
     friend class stream_audio;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    /*typedef std::chrono::duration<time_unit, 
-        std::ratio<transform_aac_encoder::input_frames, transform_aac_encoder::sample_rate>>
-        periodicity_t;*/
 private:
 public:
     explicit sink_audio(const media_session_t& session);
@@ -35,9 +27,6 @@ public:
     void initialize();
 
     stream_audio_t create_stream(presentation_clock_t&&);
-    // worker streams duplicate the topology so that individual branches can be
-    // multithreaded
-    stream_worker_t create_worker_stream();
 };
 
 class stream_audio : public media_stream_clock_sink
@@ -52,11 +41,6 @@ private:
 
     media_topology_t topology;
     time_unit stop_point;
-
-    // TODO: obsolete
-    std::recursive_mutex worker_streams_mutex;
-    // TODO: obsolete
-    stream_worker_t worker_stream;
 
     std::atomic_int requests;
     int max_requests;
@@ -74,12 +58,7 @@ private:
 public:
     explicit stream_audio(const sink_audio_t& sink);
 
-    void add_worker_stream(const stream_worker_t& worker_stream);
-
-    // uses a special stream branch so that the request won't be dropped
-    /*result_t request_sample_last(time_unit);*/
-
     // media_stream
-    result_t request_sample(request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };

@@ -1,7 +1,6 @@
 #pragma once
 #include "media_sink.h"
 #include "media_stream.h"
-#include "stream_worker.h"
 #include "request_packet.h"
 #include "async_callback.h"
 #include "sink_audio.h"
@@ -13,10 +12,6 @@
 #include <mutex>
 #include <chrono>
 #include <atomic>
-
-#include <mfapi.h>
-#include <mfreadwrite.h>
-#include <mfidl.h>
 
 class sink_mpeg2;
 class stream_mpeg2;
@@ -52,7 +47,6 @@ public:
         const media_topology_t& audio_topology);
 
     stream_mpeg2_t create_stream(presentation_clock_t&&, const stream_audio_t&);
-    stream_worker_t create_worker_stream();
 
     bool is_started() const {return this->started;}
 };
@@ -71,10 +65,6 @@ private:
     media_topology_t topology;
     time_unit stop_point;
 
-    // TODO: obsolete
-    std::recursive_mutex worker_streams_mutex;
-    // TODO: obsolete
-    stream_worker_t worker_stream;
     stream_audio_t audio_sink_stream;
     time_unit last_due_time;
 
@@ -103,11 +93,9 @@ public:
     stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&);
     ~stream_mpeg2();
 
-    void add_worker_stream(const stream_worker_t& worker_stream);
-
     // presentation_clock_sink
     bool get_clock(presentation_clock_t&);
     // media_stream
-    result_t request_sample(request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };

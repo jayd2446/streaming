@@ -130,9 +130,9 @@ public:
     void set_pointer_stream(const stream_displaycapture5_pointer_t& s) { this->pointer_stream = s; }
 
     // called by media session
-    result_t request_sample(request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
     // called by source_displaycapture
-    result_t process_sample(const media_sample&, request_packet&, const media_stream* = NULL);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
 class stream_displaycapture5_pointer : public media_stream
@@ -150,9 +150,9 @@ public:
         bool new_pointer_shape,
         const DXGI_OUTDUPL_POINTER_POSITION&,
         const D3D11_TEXTURE2D_DESC* desktop_desc,
-        media_component_videomixer_args_t&,
+        media_component_videomixer_args&,
         source_displaycapture5::request_t&);
 
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample&, request_packet&, const media_stream* = NULL);
+    result_t request_sample(const request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };

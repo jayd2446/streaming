@@ -18,7 +18,7 @@ control_pipeline2::control_pipeline2() :
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
     root_scene(controls, *this),
-    recording(false), restart_audiomixer(false)
+    recording(false)
 {
     this->root_scene.parent = this;
 
@@ -226,11 +226,8 @@ void control_pipeline2::activate_components()
 
     // create audiomixer transform
     if(!this->audiomixer_transform || 
-        this->audiomixer_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE ||
-        this->restart_audiomixer)
+        this->audiomixer_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
-        this->restart_audiomixer = false;
-
         transform_audiomixer2_t audiomixer_transform(new transform_audiomixer2(this->audio_session));
         audiomixer_transform->initialize();
 
@@ -347,60 +344,49 @@ void control_pipeline2::build_and_switch_topology()
     mpeg_stream->set_pull_rate(
         transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
 
-    // TODO: remove this and the loop when branching is no longer used
-    /*for(int i = 0; i < WORKER_STREAMS; i++)*/
+    // set the topology
+    media_stream_t preview_stream = this->preview_sink->create_stream();
+    stream_audiomixer2_base_t audiomixer_stream =
+        this->audiomixer_transform->create_stream(this->audio_topology->get_clock());
+    stream_videomixer_base_t videomixer_stream = 
+        this->videomixer_transform->create_stream(this->video_topology->get_clock());
+
+    this->root_scene.build_video_topology(
+        mpeg_stream, videomixer_stream, this->video_topology);
+    this->root_scene.build_audio_topology_branch(
+        audio_stream, audiomixer_stream, this->audio_topology);
+
+    preview_stream->connect_streams(videomixer_stream, this->video_topology);
+
+    if(!this->recording)
     {
-        stream_worker_t mpeg_worker_stream = this->mpeg_sink->create_worker_stream();
-        media_stream_t preview_stream = this->preview_sink->create_stream();
-        stream_worker_t audio_worker_stream = this->audio_sink->create_worker_stream();
-        stream_audiomixer2_base_t audiomixer_stream =
-            this->audiomixer_transform->create_stream(this->audio_topology->get_clock());
-        stream_videomixer_base_t videomixer_stream = 
-            this->videomixer_transform->create_stream(this->video_topology->get_clock());
+        mpeg_stream->connect_streams(preview_stream, this->video_topology);
+        audio_stream->connect_streams(audiomixer_stream, this->audio_topology);
+    }
+    else
+    {
+        media_stream_t encoder_stream_video =
+            this->h264_encoder_transform->create_stream(this->video_topology->get_clock());
+        media_stream_t color_converter_stream = this->color_converter_transform->create_stream();
+        media_stream_t mp4_stream_video = 
+            this->mp4_sink.first->create_stream(this->video_topology->get_clock());
+        media_stream_t encoder_stream_audio =
+            this->aac_encoder_transform->create_stream(this->audio_topology->get_clock());
+        media_stream_t mp4_stream_audio = 
+            this->mp4_sink.second->create_stream(this->audio_topology->get_clock());
 
-        mpeg_stream->add_worker_stream(mpeg_worker_stream);
-        audio_stream->add_worker_stream(audio_worker_stream);
+        // TODO: encoder stream is redundant
+        mpeg_stream->encoder_stream = 
+            std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream_video);
 
-        this->root_scene.build_video_topology(
-            mpeg_stream, videomixer_stream, this->video_topology);
-        this->root_scene.build_audio_topology_branch(
-            audio_stream, audiomixer_stream, this->audio_topology);
+        color_converter_stream->connect_streams(preview_stream, this->video_topology);
+        encoder_stream_video->connect_streams(color_converter_stream, this->video_topology);
+        mp4_stream_video->connect_streams(encoder_stream_video, this->video_topology);
+        mpeg_stream->connect_streams(mp4_stream_video, this->video_topology);
 
-        preview_stream->connect_streams(videomixer_stream, this->video_topology);
-
-        if(!this->recording)
-        {
-            mpeg_worker_stream->connect_streams(preview_stream, this->video_topology);
-            audio_worker_stream->connect_streams(audiomixer_stream, this->audio_topology);
-        }
-        else
-        {
-            media_stream_t encoder_stream_video =
-                this->h264_encoder_transform->create_stream(this->video_topology->get_clock());
-            media_stream_t color_converter_stream = this->color_converter_transform->create_stream();
-            media_stream_t mp4_stream_video = 
-                this->mp4_sink.first->create_stream(this->video_topology->get_clock());
-            media_stream_t encoder_stream_audio =
-                this->aac_encoder_transform->create_stream(this->audio_topology->get_clock());
-            media_stream_t mp4_stream_audio = 
-                this->mp4_sink.second->create_stream(this->audio_topology->get_clock());
-
-            // TODO: encoder stream is redundant
-            mpeg_stream->encoder_stream = 
-                std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream_video);
-
-            color_converter_stream->connect_streams(preview_stream, this->video_topology);
-            encoder_stream_video->connect_streams(color_converter_stream, this->video_topology);
-            mp4_stream_video->connect_streams(encoder_stream_video, this->video_topology);
-            mpeg_worker_stream->connect_streams(mp4_stream_video, this->video_topology);
-
-            encoder_stream_audio->connect_streams(audiomixer_stream, this->audio_topology);
-            mp4_stream_audio->connect_streams(encoder_stream_audio, this->audio_topology);
-            audio_worker_stream->connect_streams(mp4_stream_audio, this->audio_topology);
-        }
-
-        mpeg_stream->connect_streams(mpeg_worker_stream, this->video_topology);
-        audio_stream->connect_streams(audio_worker_stream, this->audio_topology);
+        encoder_stream_audio->connect_streams(audiomixer_stream, this->audio_topology);
+        mp4_stream_audio->connect_streams(encoder_stream_audio, this->audio_topology);
+        audio_stream->connect_streams(mp4_stream_audio, this->audio_topology);
     }
 
     // mpeg sink ensures atomic topology starting/switching for audio and video
@@ -439,7 +425,6 @@ HANDLE control_pipeline2::start_recording(const std::wstring& /*filename*/)
     if(!this->stopped_signal)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
-    this->restart_audiomixer = true;
     this->recording = true;
     control_class::activate();
 
@@ -450,7 +435,6 @@ HANDLE control_pipeline2::start_recording(const std::wstring& /*filename*/)
 
 void control_pipeline2::stop_recording()
 {
-    this->restart_audiomixer = true;
     this->recording = false;
     control_class::activate();
 

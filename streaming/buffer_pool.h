@@ -14,8 +14,6 @@
 #undef min
 #undef max
 
-// TODO: rename to sample pool
-
 template<class BufferPool, typename T = int>
 struct control_block_allocator
 {
@@ -95,6 +93,36 @@ public:
     // failure to dispose causes memory leak
     void dispose();
     bool is_disposed() const {return this->disposed;}
+};
+
+class buffer_poolable : public enable_shared_from_this
+{
+    // classes derived from poolable must implement uninitialize()
+private:
+public:
+    virtual ~buffer_poolable() {}
+};
+
+template<typename Poolable>
+class buffer_pooled : public Poolable
+{
+    friend class buffer_pool<buffer_pooled>;
+    // TODO: enable this assert once media_buffer and media_buffer_poolable are deleted
+    /*static_assert(std::is_base_of<poolable, media_buffer_pooled>::value,
+        "template parameter must inherit from poolable");*/
+public:
+    typedef Poolable buffer_raw_t;
+    typedef std::shared_ptr<Poolable> buffer_t;
+    typedef buffer_pool<buffer_pooled> buffer_pool;
+    typedef typename buffer_pool::state_t state_t;
+private:
+    std::shared_ptr<buffer_pool> pool;
+    std::shared_ptr<state_t> state;
+
+    void deleter(buffer_raw_t*);
+public:
+    explicit buffer_pooled(const std::shared_ptr<buffer_pool>& pool);
+    buffer_t create_pooled_buffer();
 };
 
 
@@ -196,5 +224,47 @@ void buffer_pool<T>::dispose()
         FREE_CONTROL_BLOCK(this->container.top()->state->control_block_ptr);
 
         this->container.pop();
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+template<typename T>
+buffer_pooled<T>::buffer_pooled(const std::shared_ptr<buffer_pool>& pool) :
+    pool(pool),
+    state(new state_t(pool))
+{
+}
+
+template<typename T>
+typename buffer_pooled<T>::buffer_t buffer_pooled<T>::create_pooled_buffer()
+{
+    // media_buffer_pooled will stay alive at least as long as the wrapped buffer is alive
+    using std::placeholders::_1;
+    auto deleter_f = std::bind(&buffer_pooled::deleter,
+        this->shared_from_this<buffer_pooled>(), _1);
+
+    // the custom allocator won't work if the shared ptr allocates dynamic memory
+    // more than one time;
+    // it shouldn't though, because that would be detrimental to performance
+    return buffer_t(this, deleter_f, control_block_allocator<buffer_pool>(this->state));
+}
+
+template<typename T>
+void buffer_pooled<T>::deleter(buffer_raw_t* buffer)
+{
+    assert_(buffer == this); buffer;
+
+    // move the buffer back to sample pool if the pool isn't disposed yet;
+    // otherwise, this object will be destroyed after the std bind releases the last reference
+    buffer_pool::scoped_lock lock(this->pool->mutex);
+    buffer->uninitialize();
+    if(!this->pool->is_disposed())
+    {
+        this->pool->container.push(this->shared_from_this<buffer_pooled>());
     }
 }

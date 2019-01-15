@@ -273,11 +273,10 @@ done:
 
     // give the sample to downstream
     this->unlock();
-    this->transform->session->give_sample(this, 
-        reinterpret_cast<const media_sample&>(args), rp);
+    this->transform->session->give_sample(this, args.has_value() ? &(*args) : NULL, rp);
 }
 
-media_stream::result_t stream_color_converter::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_color_converter::request_sample(const request_packet& rp, const media_stream*)
 {
     if(!this->transform->session->request_sample(this, rp))
         return FATAL_ERROR;
@@ -285,17 +284,16 @@ media_stream::result_t stream_color_converter::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_color_converter::process_sample(
-    const media_sample& args_, request_packet& rp, const media_stream*)
+    const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
     this->lock();
 
-    const media_component_video_args_t& args = 
-        reinterpret_cast<const media_component_video_args_t&>(args_);
-
-    /*CComPtr<ID3D11Texture2D> texture = sample_view->get_buffer<media_buffer_texture>()->texture;*/
-
     this->pending_packet.rp = rp;
-    this->pending_packet.args = args;
+    if(args_)
+    {
+        this->pending_packet.args = std::make_optional(
+            static_cast<const media_component_video_args&>(*args_));
+    }
 
     this->processing_cb(NULL);
     return OK;

@@ -5,6 +5,7 @@
 #include <mfapi.h>
 #include <memory>
 #include <mutex>
+#include <atomic>
 
 #pragma comment(lib, "Mfplat.lib")
 
@@ -30,7 +31,6 @@ public:
     typedef request_queue<packet> request_queue;
     typedef request_queue::request_t request_t;
 
-    static const UINT32 input_frames = 1024;
     // sample rate must be a predefined value;
     // the possible values are assumed to be known at compile time
     static const UINT32 sample_rate = 44100;
@@ -92,7 +92,7 @@ private:
 
     std::shared_ptr<buffer_pool_aac_frames_t> buffer_pool_aac_frames;
 
-    time_unit drain_point;
+    std::atomic<time_unit> drain_point;
 
     void on_component_start(time_unit);
     void on_component_stop(time_unit);
@@ -100,8 +100,8 @@ public:
     explicit stream_aac_encoder(const transform_aac_encoder_t& transform);
     ~stream_aac_encoder();
 
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_aac_encoder> stream_aac_encoder_t;

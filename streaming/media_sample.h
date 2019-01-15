@@ -7,6 +7,7 @@
 #include <stack>
 #include <utility>
 #include <optional>
+#include <type_traits>
 #include <condition_variable>
 #include <functional>
 #include <stdint.h>
@@ -34,6 +35,7 @@ typedef int64_t frame_unit;
 frame_unit convert_to_frame_unit(time_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 time_unit convert_to_time_unit(frame_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 
+// TODO: remove this
 class media_buffer : public enable_shared_from_this
 {
 public:
@@ -43,74 +45,6 @@ public:
 };
 
 typedef std::shared_ptr<media_buffer> media_buffer_t;
-
-// wrapper for buffers that aren't poolable by default
-template<typename Buffer>
-class media_buffer_poolable : public Buffer
-{
-private:
-public:
-    virtual ~media_buffer_poolable() {}
-    // called when the buffer is moved back to pool and just before being destroyed
-    constexpr void uninitialize() {}
-};
-
-
-template<typename PoolableBuffer>
-class media_buffer_pooled : public PoolableBuffer
-{
-    friend class buffer_pool<media_buffer_pooled>;
-public:
-    typedef PoolableBuffer buffer_raw_t;
-    typedef std::shared_ptr<PoolableBuffer> buffer_t;
-    typedef buffer_pool<media_buffer_pooled> buffer_pool;
-    typedef typename buffer_pool::state_t state_t;
-private:
-    std::shared_ptr<buffer_pool> pool;
-    std::shared_ptr<state_t> state;
-
-    void deleter(buffer_raw_t*);
-public:
-    explicit media_buffer_pooled(const std::shared_ptr<buffer_pool>& pool);
-    buffer_t create_pooled_buffer();
-};
-
-template<typename T>
-media_buffer_pooled<T>::media_buffer_pooled(const std::shared_ptr<buffer_pool>& pool) : 
-    pool(pool),
-    state(new state_t(pool))
-{
-}
-
-template<typename T>
-typename media_buffer_pooled<T>::buffer_t media_buffer_pooled<T>::create_pooled_buffer()
-{
-    // media_buffer_pooled will stay alive at least as long as the wrapped buffer is alive
-    using std::placeholders::_1;
-    auto deleter_f = std::bind(&media_buffer_pooled::deleter,
-        this->shared_from_this<media_buffer_pooled>(), _1);
-
-    // the custom allocator won't work if the shared ptr allocates dynamic memory
-    // more than one time;
-    // it shouldn't though, because that would be detrimental to performance
-    return buffer_t(this, deleter_f, control_block_allocator<buffer_pool>(this->state));
-}
-
-template<typename T>
-void media_buffer_pooled<T>::deleter(buffer_raw_t* buffer)
-{
-    assert_(buffer == this); buffer;
-
-    // move the buffer back to sample pool if the pool isn't disposed yet;
-    // otherwise, this object will be destroyed after the std bind releases the last reference
-    buffer_pool::scoped_lock lock(this->pool->mutex);
-    buffer->uninitialize();
-    if(!this->pool->is_disposed())
-    {
-        this->pool->container.push(/*std::make_pair(
-            this->control_block, */this->shared_from_this<media_buffer_pooled>());
-    }
-}
 
 // h264 memory buffer
 // TODO: just use media_buffer_samples and remove h264&aac buffers
@@ -124,8 +58,11 @@ public:
 
 typedef std::shared_ptr<media_buffer_h264> media_buffer_h264_t;
 
-class media_buffer_texture : public media_buffer
+class media_buffer_texture : public buffer_poolable
 {
+    friend class buffer_pooled<media_buffer_texture>;
+private:
+    void uninitialize() {}
 public:
     // TODO: the memory buffer should be a derived class of this defined in h264 encoder;
     // rename the texture_buffer to memory_buffer
@@ -138,30 +75,16 @@ public:
 };
 
 typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;
-typedef media_buffer_pooled<media_buffer_poolable<media_buffer_texture>> media_buffer_pooled_texture;
+typedef buffer_pooled<media_buffer_texture> media_buffer_pooled_texture;
 typedef std::shared_ptr<media_buffer_pooled_texture> media_buffer_pooled_texture_t;
-
-// some samples have shared ptr and pool typedefs;
-// if the sample/buffer is poolable, it is derived from poolable which will have uninitialize
-// as virtual function and it derives from shared from this
-
-//class poolable : public enable_shared_from_this
-//{
-//    friend class media_buffer_pooled<poolable>;
-//private:
-//protected:
-//    virtual void uninitialize() = 0;
-//public:
-//    virtual ~poolable() {}
-//};
 
 // set to imfsample to ensure that the sample isn't recycled before imfsample has been released;
 // the tracker must be manually removed from the sample
 CComPtr<IUnknown> create_lifetime_tracker(const media_buffer_t&);
 
-class media_buffer_memory : public media_buffer/* : public poolable*/
+class media_buffer_memory : public buffer_poolable
 {
-    friend class media_buffer_pooled<media_buffer_memory>;
+    friend class buffer_pooled<media_buffer_memory>;
 private:
     void uninitialize() {}
 public:
@@ -176,7 +99,7 @@ public:
 };
 
 typedef std::shared_ptr<media_buffer_memory> media_buffer_memory_t;
-typedef media_buffer_pooled<media_buffer_memory> media_buffer_memory_pooled;
+typedef buffer_pooled<media_buffer_memory> media_buffer_memory_pooled;
 typedef std::shared_ptr<media_buffer_memory_pooled> media_buffer_memory_pooled_t;
 
 class media_sample_audio_consecutive_frames
@@ -188,25 +111,22 @@ public:
     media_buffer_memory_t memory_host;
 };
 
-class media_sample_audio_frames : public media_buffer
+class media_sample_audio_frames : public buffer_poolable
 {
-    /*friend class media_buffer_pooled<media_sample_audio_frames>;*/
+    friend class buffer_pooled<media_sample_audio_frames>;
 private:
+    // called when the buffer is moved back to pool and just before being destroyed
+    // TODO: decide if should call reserve here
+    void uninitialize() {this->frames.clear(); this->end = 0;}
 public:
-    // end must be 0 if there's no valid data;
+    // end must be 0 if there's no valid data(TODO: reconsider this);
     // end is the max (pos + dur) of frames
     frame_unit end;
     // element must have valid data
     // TODO: make this private so that the end field stays consistent in regard to frames
     std::deque<media_sample_audio_consecutive_frames> frames;
 
-    // TODO: these defaults can be dropped once the explicit destructors for samples
-    // are deleted
     media_sample_audio_frames() : end(0) {}
-    media_sample_audio_frames(const media_sample_audio_frames&) = default;
-    media_sample_audio_frames& operator=(const media_sample_audio_frames&) = default;
-    media_sample_audio_frames(media_sample_audio_frames&&) = delete;
-    media_sample_audio_frames& operator=(media_sample_audio_frames&&) = delete;
     virtual ~media_sample_audio_frames() {}
 
     // moves part from this to 'to'
@@ -219,13 +139,10 @@ public:
 
     // buffer pool methods
     void initialize() {assert_(this->end == 0); assert_(this->frames.empty());}
-    // called when the buffer is moved back to pool and just before being destroyed
-    // TODO: decide if should call reserve here
-    void uninitialize() {this->frames.clear(); this->end = 0;}
 };
 
 typedef std::shared_ptr<media_sample_audio_frames> media_sample_audio_frames_t;
-typedef media_buffer_pooled<media_sample_audio_frames> media_sample_audio_frames_pooled;
+typedef buffer_pooled<media_sample_audio_frames> media_sample_audio_frames_pooled;
 typedef std::shared_ptr<media_sample_audio_frames_pooled> media_sample_audio_frames_pooled_t;
 
 class media_sample_aac_frame
@@ -237,31 +154,25 @@ public:
     media_buffer_memory_t memory_host;
 };
 
-class media_sample_aac_frames : public media_buffer
+class media_sample_aac_frames : public buffer_poolable
 {
     // this is very similar to media_sample_audio_frames
+    friend class buffer_pooled<media_sample_aac_frames>;
 private:
+    // called when the buffer is moved back to pool and just before being destroyed
+    // TODO: decide if should call reserve here
+    void uninitialize() {this->frames.clear();}
 public:
     std::deque<media_sample_aac_frame> frames;
 
-    // TODO: these defaults can be dropped once the explicit destructors for samples
-    // are deleted
-    media_sample_aac_frames() = default;
-    media_sample_aac_frames(const media_sample_aac_frames&) = default;
-    media_sample_aac_frames& operator=(const media_sample_aac_frames&) = default;
-    media_sample_aac_frames(media_sample_aac_frames&&) = delete;
-    media_sample_aac_frames& operator=(media_sample_aac_frames&&) = delete;
     virtual ~media_sample_aac_frames() {}
 
     // buffer pool methods
     void initialize() {assert_(this->frames.empty());}
-    // called when the buffer is moved back to pool and just before being destroyed
-    // TODO: decide if should call reserve here
-    void uninitialize() {this->frames.clear();}
 };
 
 typedef std::shared_ptr<media_sample_aac_frames> media_sample_aac_frames_t;
-typedef media_buffer_pooled<media_sample_aac_frames> media_sample_aac_frames_pooled;
+typedef buffer_pooled<media_sample_aac_frames> media_sample_aac_frames_pooled;
 typedef std::shared_ptr<media_sample_aac_frames_pooled> media_sample_aac_frames_pooled_t;
 
 class media_buffer_textures : public media_buffer
@@ -274,32 +185,21 @@ public:
 
 typedef std::shared_ptr<media_buffer_textures> media_buffer_textures_t;
 
-// TODO: maybe change media samples to struct to indicate
-// that they must be copy constructable
-class media_sample
-{
-public:
-    // TODO: remove timestamp;
-    // request time might be more fitting
-    time_unit timestamp;
-    explicit media_sample(time_unit timestamp = -1);
-    virtual ~media_sample() {}
-};
-
 //    // TODO: the session could have properties, which would include the frame rate(or the clock);
 //    // additional properties(canvas resolution etc) could be accessed from the control pipeline;
 //    // for audio, channel count and bit depth should be bound to media session aswell for
 //    // simplicity
 
-class media_sample_h264 : public media_sample
+class media_sample_h264
 {
 public:
     typedef media_buffer_h264_t buffer_t;
 public:
     // for debugging
+    time_unit timestamp;
     bool software;
     media_buffer_h264_t buffer;
-    media_sample_h264() {}
+    media_sample_h264() : timestamp(-1) {}
     explicit media_sample_h264(const media_buffer_h264_t& buffer);
     virtual ~media_sample_h264() {}
 };
@@ -308,8 +208,6 @@ class media_component_args
 {
 public:
 };
-
-typedef std::optional<media_component_args> media_component_args_t;
 
 // arg type for components that expect uncompressed audio or video samples
 class media_component_frame_args : public media_component_args

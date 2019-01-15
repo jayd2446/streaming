@@ -195,8 +195,8 @@ void transform_aac_encoder::processing_cb(void*)
         }
 
         lock.unlock();
-        this->session->give_sample(request.stream, 
-            reinterpret_cast<const media_sample&>(out_args), request.rp);
+        this->session->give_sample(
+            request.stream, out_args.has_value() ? &(*out_args) : NULL, request.rp);
         lock.lock();
     }
 
@@ -359,47 +359,43 @@ void stream_aac_encoder::on_component_start(time_unit t)
 
 void stream_aac_encoder::on_component_stop(time_unit t)
 {
-    this->lock();
-    this->drain_point = t;
-    this->unlock();
+    this->drain_point.store(t);
 }
 
-media_stream::result_t stream_aac_encoder::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_aac_encoder::request_sample(const request_packet& rp, const media_stream*)
 {
     this->transform->requests.initialize_queue(rp);
     return this->transform->session->request_sample(this, rp) ? OK : FATAL_ERROR;
 }
 
 media_stream::result_t stream_aac_encoder::process_sample(
-    const media_sample& args_, request_packet& rp, const media_stream*)
+    const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
-    const media_component_aac_encoder_args_t& args =
-        reinterpret_cast<const media_component_aac_encoder_args_t&>(args_);
-
     media_sample_aac_frames_t out_sample;
-    if(args)
+    transform_aac_encoder::request_t request;
+    if(args_)
     {
+        const media_component_aac_encoder_args& args = 
+            static_cast<const media_component_aac_encoder_args&>(*args_);
+
         // aac encoder expects full buffers, so the args should include the full buffer
         // (is_valid call tests this)
-        assert_(args->is_valid());
+        assert_(args.is_valid());
 
         buffer_pool_aac_frames_t::scoped_lock lock(this->buffer_pool_aac_frames->mutex);
         out_sample = this->buffer_pool_aac_frames->acquire_buffer();
         out_sample->initialize();
+
+        request.sample.args = std::make_optional(args);
     }
 
-    this->lock();
-
-    transform_aac_encoder::request_t request;
     request.rp = rp;
-    request.sample.args = args;
-    request.sample.drain = (this->drain_point == rp.request_time);
+    request.sample.drain = (this->drain_point.load() == rp.request_time);
     request.stream = this;
     request.sample.out_sample = out_sample;
 
     this->transform->requests.push(request);
-
-    this->unlock();
     this->transform->processing_cb(NULL);
+
     return OK;
 }

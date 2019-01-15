@@ -30,10 +30,6 @@ public:
         D2D1::Matrix3x2F source_m, dest_m;
         // only for the user dest param
         bool axis_aligned_clip;
-        // higher values appear on top;
-        // sample z order is relative to the user z order;
-        // sample z order is treated as unsigned value
-        short z_order;
     };
 private:
     mutable std::mutex mutex;

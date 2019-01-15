@@ -25,8 +25,8 @@ private:
 public:
     explicit stream_empty_audio(const source_empty_audio_t& source);
 
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
 class source_empty_video : public media_source
@@ -51,6 +51,6 @@ private:
 public:
     explicit stream_empty_video(const source_empty_video_t&);
 
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };

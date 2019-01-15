@@ -503,7 +503,8 @@ void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, 
     // (optional)
     request.sample.args.reset();
 
-    this->session->give_sample(stream, sample, rp);
+    this->session->give_sample(stream, 
+        reinterpret_cast<const media_component_args*>(&sample), rp);
 
 done:
     if(FAILED(hr))
@@ -766,7 +767,7 @@ void stream_h264_encoder::on_component_stop(time_unit t)
     this->unlock();
 }
 
-media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_h264_encoder::request_sample(const request_packet& rp, const media_stream*)
 {
     this->transform->requests.initialize_queue(rp);
 
@@ -776,14 +777,16 @@ media_stream::result_t stream_h264_encoder::request_sample(request_packet& rp, c
 }
 
 media_stream::result_t stream_h264_encoder::process_sample(
-    const media_sample& args_, request_packet& rp, const media_stream*)
+    const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
     this->lock();
 
     transform_h264_encoder::request_t request;
     request.stream = this;
     request.sample.drain = (rp.request_time == this->drain_point);
-    request.sample.args = reinterpret_cast<const media_component_video_args_t&>(args_);
+    if(args_)
+        request.sample.args = 
+        std::make_optional(static_cast<const media_component_video_args&>(*args_));
     request.rp = rp;
 
     this->transform->requests.push(request);

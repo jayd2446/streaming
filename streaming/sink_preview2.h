@@ -50,7 +50,7 @@ private:
     CComPtr<ID2D1SolidColorBrush> highlighted_brush;
     CComPtr<ID2D1StrokeStyle1> stroke_style;
 
-    void draw_sample(const media_component_video_args_t&, request_packet& rp);
+    void draw_sample(const media_component_args*);
 public:
     sink_preview2(const media_session_t& session, context_mutex_t context_mutex);
 
@@ -82,9 +82,9 @@ private:
 public:
     explicit stream_preview2(const sink_preview2_t& sink);
 
-    result_t request_sample(request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
     // called by media session
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_preview2> stream_preview2_t;

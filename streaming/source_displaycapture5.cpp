@@ -327,18 +327,7 @@ done:
 media_buffer_texture_t source_displaycapture5::acquire_buffer(const std::shared_ptr<buffer_pool>& pool)
 {
     buffer_pool::scoped_lock lock(pool->mutex);
-    if(pool->is_empty())
-    {
-        media_buffer_texture_t buffer = pool->acquire_buffer();
-        /*std::cout << "creating new..." << std::endl;*/
-        return buffer;
-    }
-    else
-    {
-        media_buffer_texture_t buffer = pool->acquire_buffer();
-        /*std::cout << "reusing..." << std::endl;*/
-        return buffer;
-    }
+    return pool->acquire_buffer();
 }
 
 bool source_displaycapture5::capture_frame(
@@ -426,8 +415,11 @@ capture:
         std::atomic_exchange(&this->newest_pointer_buffer, pointer);
     }
 
-    // copy
-    if(frame_info.LastPresentTime.QuadPart != 0)
+    // copy;
+    // the last present time might be 0 on the first call aswell,
+    // so checking for the newest buffer is necessary;
+    // newest pointer shape on the other hand seems to be true on the first call
+    if(frame_info.LastPresentTime.QuadPart != 0 || !this->newest_buffer->texture)
     {
         if(this->same_device)
             this->d3d11devctx->CopyResource(buffer->texture, screen_frame);
@@ -487,9 +479,7 @@ void stream_displaycapture5::capture_frame_cb(void*)
     time_unit timestamp;
     presentation_clock_t clock;
     source_displaycapture5::request_t request;
-    media_component_videomixer_args_t 
-        args = std::make_optional<media_component_videomixer_args>(), 
-        pointer_args = std::make_optional<media_component_videomixer_args>();
+    media_component_videomixer_args args, pointer_args;
 
     // the stream might serve the request on behalf of some other stream
     {
@@ -514,8 +504,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     try
     {
         frame_captured = this->source->capture_frame(
-            new_pointer_shape, pointer_position, pointer_args->single_buffer,
-            args->single_buffer, timestamp, clock);
+            new_pointer_shape, pointer_position, pointer_args.single_buffer,
+            args.single_buffer, timestamp, clock);
     }
     catch(displaycapture_exception)
     {
@@ -528,45 +518,43 @@ void stream_displaycapture5::capture_frame_cb(void*)
     }
 
     if(!frame_captured)
-        args->single_buffer = this->source->newest_buffer;
+        args.single_buffer = this->source->newest_buffer;
 
     if(!new_pointer_shape)
-        pointer_args->single_buffer = this->source->newest_pointer_buffer;
+        pointer_args.single_buffer = this->source->newest_pointer_buffer;
 
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
-    if(args->single_buffer->texture)
+    if(args.single_buffer->texture)
     {
-        args->single_buffer->texture->GetDesc(ptr_desc = &desc);
+        args.single_buffer->texture->GetDesc(ptr_desc = &desc);
 
-        args->params.source_rect.top = args->params.source_rect.left = 0.f;
-        args->params.source_rect.right = (FLOAT)desc.Width;
-        args->params.source_rect.bottom = (FLOAT)desc.Height;
-        args->params.dest_rect = args->params.source_rect;
-        args->params.source_m = args->params.dest_m = D2D1::Matrix3x2F::Identity();
-        // pointer is drawn on top of desktop image
-        args->params.z_order = 0;
+        args.params.source_rect.top = args.params.source_rect.left = 0.f;
+        args.params.source_rect.right = (FLOAT)desc.Width;
+        args.params.source_rect.bottom = (FLOAT)desc.Height;
+        args.params.dest_rect = args.params.source_rect;
+        args.params.source_m = args.params.dest_m = D2D1::Matrix3x2F::Identity();
 
         using namespace D2D1;
         switch(this->source->outdupl_desc.Rotation)
         {
         case DXGI_MODE_ROTATION_ROTATE90:
-            args->params.dest_m = Matrix3x2F::Rotation(90.f) *
+            args.params.dest_m = Matrix3x2F::Rotation(90.f) *
                 Matrix3x2F::Translation((FLOAT)desc.Height, 0.f);
             break;
         case DXGI_MODE_ROTATION_ROTATE180:
-            args->params.dest_m = Matrix3x2F::Rotation(180.f) *
+            args.params.dest_m = Matrix3x2F::Rotation(180.f) *
                 Matrix3x2F::Translation((FLOAT)desc.Width, (FLOAT)desc.Height);
             break;
         case DXGI_MODE_ROTATION_ROTATE270:
-            args->params.dest_m = Matrix3x2F::Rotation(270.f) *
+            args.params.dest_m = Matrix3x2F::Rotation(270.f) *
                 Matrix3x2F::Translation(0.f, (FLOAT)desc.Width);
             break;
         }
     }
 
     /*sample.timestamp = request.rp.request_time;*/
-    args->frame_end = convert_to_frame_unit(request.rp.request_time,
+    args.frame_end = convert_to_frame_unit(request.rp.request_time,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
     // the newest buffer might be null for the first few requests, so set the silent flag to
@@ -575,13 +563,12 @@ void stream_displaycapture5::capture_frame_cb(void*)
 
     lock.unlock();
 
-    this->source->session->give_sample(request.stream, 
-        reinterpret_cast<const media_sample&>(args), request.rp);
+    this->source->session->give_sample(request.stream, &args, request.rp);
     static_cast<stream_displaycapture5*>(request.stream)->pointer_stream->dispatch(
         new_pointer_shape, pointer_position, ptr_desc, pointer_args, request);
 }
 
-media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_displaycapture5::request_sample(const request_packet& rp, const media_stream*)
 {
     scoped_lock lock(this->source->requests_mutex);
     source_displaycapture5::request_t request;
@@ -595,7 +582,7 @@ media_stream::result_t stream_displaycapture5::request_sample(request_packet& rp
 }
 
 media_stream::result_t stream_displaycapture5::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
+    const media_component_args*, const request_packet& rp, const media_stream*)
 {
     // the request_sample/process_sample pair for source streams is guaranteed
     // to stay in sync(currently);
@@ -631,49 +618,45 @@ void stream_displaycapture5_pointer::dispatch(
     bool new_pointer_shape,
     const DXGI_OUTDUPL_POINTER_POSITION& pointer_position,
     const D3D11_TEXTURE2D_DESC* desktop_desc,
-    media_component_videomixer_args_t& args,
+    media_component_videomixer_args& args,
     source_displaycapture5::request_t& request)
 {
-    if(pointer_position.Visible && desktop_desc && args->single_buffer->texture)
+    if(pointer_position.Visible && desktop_desc && args.single_buffer->texture)
     {
         D3D11_TEXTURE2D_DESC desc;
-        args->single_buffer->texture->GetDesc(&desc);
+        args.single_buffer->texture->GetDesc(&desc);
 
-        args->params.source_rect.left = args->params.source_rect.top = 0.f;
-        args->params.source_rect.right = (FLOAT)desc.Width;
-        args->params.source_rect.bottom = (FLOAT)desc.Height;
+        args.params.source_rect.left = args.params.source_rect.top = 0.f;
+        args.params.source_rect.right = (FLOAT)desc.Width;
+        args.params.source_rect.bottom = (FLOAT)desc.Height;
 
-        args->params.dest_rect.left = (FLOAT)pointer_position.Position.x;
-        args->params.dest_rect.top = (FLOAT)pointer_position.Position.y;
-        args->params.dest_rect.right = args->params.dest_rect.left + (FLOAT)desc.Width;
-        args->params.dest_rect.bottom = args->params.dest_rect.top + (FLOAT)desc.Height;
-        args->params.source_m = D2D1::Matrix3x2F::Identity();
-        args->params.dest_m = D2D1::Matrix3x2F::Identity();
-
-        // pointer is drawn on top of desktop image
-        args->params.z_order = 1;
+        args.params.dest_rect.left = (FLOAT)pointer_position.Position.x;
+        args.params.dest_rect.top = (FLOAT)pointer_position.Position.y;
+        args.params.dest_rect.right = args.params.dest_rect.left + (FLOAT)desc.Width;
+        args.params.dest_rect.bottom = args.params.dest_rect.top + (FLOAT)desc.Height;
+        args.params.source_m = D2D1::Matrix3x2F::Identity();
+        args.params.dest_m = D2D1::Matrix3x2F::Identity();
     }
     else
-        args->single_buffer = this->null_buffer;
+        args.single_buffer = this->null_buffer;
 
     /*sample.timestamp = request.rp.request_time;*/
-    args->frame_end = convert_to_frame_unit(request.rp.request_time,
+    args.frame_end = convert_to_frame_unit(request.rp.request_time,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
     /*sample.silent = !sample.single_buffer->texture;*/
 
-    this->source->session->give_sample(this, 
-        reinterpret_cast<const media_sample&>(args), request.rp);
+    this->source->session->give_sample(this, &args, request.rp);
 }
 
-media_stream::result_t stream_displaycapture5_pointer::request_sample(request_packet&, const media_stream*)
+media_stream::result_t stream_displaycapture5_pointer::request_sample(const request_packet&, const media_stream*)
 {
     // do nothing; the process sample is called from the stream displaycapture
     return OK;
 }
 
 media_stream::result_t stream_displaycapture5_pointer::process_sample(
-    const media_sample&, request_packet&, const media_stream*)
+    const media_component_args*, const request_packet&, const media_stream*)
 {
     // do nothing; the process sample is called from the stream displaycapture
     return OK;

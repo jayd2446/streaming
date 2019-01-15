@@ -32,15 +32,14 @@ void stream_empty_audio::callback_f(void*)
     this->unlock();
 
     // TODO: the sample should be an audiomixer sample
-    media_component_audio_args_t args = std::make_optional<media_component_audio_args>();
-    args->frame_end = convert_to_frame_unit(rp.request_time,
+    media_component_audio_args args;
+    args.frame_end = convert_to_frame_unit(rp.request_time,
         transform_aac_encoder::sample_rate, 1);
 
-    this->source->session->give_sample(this, 
-        reinterpret_cast<const media_sample&>(args), rp);
+    this->source->session->give_sample(this, &args, rp);
 }
 
-media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_empty_audio::request_sample(const request_packet& rp, const media_stream*)
 {
     this->lock();
 
@@ -51,7 +50,7 @@ media_stream::result_t stream_empty_audio::request_sample(request_packet& rp, co
 }
 
 media_stream::result_t stream_empty_audio::process_sample(
-    const media_sample& sample_view, request_packet& rp, const media_stream*)
+    const media_component_args*, const request_packet& rp, const media_stream*)
 {
     if(this->rp.topology)
     {
@@ -109,19 +108,16 @@ void stream_empty_video::callback_f(void*)
     params.dest_rect.bottom = transform_h264_encoder::frame_height;
     params.source_rect = params.dest_rect;
     params.source_m = params.dest_m = D2D1::Matrix3x2F::Identity();
-    params.z_order = 0;
 
-    media_component_videomixer_args_t args = 
-        std::make_optional<media_component_videomixer_args>(params);
-    args->frame_end = convert_to_frame_unit(rp.request_time,
+    media_component_videomixer_args args(params);
+    args.frame_end = convert_to_frame_unit(rp.request_time,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
 
-    this->source->session->give_sample(this, 
-        reinterpret_cast<const media_sample&>(args), rp);
+    this->source->session->give_sample(this, &args, rp);
 }
 
-media_stream::result_t stream_empty_video::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_empty_video::request_sample(const request_packet& rp, const media_stream*)
 {
     this->lock();
 
@@ -132,7 +128,7 @@ media_stream::result_t stream_empty_video::request_sample(request_packet& rp, co
 }
 
 media_stream::result_t stream_empty_video::process_sample(
-    const media_sample&, request_packet&, const media_stream*)
+    const media_component_args*, const request_packet&, const media_stream*)
 {
     if(this->rp.topology)
     {

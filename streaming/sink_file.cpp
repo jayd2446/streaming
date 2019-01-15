@@ -73,7 +73,8 @@ void sink_file::process()
             }
 
             lock.unlock();
-            this->session->give_sample(request.stream, request.sample, request.rp);
+            this->session->give_sample(request.stream, 
+                reinterpret_cast<const media_component_args*>(&request.sample), request.rp);
             lock.lock();
         }
     }
@@ -108,7 +109,7 @@ void sink_file::process()
 
             lock.unlock();
             this->session->give_sample(request.stream, 
-                reinterpret_cast<const media_sample&>(request.sample), request.rp);
+                request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
             lock.lock();
         }
     }
@@ -134,7 +135,7 @@ void stream_file::on_component_start(time_unit t)
 {
 }
 
-media_stream::result_t stream_file::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_file::request_sample(const request_packet& rp, const media_stream*)
 {
     if(this->sink->video)
         this->sink->requests_video.initialize_queue(rp);
@@ -145,14 +146,13 @@ media_stream::result_t stream_file::request_sample(request_packet& rp, const med
 }
 
 media_stream::result_t stream_file::process_sample(
-    const media_sample& args_, request_packet& rp, const media_stream*)
+    const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
     this->lock();
 
     if(this->sink->video)
     {
-        const media_sample_h264* sample_h264 = static_cast<const media_sample_h264*>(&args_);
-        assert_(dynamic_cast<const media_sample_h264*>(&args_));
+        const media_sample_h264* sample_h264 = reinterpret_cast<const media_sample_h264*>(args_);
 
         sink_file::request_video_t request;
         request.rp = rp;
@@ -165,14 +165,17 @@ media_stream::result_t stream_file::process_sample(
     }
     else
     {
-        const media_component_aac_audio_args_t& args =
-            reinterpret_cast<const media_component_aac_audio_args_t&>(args_);
         /*assert_(dynamic_cast<const media_component_aac_audio_args_t*>(&args_));*/
 
         sink_file::request_audio_t request;
         request.rp = rp;
         request.stream = this;
-        request.sample = args;
+        if(args_)
+        {
+            const media_component_aac_audio_args& args =
+                static_cast<const media_component_aac_audio_args&>(*args_);
+            request.sample = std::make_optional(args);
+        }
 
         // add the new sample to queue and drop oldest sample if the queue is full
         sink_file::scoped_lock lock(this->sink->requests_mutex);

@@ -127,7 +127,8 @@ bool stream_videomixer::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, fram
 
     if(old_in_arg->frame_end <= end)
     {
-        in_arg = std::move(old_in_arg);
+        in_arg = old_in_arg;
+        old_in_arg.reset();
 
         /*sample.single_buffer = std::move(old_sample.single_buffer);*/
 
@@ -146,26 +147,7 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
     assert_(!packets.container.empty());
 
-    //// sort the packets list
-    //std::sort(packets.container.begin(), packets.container.end(), 
-    //    [](const packet_t& a, const packet_t& b)
-    //{
-    //    // invalid packets are ordered first
-    //    if(!a.valid_user_params || a.sample.is_null() || a.sample.silent)
-    //        return false;
-    //    if(!b.valid_user_params || b.sample.is_null() || b.sample.silent)
-    //        return true;
-
-    //    static_assert(sizeof(short) * 2 == sizeof(int), "wrong size");
-
-    //    int z_order_a = a.user_params.z_order << (sizeof(short) * 8);
-    //    z_order_a |= a.sample.params.z_order;
-
-    //    int z_order_b = b.user_params.z_order << (sizeof(short) * 8);
-    //    z_order_b |= b.sample.params.z_order;
-
-    //    return (z_order_a < z_order_b);
-    //});
+    // the streams in the packet are sorted
 
     // TODO: use media_buffer_textures
 

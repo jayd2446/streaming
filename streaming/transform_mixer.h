@@ -17,12 +17,16 @@
 // on stream stop the component should serve requests to the request point, so that
 // a component that might stop receives enough samples
 
-// TODO: remove z order in video mixer
 // TODO: investigate reserve calls
+
+// TODO: mix shouldn't be called if the first and end are the same
+// TODO: derived class shouldn't specify the optional type;
+// it should be internal to mixer
 
 template<class TransformMixer> 
 class stream_mixer;
 
+// in arg and out arg are assumed to be of std optional type
 template<class InArg, class UserParamsController, class OutArg>
 class transform_mixer : public media_source
 {
@@ -125,8 +129,8 @@ public:
         const user_params_controller_t& user_params_controller,
         const media_topology_t&);
 
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
 
@@ -214,18 +218,16 @@ frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args)
     for(size_t i = 0; i < this->input_streams_props.size(); i++)
     {
         frame_unit leftover_frame_end = std::numeric_limits<frame_unit>::min();
-        bool leftover_found = false;
         for(auto&& item : this->leftover[i].container)
         {
             assert_(item.arg);
-            leftover_found = true;
             leftover_frame_end = std::max(leftover_frame_end, item.arg->frame_end);
         }
 
         auto&& item = args.container[i];
         if(item.arg)
             frame_end = std::min(frame_end, std::max(item.arg->frame_end, leftover_frame_end));
-        else if(leftover_found)
+        else if(!this->leftover[i].container.empty())
             frame_end = std::min(frame_end, leftover_frame_end);
         else
             // common frame end cannot be found if a request is lacking samples
@@ -304,7 +306,7 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
 
     this->unlock();
     this->transform->session->give_sample(request.stream, 
-        reinterpret_cast<const media_sample&>(out), request.rp);
+        out.has_value() ? &(*out) : NULL, request.rp);
 }
 
 template<class T>
@@ -321,7 +323,7 @@ void stream_mixer<T>::connect_streams(const media_stream_t& from,
 
 template<class T>
 typename stream_mixer<T>::result_t stream_mixer<T>::request_sample(
-    request_packet& rp, const media_stream*)
+    const request_packet& rp, const media_stream*)
 {
     this->requests.initialize_queue(rp);
 
@@ -355,11 +357,10 @@ typename stream_mixer<T>::result_t stream_mixer<T>::request_sample(
 
 template<class T>
 typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
-    const media_sample& arg_, request_packet& rp, const media_stream* prev_stream)
+    const media_component_args* arg_, const request_packet& rp, const media_stream* prev_stream)
 {
     this->lock();
 
-    const in_arg_t& arg = reinterpret_cast<const in_arg_t&>(arg_);
     typename request_queue::request_t* request = this->requests.get(rp.packet_number);
     assert_(request);
 
@@ -371,7 +372,8 @@ typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
         if(item.input_stream == prev_stream && !item.arg)
         {
             request->sample.first++;
-            item.arg = arg;
+            if(arg_)
+                item.arg = std::make_optional(static_cast<const in_arg_t::value_type&>(*arg_));
             found = true;
             break;
         };

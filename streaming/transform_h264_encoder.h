@@ -115,7 +115,7 @@ public:
     explicit stream_h264_encoder(const transform_h264_encoder_t& transform);
 
     // called by the downstream from media session
-    result_t request_sample(request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
     // called by the upstream from media session
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };

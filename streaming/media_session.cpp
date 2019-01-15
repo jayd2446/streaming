@@ -67,7 +67,7 @@ void media_session::start_playback(const media_topology_t& topology, time_unit t
     this->request_chain_lock.unlock();
 }
 
-bool media_session::request_sample(const media_stream* stream, request_packet& rp)
+bool media_session::request_sample(const media_stream* stream, const request_packet& rp)
 {
     assert_(this->request_chain_lock.owns_lock());
 
@@ -86,8 +86,8 @@ bool media_session::request_sample(const media_stream* stream, request_packet& r
 
 bool media_session::give_sample(
     const media_stream* stream, 
-    const media_sample& sample_view, 
-    request_packet& rp)
+    const media_component_args* args,
+    const request_packet& rp)
 {
     // TODO: media topology should be defined as const
 
@@ -98,7 +98,7 @@ bool media_session::give_sample(
     assert_(it != topology->topology.end());
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
-        if((*jt)->process_sample(sample_view, rp, stream) == media_stream::FATAL_ERROR)
+        if((*jt)->process_sample(args, rp, stream) == media_stream::FATAL_ERROR)
             return false;
 
     return true;
@@ -120,7 +120,7 @@ bool media_session::begin_request_sample(const media_stream* stream,
 
     rp.topology = this->get_current_topology();
     if(rp.topology->topology_reverse.find(stream) == rp.topology->topology_reverse.end())
-        return NULL;
+        return false;
 
     rp.packet_number = rp.topology->packet_number++;
     /*std::cout << rp.packet_number << std::endl;*/
@@ -142,8 +142,7 @@ bool media_session::begin_request_sample(const media_stream* stream,
 void media_session::begin_give_sample(const media_stream* stream, 
     const media_topology_t& topology)
 {
-    // TODO: do not use dummy args;
-    // instead, make those args optional
+    // TODO: do not use dummy args
     assert_(topology);
 
     media_topology::topology_t::iterator it = topology->topology.find(stream);
@@ -151,8 +150,7 @@ void media_session::begin_give_sample(const media_stream* stream,
 
     for(auto&& item : it->second.next)
     {
-        media_sample dummy;
-        request_packet dummy2;
-        item->process_sample(dummy, dummy2, stream);
+        request_packet dummy;
+        item->process_sample(NULL, dummy, stream);
     }
 }

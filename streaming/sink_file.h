@@ -11,8 +11,6 @@ class sink_file : public media_sink
 {
     friend class stream_file;
 public:
-    static const int max_queue_depth = WORKER_STREAMS + 1;
-
     typedef std::lock_guard<std::mutex> scoped_lock;
     typedef request_queue<media_sample_h264> request_queue_video;
     typedef request_queue<media_component_aac_audio_args_t> request_queue_audio;
@@ -52,8 +50,8 @@ private:
 public:
     explicit stream_file(const sink_file_t&);
 
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_file> stream_file_t;

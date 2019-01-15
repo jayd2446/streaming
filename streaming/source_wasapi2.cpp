@@ -148,8 +148,7 @@ void source_wasapi2::serve_cb(void*)
         this->requests.pop();
 
         lock.unlock();
-        this->session->give_sample(request.stream, 
-            reinterpret_cast<const media_sample&>(args), request.rp);
+        this->session->give_sample(request.stream, args.has_value() ? &(*args) : NULL, request.rp);
         lock.lock();
     }
 
@@ -278,6 +277,8 @@ void source_wasapi2::capture_cb(void*)
 
             if(drain)
             {
+                // TODO: decide if the resampler should just discard the drained data;
+                // it might help masking the audio glitch on data discontinuity
                 media_sample_audio_consecutive_frames null_frames;
                 this->resampler.resample(old_next_frame_position, null_frames,
                         *this->captured_audio, true);
@@ -482,7 +483,7 @@ void stream_wasapi2::on_stream_stop(time_unit t)
     this->drain_point = t;
 }
 
-media_stream::result_t stream_wasapi2::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_wasapi2::request_sample(const request_packet& rp, const media_stream*)
 {
     source_wasapi2::scoped_lock lock(this->source->requests_mutex);
     source_wasapi2::request_queue::request_t request;
@@ -495,7 +496,7 @@ media_stream::result_t stream_wasapi2::request_sample(request_packet& rp, const 
 }
 
 media_stream::result_t stream_wasapi2::process_sample(
-    const media_sample&, request_packet&, const media_stream*)
+    const media_component_args*, const request_packet&, const media_stream*)
 {
     source_wasapi2::scoped_lock lock(this->source->requests_mutex);
     SetEvent(this->source->serve_callback_event);

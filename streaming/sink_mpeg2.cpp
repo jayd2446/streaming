@@ -62,11 +62,6 @@ stream_mpeg2_t sink_mpeg2::create_stream(
     return stream;
 }
 
-stream_worker_t sink_mpeg2::create_worker_stream()
-{
-    return stream_worker_t(new stream_worker(this->shared_from_this<sink_mpeg2>()));
-}
-
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
@@ -84,7 +79,7 @@ stream_mpeg2::stream_mpeg2(
     stop_point(std::numeric_limits<time_unit>::min()),
     discontinuity(false),
     requesting(false), processing(false),
-    requests(0), max_requests(VIDEO_MAX_REQUESTS)
+    requests(0), max_requests(DEFAULT_MAX_REQUESTS)
 {
 }
 
@@ -157,7 +152,10 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     if(this->requesting)
         this->dispatch_request(incomplete_rp);
     // TODO: performance might be increased if audio is processed in batches of
-    // aac encoder frame granularity
+    // aac encoder frame granularity;
+    // it might increase the performance of the algorithms as well as it decreases
+    // the overhead of the pipeline;
+    // TODO: restore the audio pipeline periodicity
     if(this->audio_sink_stream->requesting)
         this->audio_sink_stream->dispatch_request(incomplete_rp);
     if(this->processing)
@@ -225,9 +223,6 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
 {
     assert_(this->unavailable <= 240);
 
-    // initiate the video request
-    scoped_lock lock(this->worker_streams_mutex);
-
     const int requests = this->requests.load();
     if(requests < this->max_requests || no_drop)
     {
@@ -271,48 +266,18 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
 
         this->discontinuity = true;
         this->unavailable++;
+
+        std::cout << "--SAMPLE REQUEST DROPPED IN MPEG_SINK--" << std::endl;
     }
 }
 
 void stream_mpeg2::dispatch_process()
 {
-    // TODO: schedule a new after dispatching
-
-    // TODO: this should dispatch to a work queue for each source for
-    // better performance(or maybe not)
-    // TODO: each source should check if there's an rp to process;
-    // source wasapi probably doesn't need to create a dummy rendering stream after
-    // the refactoring(but it still should)
-
-    // the dispatch process is a separate mechanic from the request/process pair
-
-    // stream mpeg2 should stop running after the last request has been satisfied;
-    // stream mpeg2 cannot make new requests after the stream stop event, but
-    // it will keep processing the requests until the last request has been satisfied
-    // (this also implies that the processing will be a different mechanic)
-
-    // TODO: sink_mpeg should be at the root of the process topology
-
-    // TODO: decide how to refactor this;
-    // it could be refactored by making request_sample&give_sample its own function
-    // where the is_sink/is_source flags are implicated;
-    // for request_sample, request packet can be omitted while
-    // for give_sample sample and request packet can be omitted
     this->sink->session->begin_give_sample(this, this->topology);
 }
 
-void stream_mpeg2::add_worker_stream(const stream_worker_t& worker_stream)
-{
-    scoped_lock lock(this->worker_streams_mutex);
-
-    worker_stream->set_max_requests(VIDEO_MAX_REQUESTS);
-    worker_stream->not_used();
-
-    this->worker_stream = worker_stream;
-}
-
 media_stream::result_t stream_mpeg2::process_sample(
-    const media_sample&, request_packet& rp, const media_stream*)
+    const media_component_args*, const request_packet& rp, const media_stream*)
 {
     this->requests--;
 

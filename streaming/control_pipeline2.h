@@ -34,10 +34,7 @@ class control_pipeline2 : public control_class
 {
     friend class control_scene2;
 private:
-    // restart audio mixer is used so that the audio is cut when recording starts/stops
-    // TODO: make use of restart_videomixer;
-    // TODO: actually, restart audiomixer and videomixer can be removed after refactor
-    bool recording, restart_audiomixer, restart_videomixer;
+    bool recording;
     HWND preview_hwnd;
     CHandle stopped_signal;
     std::recursive_mutex pipeline_mutex;

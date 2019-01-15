@@ -194,10 +194,6 @@ void control_displaycapture::apply_transformation(
         params.dest_m = transformation;
         params.axis_aligned_clip = ((video_params.rotate / 90.f) ==
             round(video_params.rotate / 90.f));
-
-        // TODO:
-        static short order = 0;
-        params.z_order = order++;
     }
     else
     {

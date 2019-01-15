@@ -135,10 +135,12 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-void sink_preview2::draw_sample(const media_component_video_args_t& args, request_packet&)
+void sink_preview2::draw_sample(const media_component_args* args_)
 {
     if(!this->render)
         return;
+
+    const media_component_video_args* args = static_cast<const media_component_video_args*>(args_);
 
     HRESULT hr = S_OK;
     bool has_video_control = false;
@@ -412,15 +414,14 @@ stream_preview2::stream_preview2(const sink_preview2_t& sink) : sink(sink)
 {
 }
 
-media_stream::result_t stream_preview2::request_sample(request_packet& rp, const media_stream*)
+media_stream::result_t stream_preview2::request_sample(const request_packet& rp, const media_stream*)
 {
     return this->sink->session->request_sample(this, rp) ? OK : FATAL_ERROR;
 }
 
 media_stream::result_t stream_preview2::process_sample(
-    const media_sample& args, request_packet& rp, const media_stream*)
+    const media_component_args* args, const request_packet& rp, const media_stream*)
 {
-    this->sink->draw_sample(
-        reinterpret_cast<const media_component_video_args_t&>(args), rp);
+    this->sink->draw_sample(args);
     return this->sink->session->give_sample(this, args, rp) ? OK : FATAL_ERROR;
 }

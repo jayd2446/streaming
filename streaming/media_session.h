@@ -50,18 +50,16 @@ public:
 
     // TODO: use same return values for media streams and media session
 
-    // request_sample returns false if the stream isn't found on the active topology;
-    // request_sample won't fail when the is_sink is false
-    // TODO: make request_packet& const
+    // request_sample returns false if the stream isn't found on the active topology
     bool request_sample(
         const media_stream* this_input_stream, 
-        request_packet&);
-    // is_source flag is used for the media session to able to translate the sample times;
+        const request_packet&);
     // TODO: give sample must not fail
+    // args can be null
     bool give_sample(
         const media_stream* this_output_stream, 
-        const media_sample& sample_view,
-        request_packet&);
+        const media_component_args* args,
+        const request_packet&);
 
     // begins and completes the request_sample call chain and handles topology switching;
     // the request call chain is atomic

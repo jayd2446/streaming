@@ -19,11 +19,6 @@ stream_audio_t sink_audio::create_stream(presentation_clock_t&& clock)
     return stream;
 }
 
-stream_worker_t sink_audio::create_worker_stream()
-{
-    return stream_worker_t(new stream_worker(this->shared_from_this<sink_audio>()));
-}
-
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
@@ -35,7 +30,7 @@ stream_audio::stream_audio(const sink_audio_t& sink) :
     media_stream_clock_sink(sink.get()), 
     stop_point(std::numeric_limits<time_unit>::min()),
     requesting(false), processing(false),
-    requests(0), max_requests(VIDEO_MAX_REQUESTS)
+    requests(0), max_requests(DEFAULT_MAX_REQUESTS)
 {
 }
 
@@ -55,9 +50,6 @@ void stream_audio::dispatch_request(const request_packet& incomplete_rp, bool no
 {
     assert_(this->unavailable <= 240);
 
-    // initiate the video request
-    scoped_lock lock(this->worker_streams_mutex);
-
     const int requests = this->requests.load();
     if(requests < this->max_requests || no_drop)
     {
@@ -70,6 +62,8 @@ void stream_audio::dispatch_request(const request_packet& incomplete_rp, bool no
     else
     {
         this->unavailable++;
+
+        std::cout << "--SAMPLE REQUEST DROPPED IN AUDIO_SINK--" << std::endl;
     }
 
     /*assert_(this->unavailable <= 240);
@@ -102,18 +96,8 @@ void stream_audio::dispatch_process()
     this->sink->session->begin_give_sample(this, this->topology);
 }
 
-void stream_audio::add_worker_stream(const stream_worker_t& worker_stream)
-{
-    scoped_lock lock(this->worker_streams_mutex);
-
-    worker_stream->set_max_requests(VIDEO_MAX_REQUESTS);
-    worker_stream->not_used();
-
-    this->worker_stream = worker_stream;
-}
-
 media_stream::result_t stream_audio::process_sample(
-    const media_sample&, request_packet& rp, const media_stream*)
+    const media_component_args*, const request_packet& rp, const media_stream*)
 {
     this->requests--;
 

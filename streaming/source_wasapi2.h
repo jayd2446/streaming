@@ -122,8 +122,8 @@ private:
 public:
     explicit stream_wasapi2(const source_wasapi2_t&);
 
-    result_t request_sample(request_packet&, const media_stream*);
-    result_t process_sample(const media_sample&, request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*);
+    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
 typedef std::shared_ptr<stream_wasapi2> stream_wasapi2_t;
