@@ -16,8 +16,6 @@
 class stream_videomixer;
 typedef std::shared_ptr<stream_videomixer> stream_videomixer_t;
 
-// TODO: z order and sorting in videomixer is no longer necessary
-
 // controls how the stream should process the input sample
 class stream_videomixer_controller
 {
@@ -66,8 +64,13 @@ typedef std::shared_ptr<stream_videomixer_base> stream_videomixer_base_t;
 class transform_videomixer : public transform_videomixer_base
 {
     friend class stream_videomixer;
+private:
+    struct device_context_resources;
+    typedef std::shared_ptr<device_context_resources> device_context_resources_t;
+    typedef buffer_pooled<device_context_resources> device_context_resources_pooled;
+    typedef std::shared_ptr<device_context_resources_pooled> device_context_resources_pooled_t;
 public:
-    typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
+    typedef buffer_pool<device_context_resources_pooled> buffer_pool;
 
     // TODO: canvas size should probably be a float
     static const UINT32 canvas_width = transform_h264_encoder::frame_width;
@@ -100,12 +103,11 @@ typedef std::shared_ptr<transform_videomixer> transform_videomixer_t;
 class stream_videomixer : public stream_videomixer_base
 {
 private:
+    typedef transform_videomixer::device_context_resources_t device_context_resources_t;
     transform_videomixer_t transform;
-    // TODO: enable multithreaded dev context again by having a predefined set
-    CComPtr<ID2D1DeviceContext> d2d1devctx;
 
-    void initialize_buffer(const media_buffer_texture_t& buffer);
-    media_buffer_texture_t acquire_buffer(const std::shared_ptr<transform_videomixer::buffer_pool>&);
+    void initialize_resources(const device_context_resources_t& resources);
+    device_context_resources_t acquire_buffer();
 
     bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded);
     void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end);

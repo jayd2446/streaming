@@ -6,6 +6,17 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
+struct transform_videomixer::device_context_resources : media_buffer_texture
+{
+    CComPtr<ID2D1DeviceContext> ctx;
+    // the texture that is bound to this brush must be immutable;
+    // it is assumed that the input samples are immutable
+    CComPtr<ID2D1BitmapBrush1> bitmap_brush;
+
+    virtual ~device_context_resources() {}
+    void uninitialize() {}
+};
+
 transform_videomixer::transform_videomixer(
     const media_session_t& session, context_mutex_t context_mutex) :
     transform_videomixer_base(session), context_mutex(context_mutex), texture_pool(new buffer_pool)
@@ -51,27 +62,18 @@ stream_videomixer::stream_videomixer(const transform_videomixer_t& transform) :
     stream_mixer(transform),
     transform(transform)
 {
-    HRESULT hr = S_OK;
-
-    // TODO: the d2d1 context should probably be in the transform after all
-    // create the d2d1 context
-    CHECK_HR(hr = this->transform->d2d1dev->CreateDeviceContext(
-        D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-        &this->d2d1devctx));
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 }
 
-void stream_videomixer::initialize_buffer(const media_buffer_texture_t& buffer)
+void stream_videomixer::initialize_resources(const device_context_resources_t& resources)
 {
     HRESULT hr = S_OK;
+
     CComPtr<IDXGISurface> dxgisurface;
-    D2D1_BITMAP_PROPERTIES1 bitmap_properties = D2D1::BitmapProperties1(
+    D2D1_BITMAP_PROPERTIES1 output_bitmap_props = D2D1::BitmapProperties1(
         D2D1_BITMAP_OPTIONS_TARGET,
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
 
+    // initialize the media_buffer_texture part
     D3D11_TEXTURE2D_DESC desc;
     desc.Width = transform_h264_encoder::frame_width;
     desc.Height = transform_h264_encoder::frame_height;
@@ -84,33 +86,36 @@ void stream_videomixer::initialize_buffer(const media_buffer_texture_t& buffer)
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(&desc, NULL, &buffer->texture));
+    resources->initialize(this->transform->d3d11dev, desc, NULL);
 
-    CHECK_HR(hr = buffer->texture->QueryInterface(&dxgisurface));
-    CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
-        dxgisurface, bitmap_properties, &buffer->bitmap));
+    // initialize resources
+    CHECK_HR(hr = resources->texture->QueryInterface(&dxgisurface));
+    CHECK_HR(hr = this->transform->d2d1dev->CreateDeviceContext(
+        D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &resources->ctx));
+    CHECK_HR(hr = resources->ctx->CreateBitmapFromDxgiSurface(
+        dxgisurface, output_bitmap_props, &resources->bitmap));
+    // set the initial source for bitmap brush to output texture;
+    // it will be switched when mixing
+    CHECK_HR(hr = resources->ctx->CreateBitmapBrush(resources->bitmap, &resources->bitmap_brush));
 
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
 }
 
-media_buffer_texture_t stream_videomixer::acquire_buffer(
-    const std::shared_ptr<transform_videomixer::buffer_pool>& pool)
+stream_videomixer::device_context_resources_t stream_videomixer::acquire_buffer()
 {
-    transform_videomixer::buffer_pool::scoped_lock lock(pool->mutex);
-    if(pool->is_empty())
+    transform_videomixer::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
+    if(this->transform->texture_pool->is_empty())
     {
-        media_buffer_texture_t buffer = pool->acquire_buffer();
-        this->initialize_buffer(buffer);
-        /*std::cout << "creating new..." << std::endl;*/
-        return buffer;
+        device_context_resources_t resources = this->transform->texture_pool->acquire_buffer();
+        this->initialize_resources(resources);
+        return resources;
     }
     else
     {
-        media_buffer_texture_t buffer = pool->acquire_buffer();
-        /*std::cout << "reusing..." << std::endl;*/
-        return buffer;
+        device_context_resources_t resources = this->transform->texture_pool->acquire_buffer();
+        return resources;
     }
 }
 
@@ -152,16 +157,16 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     // TODO: use media_buffer_textures
 
     HRESULT hr = S_OK;
-    media_buffer_texture_t output_buffer = this->acquire_buffer(this->transform->texture_pool);
+    device_context_resources_t context = this->acquire_buffer();
     const time_unit timestamp = convert_to_time_unit(first,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
     
     // draw
-    this->d2d1devctx->SetTarget(output_buffer->bitmap);
+    context->ctx->SetTarget(context->bitmap);
 
-    this->d2d1devctx->BeginDraw();
-    this->d2d1devctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+    context->ctx->BeginDraw();
+    context->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
 
     // TODO: videomixer shouldn't output silent frames so that
     // the encoder doesn't need to handle it
@@ -186,7 +191,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         using namespace D2D1;
         CComPtr<ID2D1Bitmap1> bitmap;
         CComPtr<IDXGISurface> surface;
-        CComPtr<ID2D1BitmapBrush1> bitmap_brush;
         Matrix3x2F src_to_dest, src2_to_dest2;
         Matrix3x2F world, brush;
         bool invert;
@@ -219,15 +223,15 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         brush = params.source_m;
 
         CHECK_HR(hr = texture->QueryInterface(&surface));
-        CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
+        CHECK_HR(hr = context->ctx->CreateBitmapFromDxgiSurface(
             surface,
             BitmapProperties1(
                 D2D1_BITMAP_OPTIONS_NONE,
                 PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
             &bitmap));
-        CHECK_HR(hr = this->d2d1devctx->CreateBitmapBrush(bitmap, &bitmap_brush));
+        context->bitmap_brush->SetBitmap(bitmap);
 
-        bitmap_brush->SetTransform(brush);
+        context->bitmap_brush->SetTransform(brush);
 
         if(!user_params.axis_aligned_clip)
         {
@@ -244,30 +248,30 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
             layer_params = LayerParameters1(
                 InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, layer);
 
-            this->d2d1devctx->SetTransform(world);
-            this->d2d1devctx->PushLayer(layer_params, NULL);
+            context->ctx->SetTransform(world);
+            context->ctx->PushLayer(layer_params, NULL);
         }
         else
         {
-            this->d2d1devctx->SetTransform(user_params.dest_m);
+            context->ctx->SetTransform(user_params.dest_m);
             // the world transform is applied to the axis aligned clip when push is called
-            this->d2d1devctx->PushAxisAlignedClip(
+            context->ctx->PushAxisAlignedClip(
                 user_params.dest_rect,
                 D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
-            this->d2d1devctx->SetTransform(world);
+            context->ctx->SetTransform(world);
         }
 
-        this->d2d1devctx->FillRectangle(params.source_rect, bitmap_brush);
+        context->ctx->FillRectangle(params.source_rect, context->bitmap_brush);
 
         if(!user_params.axis_aligned_clip)
-            this->d2d1devctx->PopLayer();
+            context->ctx->PopLayer();
         else
-            this->d2d1devctx->PopAxisAlignedClip();
+            context->ctx->PopAxisAlignedClip();
     }
 
 done:
-    const HRESULT hr2 = this->d2d1devctx->EndDraw();
+    const HRESULT hr2 = context->ctx->EndDraw();
 
     if(FAILED(hr) || FAILED(hr2))
     {
@@ -286,7 +290,7 @@ done:
 
     out_arg = std::make_optional<out_arg_t::value_type>();
     out_arg->frame_end = end;
-    out_arg->single_buffer = output_buffer;
+    out_arg->single_buffer = context;
 }
 
 

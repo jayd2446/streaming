@@ -117,7 +117,8 @@ protected:
     // returns whether the old_in_arg became null(all frames were moved);
     // discarded flags indicates whether the sample is immediately discarded
     virtual bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded) = 0;
-    // mixes all the frames in args to out up to end
+    // mixes all the frames in args to out up to end;
+    // NOTE: mixing must be multithreading safe
     virtual void mix(out_arg_t& out, args_t&, frame_unit first, frame_unit end) = 0;
 public:
     explicit stream_mixer(const transform_mixer_t& transform);
@@ -301,10 +302,12 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
     }
 
     out_arg_t out;
+    const frame_unit cutoff = this->cutoff;
     assert_(old_cutoff <= this->cutoff);
-    this->mix(out, packets, old_cutoff, this->cutoff);
 
     this->unlock();
+    this->mix(out, packets, old_cutoff, cutoff);
+
     this->transform->session->give_sample(request.stream, 
         out.has_value() ? &(*out) : NULL, request.rp);
 }

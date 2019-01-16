@@ -104,6 +104,43 @@ done:
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
 
+
+void media_buffer_texture::initialize(const CComPtr<ID3D11Device>& dev,
+    const D3D11_TEXTURE2D_DESC& desc, const D3D11_SUBRESOURCE_DATA* subrsrc)
+{
+    HRESULT hr = S_OK;
+
+    if(this->texture)
+    {
+#ifdef _DEBUG
+        CComPtr<ID3D11Device> old_dev;
+        D3D11_TEXTURE2D_DESC old_desc;
+
+        this->texture->GetDesc(&old_desc);
+        this->texture->GetDevice(&old_dev);
+
+        assert_(old_dev.IsEqualObject(dev));
+        assert_(desc.Width == old_desc.Width);
+        assert_(desc.Height == old_desc.Height);
+        assert_(desc.Format == old_desc.Format);
+        assert_(desc.Usage == old_desc.Usage);
+        assert_(desc.BindFlags == old_desc.BindFlags);
+#endif
+    }
+    else
+        CHECK_HR(hr = dev->CreateTexture2D(&desc, subrsrc, &this->texture))
+
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
 bool media_sample_audio_frames::move_frames_to(media_sample_audio_frames* to,
     frame_unit end, UINT32 block_align)
 {

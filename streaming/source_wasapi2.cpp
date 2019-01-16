@@ -224,10 +224,12 @@ void source_wasapi2::capture_cb(void*)
                 goto done;
             }
 
+            /*if(!this->capture)
+                first_sample_timestamp -= SECOND_IN_TIME_UNIT;*/
+
             // calculate the new sample base from the timestamp
             this->native_frame_base = convert_to_frame_unit(
-                time_source->system_time_to_time_source((time_unit)first_sample_timestamp)/* +
-                SECOND_IN_TIME_UNIT / 2*/,
+                time_source->system_time_to_time_source((time_unit)first_sample_timestamp),
                 this->samples_per_second, 1);
 
             // set new base

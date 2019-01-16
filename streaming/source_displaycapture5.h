@@ -16,6 +16,11 @@
 
 #pragma comment(lib, "dxgi")
 
+// TODO: duplicateoutput will return e_invalidarg if another instance of this
+// with the same output is already running;
+// this might happen if a scene is briefly switched to an empty scene and back
+// and the associated topology of the scene in question hasn't destroyed yet
+
 class stream_displaycapture5;
 class stream_displaycapture5_pointer;
 //class control_pipeline2;

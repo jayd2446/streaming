@@ -62,6 +62,7 @@ class media_buffer_texture : public buffer_poolable
 {
     friend class buffer_pooled<media_buffer_texture>;
 private:
+    // the buffer should be always initialized with the same desc and device
     void uninitialize() {}
 public:
     // TODO: the memory buffer should be a derived class of this defined in h264 encoder;
@@ -69,9 +70,15 @@ public:
     DWORD texture_buffer_length;
     std::unique_ptr<BYTE[]> texture_buffer;
 
+    // TODO: this bitmap should be set in displaycapture aswell so that videomixer
+    // doesn't need to create it for every input texture
     CComPtr<ID2D1Bitmap1> bitmap;
     CComPtr<ID3D11Texture2D> texture;
     virtual ~media_buffer_texture() {}
+
+    // currently, initialize doesn't initialize the bitmap
+    void initialize(const CComPtr<ID3D11Device>&,
+        const D3D11_TEXTURE2D_DESC&, const D3D11_SUBRESOURCE_DATA*);
 };
 
 typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;

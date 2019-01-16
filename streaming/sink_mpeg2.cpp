@@ -181,6 +181,7 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     if(this->processing || this->audio_sink_stream->processing)
         this->schedule_new(due_time);
 
+    // TODO: video and audio pipeline should be independently destroyed
     // TODO: this design oddity should be fixed
     // because this stream controls the audio sink, this topology must be destroyed after
     // the audio topology is destroyed

@@ -53,7 +53,8 @@ void sink_preview2::initialize(
     //CHECK_HR(hr = this->d2d1factory->CreateDevice(this->dxgidev, &this->d2d1dev));
 
     // create a direct2d device context
-    CHECK_HR(hr = this->d2d1dev->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &this->d2d1devctx));
+    CHECK_HR(hr = this->d2d1dev->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, 
+        &this->d2d1devctx));
 
     // create swap chain for the hwnd
     swapchain_desc.Width = swapchain_desc.Height = 0; // use automatic sizing
@@ -186,15 +187,15 @@ out:
         canvas_to_preview = canvas_to_preview * Matrix3x2F::Translation(
             preview_rect.left, preview_rect.top);
 
-        CComPtr<ID2D1Bitmap1> bitmap;
-        CComPtr<IDXGISurface> surface;
+        CComPtr<ID2D1Bitmap1> bitmap = args->single_buffer->bitmap;
+        /*CComPtr<IDXGISurface> surface;
         CHECK_HR(hr = texture->QueryInterface(&surface));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
             surface,
             BitmapProperties1(
             D2D1_BITMAP_OPTIONS_NONE,
             PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
-            &bitmap));
+            &bitmap));*/
 
         this->d2d1devctx->BeginDraw();
         this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
