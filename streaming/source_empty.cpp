@@ -31,7 +31,6 @@ void stream_empty_audio::callback_f(void*)
 
     this->unlock();
 
-    // TODO: the sample should be an audiomixer sample
     media_component_audio_args args;
     args.frame_end = convert_to_frame_unit(rp.request_time,
         transform_aac_encoder::sample_rate, 1);

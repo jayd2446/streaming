@@ -35,20 +35,20 @@ typedef int64_t frame_unit;
 frame_unit convert_to_frame_unit(time_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 time_unit convert_to_time_unit(frame_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 
-// TODO: remove this
-class media_buffer : public enable_shared_from_this
-{
-public:
-    /*CComPtr<IUnknown> lifetime_tracker;*/
-
-    virtual ~media_buffer() {}
-};
-
-typedef std::shared_ptr<media_buffer> media_buffer_t;
+//// TODO: remove this
+//class media_buffer : public enable_shared_from_this
+//{
+//public:
+//    /*CComPtr<IUnknown> lifetime_tracker;*/
+//
+//    virtual ~media_buffer() {}
+//};
+//
+//typedef std::shared_ptr<media_buffer> media_buffer_t;
 
 // h264 memory buffer
 // TODO: just use media_buffer_samples and remove h264&aac buffers
-class media_buffer_h264 : public media_buffer
+class media_buffer_h264 : public enable_shared_from_this
 {
 public:
     std::deque<CComPtr<IMFSample>> samples;
@@ -85,9 +85,11 @@ typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;
 typedef buffer_pooled<media_buffer_texture> media_buffer_pooled_texture;
 typedef std::shared_ptr<media_buffer_pooled_texture> media_buffer_pooled_texture_t;
 
+
+
 // set to imfsample to ensure that the sample isn't recycled before imfsample has been released;
 // the tracker must be manually removed from the sample
-CComPtr<IUnknown> create_lifetime_tracker(const media_buffer_t&);
+//CComPtr<IUnknown> create_lifetime_tracker(const media_buffer_t&);
 
 class media_buffer_memory : public buffer_poolable
 {
@@ -152,6 +154,25 @@ typedef std::shared_ptr<media_sample_audio_frames> media_sample_audio_frames_t;
 typedef buffer_pooled<media_sample_audio_frames> media_sample_audio_frames_pooled;
 typedef std::shared_ptr<media_sample_audio_frames_pooled> media_sample_audio_frames_pooled_t;
 
+class media_sample_video_frames : public buffer_poolable
+{
+    friend class buffer_pooled<media_sample_video_frames>;
+private:
+    void uninitialize() {this->frames.clear(); this->end = 0;}
+public:
+    frame_unit end;
+    std::deque<media_buffer_texture_t> frames;
+
+    media_sample_video_frames() : end(0) {}
+    virtual ~media_sample_video_frames() {}
+
+    void initialize() {assert_(this->end == 0); assert_(this->frames.empty());}
+};
+
+typedef std::shared_ptr<media_sample_video_frames> media_sample_video_frames_t;
+typedef buffer_pooled<media_sample_video_frames> media_sample_video_frames_pooled;
+typedef std::shared_ptr<media_sample_video_frames_pooled> media_sample_video_frames_pooled_t;
+
 class media_sample_aac_frame
 {
 public:
@@ -182,16 +203,6 @@ typedef std::shared_ptr<media_sample_aac_frames> media_sample_aac_frames_t;
 typedef buffer_pooled<media_sample_aac_frames> media_sample_aac_frames_pooled;
 typedef std::shared_ptr<media_sample_aac_frames_pooled> media_sample_aac_frames_pooled_t;
 
-class media_buffer_textures : public media_buffer
-{
-public:
-    // every element must be valid
-    std::deque<std::pair<frame_unit /*frame pos*/, media_buffer_texture_t>> frames;
-    virtual ~media_buffer_textures() {}
-};
-
-typedef std::shared_ptr<media_buffer_textures> media_buffer_textures_t;
-
 //    // TODO: the session could have properties, which would include the frame rate(or the clock);
 //    // additional properties(canvas resolution etc) could be accessed from the control pipeline;
 //    // for audio, channel count and bit depth should be bound to media session aswell for
@@ -211,6 +222,8 @@ public:
     virtual ~media_sample_h264() {}
 };
 
+// TODO: optional typedefs should be removed after the mixer uses optionals only internally
+
 class media_component_args
 {
 public:
@@ -229,10 +242,14 @@ typedef std::optional<media_component_frame_args> media_component_frame_args_t;
 class media_component_video_args : public media_component_frame_args
 {
 public:
-    // TODO: rename buffers to samples
-    media_buffer_textures_t buffer;
-    // single buffer can be used instead of multiple buffers
-    // TODO: remove this
+    // TODO: for multiple samples, move_frames_to method should be created
+    // as in audio pipeline;
+    // this also probably means that a frame rate converter should be created;
+    // these are only needed if the video source is allowed to offset to a future
+    // time; transform mixer handles the buffering of samples that are late
+
+    /*media_buffer_textures_t buffer;*/
+    // single sample is used until multiple samples need to be used
     media_buffer_texture_t single_buffer;
 
     media_component_video_args() = default;
@@ -241,6 +258,16 @@ public:
 };
 
 typedef std::optional<media_component_video_args> media_component_video_args_t;
+
+class media_component_h264_encoder_args : public media_component_frame_args
+{
+public:
+    // must not be null
+    media_sample_video_frames_t sample;
+    bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
+};
+
+typedef std::optional<media_component_h264_encoder_args> media_component_h264_encoder_args_t;
 
 class media_component_audio_args : public media_component_frame_args
 {

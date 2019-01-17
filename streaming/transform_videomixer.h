@@ -57,7 +57,7 @@ public:
 typedef std::optional<media_component_videomixer_args> media_component_videomixer_args_t;
 
 typedef transform_mixer<media_component_videomixer_args_t, stream_videomixer_controller, 
-    media_component_video_args_t> transform_videomixer_base;
+    media_component_h264_encoder_args_t> transform_videomixer_base;
 typedef stream_mixer<transform_videomixer_base> stream_videomixer_base;
 typedef std::shared_ptr<stream_videomixer_base> stream_videomixer_base_t;
 
@@ -70,6 +70,7 @@ private:
     typedef buffer_pooled<device_context_resources> device_context_resources_pooled;
     typedef std::shared_ptr<device_context_resources_pooled> device_context_resources_pooled_t;
 public:
+    typedef buffer_pool<media_sample_video_frames_pooled> buffer_pool_video_frames_t;
     typedef buffer_pool<device_context_resources_pooled> buffer_pool;
 
     // TODO: canvas size should probably be a float
@@ -78,7 +79,9 @@ public:
 private:
     control_class_t ctrl_pipeline;
     context_mutex_t context_mutex;
+
     std::shared_ptr<buffer_pool> texture_pool;
+    std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
 
     CComPtr<ID2D1Factory1> d2d1factory;
     CComPtr<ID3D11Device> d3d11dev;

@@ -141,7 +141,11 @@ void sink_preview2::draw_sample(const media_component_args* args_)
     if(!this->render)
         return;
 
-    const media_component_video_args* args = static_cast<const media_component_video_args*>(args_);
+    // videomixer outputs h264 encoder args;
+    // sink preview just previews the last frame that is send to encoder;
+    // it is assumed that there is at least one frame if the args isn't empty
+    const media_component_h264_encoder_args* args = 
+        static_cast<const media_component_h264_encoder_args*>(args_);
 
     HRESULT hr = S_OK;
     bool has_video_control = false;
@@ -168,12 +172,11 @@ void sink_preview2::draw_sample(const media_component_args* args_)
 out:
     // TODO: decide if the outlines are drawn even if the buffer is null;
     // the outlines should be drawn even when the sample is silent
-    if(args && args->single_buffer)
+    if(args && !args->sample->frames.empty())
     {
         using namespace D2D1;
         scoped_lock lock(this->d2d1_context_mutex);
 
-        CComPtr<ID3D11Texture2D> texture = args->single_buffer->texture;
         D2D1_RECT_F preview_rect = this->get_preview_rect();
         bool invert;
 
@@ -187,7 +190,7 @@ out:
         canvas_to_preview = canvas_to_preview * Matrix3x2F::Translation(
             preview_rect.left, preview_rect.top);
 
-        CComPtr<ID2D1Bitmap1> bitmap = args->single_buffer->bitmap;
+        CComPtr<ID2D1Bitmap1> bitmap = args->sample->frames.back()->bitmap;
         /*CComPtr<IDXGISurface> surface;
         CHECK_HR(hr = texture->QueryInterface(&surface));
         CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(

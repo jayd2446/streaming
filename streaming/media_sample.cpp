@@ -32,40 +32,40 @@ time_unit convert_to_time_unit(frame_unit pos, frame_unit frame_rate_num, frame_
     return (time_unit)std::round(pos * frame_duration);
 }
 
-class media_sample_lifetime_tracker : public IUnknown, IUnknownImpl
-{
-public:
-    media_buffer_t sample;
-
-    explicit media_sample_lifetime_tracker(const media_buffer_t& sample) : sample(sample) {}
-
-    ULONG STDMETHODCALLTYPE AddRef() { return IUnknownImpl::AddRef(); }
-    ULONG STDMETHODCALLTYPE Release() { return IUnknownImpl::Release(); }
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
-    {
-        if(!ppv)
-            return E_POINTER;
-        if(riid == __uuidof(IUnknown))
-            *ppv = static_cast<IUnknown*>(this);
-        else
-        {
-            *ppv = NULL;
-            return E_NOINTERFACE;
-        }
-
-        this->AddRef();
-        return S_OK;
-    }
-};
-
-CComPtr<IUnknown> create_lifetime_tracker(const media_buffer_t& sample)
-{
-    // TODO: this
-    CComPtr<IUnknown> ret;
-    ret.Attach(new media_sample_lifetime_tracker(sample));
-
-    return ret;
-}
+//class media_sample_lifetime_tracker : public IUnknown, IUnknownImpl
+//{
+//public:
+//    media_buffer_t sample;
+//
+//    explicit media_sample_lifetime_tracker(const media_buffer_t& sample) : sample(sample) {}
+//
+//    ULONG STDMETHODCALLTYPE AddRef() { return IUnknownImpl::AddRef(); }
+//    ULONG STDMETHODCALLTYPE Release() { return IUnknownImpl::Release(); }
+//    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
+//    {
+//        if(!ppv)
+//            return E_POINTER;
+//        if(riid == __uuidof(IUnknown))
+//            *ppv = static_cast<IUnknown*>(this);
+//        else
+//        {
+//            *ppv = NULL;
+//            return E_NOINTERFACE;
+//        }
+//
+//        this->AddRef();
+//        return S_OK;
+//    }
+//};
+//
+//CComPtr<IUnknown> create_lifetime_tracker(const media_buffer_t& sample)
+//{
+//    // TODO: this
+//    CComPtr<IUnknown> ret;
+//    ret.Attach(new media_sample_lifetime_tracker(sample));
+//
+//    return ret;
+//}
 
 void media_buffer_memory::initialize(DWORD len)
 {

@@ -82,6 +82,7 @@ bool stream_audiomixer2::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, fra
         old_in_arg.reset();
 
     // set in_arg
+    // TODO: when adding audiomixer args, the params must be assigned to in_arg aswell
     in_arg->frame_end = end;
     in_arg->sample = frames;
 
@@ -91,7 +92,6 @@ bool stream_audiomixer2::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, fra
 void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     frame_unit first, frame_unit end)
 {
-    // the samples in packets might be null
     assert_(!packets.container.empty());
     assert_(first <= end);
     assert_(!out_arg);

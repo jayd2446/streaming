@@ -115,7 +115,7 @@ protected:
     // and updates the fields for in_arg and old_in_arg;
     // the sample in old_in_arg is assumed to be non null;
     // returns whether the old_in_arg became null(all frames were moved);
-    // discarded flags indicates whether the sample is immediately discarded
+    // discarded flag indicates whether the sample is immediately discarded
     virtual bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded) = 0;
     // mixes all the frames in args to out up to end;
     // NOTE: mixing must be multithreading safe
@@ -277,7 +277,7 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
         {
             const bool ret = 
                 this->move_frames(discarded, item.arg, old_cutoff, true);
-            /*assert_((ret && item.sample.is_null()) || (!ret && !item.sample.is_null()));*/
+            assert_((ret && !item.arg) || (!ret && item.arg));
         }
     }
 
@@ -292,9 +292,7 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
             if(!(ret = this->move_frames(new_arg, item.arg, this->cutoff, false)))
                 // assign the item to the leftover buffer since it was only partly moved
                 this->leftover[item.stream_index].container.push_back(item);
-            // TODO: re enable the asserts once video mixer properly sets the properties
-            // of the input args
-            /*assert_((ret && item.sample.is_null()) || (!ret && !item.sample.is_null()));*/
+            assert_((ret && !item.arg) || (!ret && item.arg));
         }
 
         // assign the processed arg to the request

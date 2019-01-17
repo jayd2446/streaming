@@ -359,7 +359,7 @@ void stream_aac_encoder::on_component_start(time_unit t)
 
 void stream_aac_encoder::on_component_stop(time_unit t)
 {
-    this->drain_point.store(t);
+    this->drain_point = t;
 }
 
 media_stream::result_t stream_aac_encoder::request_sample(const request_packet& rp, const media_stream*)

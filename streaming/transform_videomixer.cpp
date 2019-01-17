@@ -19,14 +19,23 @@ struct transform_videomixer::device_context_resources : media_buffer_texture
 
 transform_videomixer::transform_videomixer(
     const media_session_t& session, context_mutex_t context_mutex) :
-    transform_videomixer_base(session), context_mutex(context_mutex), texture_pool(new buffer_pool)
+    transform_videomixer_base(session), 
+    context_mutex(context_mutex), 
+    texture_pool(new buffer_pool),
+    buffer_pool_video_frames(new buffer_pool_video_frames_t)
 {
 }
 
 transform_videomixer::~transform_videomixer()
 {
-    buffer_pool::scoped_lock lock(this->texture_pool->mutex);
-    this->texture_pool->dispose();
+    {
+        buffer_pool::scoped_lock lock(this->texture_pool->mutex);
+        this->texture_pool->dispose();
+    }
+    {
+        buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
+        this->buffer_pool_video_frames->dispose();
+    }
 }
 
 void transform_videomixer::initialize(
@@ -123,174 +132,192 @@ bool stream_videomixer::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, fram
     bool discarded)
 {
     assert_(old_in_arg);
-    // TODO: allow multiple buffer
 
     in_arg = std::make_optional<in_arg_t::value_type>();
 
-    // the parameters of the old sample must be updated when moving frames;
-    // aswell as the parameters for the new sample must be set
-
-    if(old_in_arg->frame_end <= end)
-    {
+    if(old_in_arg->frame_end == end)
         in_arg = old_in_arg;
+    if(end == old_in_arg->frame_end)
         old_in_arg.reset();
 
-        /*sample.single_buffer = std::move(old_sample.single_buffer);*/
-
-        // whole sample was moved, which means that its parameters doesn't need to be updated
-        // since it is discarded
-        return true;
-    }
-
-    return false;
+    return !old_in_arg;
 }
 
 void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     frame_unit first, frame_unit end)
 {
-    // the samples in packets might be null
-
     assert_(!packets.container.empty());
 
-    // the streams in the packet are sorted
-
-    // TODO: use media_buffer_textures
+    // TODO: z order might be needed after all
 
     HRESULT hr = S_OK;
-    device_context_resources_t context = this->acquire_buffer();
-    const time_unit timestamp = convert_to_time_unit(first,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
-    
-    // draw
-    context->ctx->SetTarget(context->bitmap);
+    const frame_unit frame_count = end - first;
 
-    context->ctx->BeginDraw();
-    context->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-
-    // TODO: videomixer shouldn't output silent frames so that
-    // the encoder doesn't need to handle it
-
-    // TODO: for non variable fps, videomixer should allocate frames from first to end
-    for(auto&& item : packets.container)
+    // TODO: allow variable frame rate
+    if(frame_count > 0)
     {
-        if(!item.arg || !item.arg->single_buffer || !item.arg->single_buffer->texture)
-            continue;
-
-        CComPtr<ID3D11Texture2D> texture = item.arg->single_buffer->texture;
-        const stream_videomixer_controller::params_t& params = item.arg->params;
-        const stream_videomixer_controller::params_t& user_params =
-            item.valid_user_params ? item.user_params : params;
-
-        /////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////////////////////////
-        /////////////////////////////////////////////////////////////////
-
-        // TODO: cache d2d1 resources instead of reallocating
-
-        using namespace D2D1;
-        CComPtr<ID2D1Bitmap1> bitmap;
-        CComPtr<IDXGISurface> surface;
-        Matrix3x2F src_to_dest, src2_to_dest2;
-        Matrix3x2F world, brush;
-        bool invert;
-
-        // src_rect_m * M = dest_rect_m <=> M = src_rect_t -1 * dest_rect_m
-        src_to_dest = Matrix3x2F::Scale(
-            params.source_rect.right - params.source_rect.left,
-            params.source_rect.bottom - params.source_rect.top) *
-            Matrix3x2F::Translation(params.source_rect.left, params.source_rect.top);
-        invert = src_to_dest.Invert();
-        src_to_dest = src_to_dest * Matrix3x2F::Scale(
-            params.dest_rect.right - params.dest_rect.left,
-            params.dest_rect.bottom - params.dest_rect.top) *
-            Matrix3x2F::Translation(params.dest_rect.left, params.dest_rect.top) *
-            params.dest_m;
-
-        src2_to_dest2 = Matrix3x2F::Scale(
-            user_params.source_rect.right - user_params.source_rect.left,
-            user_params.source_rect.bottom - user_params.source_rect.top) *
-            Matrix3x2F::Translation(user_params.source_rect.left, user_params.source_rect.top) *
-            user_params.source_m;
-        invert = src2_to_dest2.Invert();
-        src2_to_dest2 = src2_to_dest2 * Matrix3x2F::Scale(
-            user_params.dest_rect.right - user_params.dest_rect.left,
-            user_params.dest_rect.bottom - user_params.dest_rect.top) *
-            Matrix3x2F::Translation(user_params.dest_rect.left, user_params.dest_rect.top) *
-            user_params.dest_m;
-
-        world = src_to_dest * src2_to_dest2;
-        brush = params.source_m;
-
-        CHECK_HR(hr = texture->QueryInterface(&surface));
-        CHECK_HR(hr = context->ctx->CreateBitmapFromDxgiSurface(
-            surface,
-            BitmapProperties1(
-                D2D1_BITMAP_OPTIONS_NONE,
-                PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
-            &bitmap));
-        context->bitmap_brush->SetBitmap(bitmap);
-
-        context->bitmap_brush->SetTransform(brush);
-
-        if(!user_params.axis_aligned_clip)
+        media_sample_video_frames_t frames;
         {
-            CComPtr<ID2D1RectangleGeometry> geometry;
-            D2D1_LAYER_PARAMETERS1 layer_params;
-            Matrix3x2F world_inverted, layer;
-
-            world_inverted = world;
-            invert = world_inverted.Invert();
-            layer = user_params.dest_m * world_inverted;
-
-            CHECK_HR(hr = this->transform->d2d1factory->CreateRectangleGeometry(
-                user_params.dest_rect, &geometry));
-            layer_params = LayerParameters1(
-                InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, layer);
-
-            context->ctx->SetTransform(world);
-            context->ctx->PushLayer(layer_params, NULL);
-        }
-        else
-        {
-            context->ctx->SetTransform(user_params.dest_m);
-            // the world transform is applied to the axis aligned clip when push is called
-            context->ctx->PushAxisAlignedClip(
-                user_params.dest_rect,
-                D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-
-            context->ctx->SetTransform(world);
+            transform_videomixer::buffer_pool_video_frames_t::scoped_lock lock(
+                this->transform->buffer_pool_video_frames->mutex);
+            frames = this->transform->buffer_pool_video_frames->acquire_buffer();
+            frames->initialize();
         }
 
-        context->ctx->FillRectangle(params.source_rect, context->bitmap_brush);
+        // set a texture buffer for each frame and begin drawing
+        for(frame_unit i = 0; i < frame_count; i++)
+        {
+            device_context_resources_t frame = this->acquire_buffer();
+                
+            // each frame must be cleared
+            frame->ctx->BeginDraw();
+            frame->ctx->SetTarget(frame->bitmap);
+            frame->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+                
+            frames->frames.push_back(frame);
+        }
 
-        if(!user_params.axis_aligned_clip)
-            context->ctx->PopLayer();
-        else
-            context->ctx->PopAxisAlignedClip();
+        // draw
+        for(auto&& item : packets.container)
+        {
+            // TODO: this if statement probably is never true
+            if(!item.arg)
+                continue;
+
+            if(item.arg->single_buffer && item.arg->single_buffer->texture)
+            {
+                // -1 for the fact that currently there is only 1 texture in the sample and
+                // thus a position can be calculated that way
+                const size_t index = (size_t)item.arg->frame_end - (size_t)first - 1U;
+                assert_(index < frames->frames.size());
+                const transform_videomixer::device_context_resources* frame = 
+                    static_cast<const transform_videomixer::device_context_resources*>
+                    (frames->frames[index].get());
+
+                CComPtr<ID3D11Texture2D> texture = item.arg->single_buffer->texture;
+                const stream_videomixer_controller::params_t& params = item.arg->params;
+                const stream_videomixer_controller::params_t& user_params =
+                    item.valid_user_params ? item.user_params : params;
+
+                /////////////////////////////////////////////////////////////////
+                /////////////////////////////////////////////////////////////////
+                /////////////////////////////////////////////////////////////////
+
+                // TODO: cache geometry
+
+                using namespace D2D1;
+                CComPtr<ID2D1Bitmap1> bitmap;
+                CComPtr<IDXGISurface> surface;
+                Matrix3x2F src_to_dest, src2_to_dest2;
+                Matrix3x2F world, brush;
+                bool invert;
+
+                // src_rect_m * M = dest_rect_m <=> M = src_rect_t -1 * dest_rect_m
+                src_to_dest = Matrix3x2F::Scale(
+                    params.source_rect.right - params.source_rect.left,
+                    params.source_rect.bottom - params.source_rect.top) *
+                    Matrix3x2F::Translation(params.source_rect.left, params.source_rect.top);
+                invert = src_to_dest.Invert();
+                src_to_dest = src_to_dest * Matrix3x2F::Scale(
+                    params.dest_rect.right - params.dest_rect.left,
+                    params.dest_rect.bottom - params.dest_rect.top) *
+                    Matrix3x2F::Translation(params.dest_rect.left, params.dest_rect.top) *
+                    params.dest_m;
+
+                src2_to_dest2 = Matrix3x2F::Scale(
+                    user_params.source_rect.right - user_params.source_rect.left,
+                    user_params.source_rect.bottom - user_params.source_rect.top) *
+                    Matrix3x2F::Translation(
+                        user_params.source_rect.left, user_params.source_rect.top) *
+                    user_params.source_m;
+                invert = src2_to_dest2.Invert();
+                src2_to_dest2 = src2_to_dest2 * Matrix3x2F::Scale(
+                    user_params.dest_rect.right - user_params.dest_rect.left,
+                    user_params.dest_rect.bottom - user_params.dest_rect.top) *
+                    Matrix3x2F::Translation(user_params.dest_rect.left, user_params.dest_rect.top) *
+                    user_params.dest_m;
+
+                world = src_to_dest * src2_to_dest2;
+                brush = params.source_m;
+
+                CHECK_HR(hr = texture->QueryInterface(&surface));
+                CHECK_HR(hr = frame->ctx->CreateBitmapFromDxgiSurface(
+                    surface,
+                    BitmapProperties1(
+                        D2D1_BITMAP_OPTIONS_NONE,
+                        PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
+                    &bitmap));
+                frame->bitmap_brush->SetBitmap(bitmap);
+
+                frame->bitmap_brush->SetTransform(brush);
+
+                if(!user_params.axis_aligned_clip)
+                {
+                    CComPtr<ID2D1RectangleGeometry> geometry;
+                    D2D1_LAYER_PARAMETERS1 layer_params;
+                    Matrix3x2F world_inverted, layer;
+
+                    world_inverted = world;
+                    invert = world_inverted.Invert();
+                    layer = user_params.dest_m * world_inverted;
+
+                    CHECK_HR(hr = this->transform->d2d1factory->CreateRectangleGeometry(
+                        user_params.dest_rect, &geometry));
+                    layer_params = LayerParameters1(
+                        InfiniteRect(), geometry, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, layer);
+
+                    frame->ctx->SetTransform(world);
+                    frame->ctx->PushLayer(layer_params, NULL);
+                }
+                else
+                {
+                    frame->ctx->SetTransform(user_params.dest_m);
+                    // the world transform is applied to the axis aligned clip when push is called
+                    frame->ctx->PushAxisAlignedClip(
+                        user_params.dest_rect,
+                        D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+                    frame->ctx->SetTransform(world);
+                }
+
+                frame->ctx->FillRectangle(params.source_rect, frame->bitmap_brush);
+
+                if(!user_params.axis_aligned_clip)
+                    frame->ctx->PopLayer();
+                else
+                    frame->ctx->PopAxisAlignedClip();
+            }
+        }
+
+        // end draw
+        for(size_t i = 0; i < (size_t)frame_count; i++)
+        {
+            const transform_videomixer::device_context_resources* frame =
+                static_cast<const transform_videomixer::device_context_resources*>
+                (frames->frames[i].get());
+            CHECK_HR(hr = frame->ctx->EndDraw());
+        }
+
+        assert_(end > 0);
+        frames->end = end;
+        out_arg = std::make_optional<out_arg_t::value_type>();
+        out_arg->sample = frames;
+        out_arg->frame_end = end;
     }
 
-done:
-    const HRESULT hr2 = context->ctx->EndDraw();
+    // out_arg will be null if frame_count was 0
 
-    if(FAILED(hr) || FAILED(hr2))
+done:
+    if(FAILED(hr))
     {
         if(hr != D2DERR_RECREATE_TARGET)
             throw HR_EXCEPTION(hr);
-        if(hr2 != D2DERR_RECREATE_TARGET)
-            throw HR_EXCEPTION(hr2);
 
         if(FAILED(hr))
             PRINT_ERROR(hr);
-        if(FAILED(hr2))
-            PRINT_ERROR(hr2);
 
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     }
-
-    out_arg = std::make_optional<out_arg_t::value_type>();
-    out_arg->frame_end = end;
-    out_arg->single_buffer = context;
 }
 
 

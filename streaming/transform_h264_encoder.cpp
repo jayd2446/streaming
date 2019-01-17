@@ -294,7 +294,7 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     }
 
     const LONGLONG sample_duration = (LONGLONG)
-        (SECOND_IN_TIME_UNIT / (double)(frame_rate_num / frame_rate_den));
+        (SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den));
 
     // TODO: use multiple buffers
     time_unit sample_time = convert_to_time_unit(request.sample.args->frame_end - 1,
