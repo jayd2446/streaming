@@ -17,7 +17,7 @@ class transform_color_converter : public media_source
     friend class stream_color_converter;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef std::shared_ptr<std::stack<media_buffer_pooled_texture_t>> samples_pool;
+    typedef buffer_pool<media_sample_video_frames_pooled> buffer_pool_video_frames_t;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
 private:
     control_class_t ctrl_pipeline;
@@ -28,6 +28,7 @@ private:
     CComPtr<ID3D11VideoProcessorEnumerator> enumerator;
 
     std::shared_ptr<buffer_pool> texture_pool;
+    std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
 
     context_mutex_t context_mutex;
 public:
@@ -46,13 +47,14 @@ class stream_color_converter : public media_stream
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<stream_color_converter> async_callback_t;
-    struct packet {request_packet rp; media_component_video_args_t args;};
+    struct packet {request_packet rp; media_component_h264_encoder_args_t args;};
 private:
     transform_color_converter_t transform;
     CComPtr<ID3D11VideoProcessor> videoprocessor;
     packet pending_packet;
 
     void initialize_buffer(const media_buffer_texture_t&);
+    media_buffer_texture_t acquire_buffer();
     void processing_cb(void*);
 public:
     explicit stream_color_converter(const transform_color_converter_t& transform);

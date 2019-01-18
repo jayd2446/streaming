@@ -135,10 +135,16 @@ bool stream_videomixer::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, fram
 
     in_arg = std::make_optional<in_arg_t::value_type>();
 
-    if(old_in_arg->frame_end == end)
-        in_arg = old_in_arg;
-    if(end == old_in_arg->frame_end)
+    // just assign because the args only store a single sample currently
+    if(old_in_arg->frame_end <= end)
+    {
+        in_arg->single_buffer = old_in_arg->single_buffer;
+        in_arg->params = old_in_arg->params;
+    }
+    if(end >= old_in_arg->frame_end)
         old_in_arg.reset();
+
+    in_arg->frame_end = end;
 
     return !old_in_arg;
 }
@@ -148,12 +154,25 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 {
     assert_(!packets.container.empty());
 
-    // TODO: z order might be needed after all
+    // arg in packets can be null;
+    // the whole leftover buffer is merged to packets
+
+    // sort the packets list for correct z order
+    std::sort(packets.container.begin(), packets.container.end(), 
+        [](const packet_t& a, const packet_t& b)
+    {
+        // null packets are ordered first
+        if(!a.valid_user_params || !a.arg || !a.arg->single_buffer)
+            return false;
+        if(!b.valid_user_params || !b.arg || !b.arg->single_buffer)
+            return true;
+
+        return (a.stream_index < b.stream_index);
+    });
 
     HRESULT hr = S_OK;
     const frame_unit frame_count = end - first;
 
-    // TODO: allow variable frame rate
     if(frame_count > 0)
     {
         media_sample_video_frames_t frames;
@@ -164,35 +183,49 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
             frames->initialize();
         }
 
-        // set a texture buffer for each frame and begin drawing
+        // TODO: reserve should be used for this
         for(frame_unit i = 0; i < frame_count; i++)
-        {
-            device_context_resources_t frame = this->acquire_buffer();
-                
-            // each frame must be cleared
-            frame->ctx->BeginDraw();
-            frame->ctx->SetTarget(frame->bitmap);
-            frame->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-                
-            frames->frames.push_back(frame);
-        }
+            frames->frames.push_back(media_sample_video_frame(first + i));
 
         // draw
         for(auto&& item : packets.container)
         {
-            // TODO: this if statement probably is never true
             if(!item.arg)
                 continue;
 
+            // -1 for the fact that currently there is only 1 texture in the sample and
+            // thus a position can be calculated that way
+            bool clear = false;
+            const size_t index = (size_t)item.arg->frame_end - (size_t)first - 1U;
+            device_context_resources_t frame =
+                std::static_pointer_cast<transform_videomixer::device_context_resources>(
+                    frames->frames[index].buffer);
+            if(!frame)
+            {
+                frame = this->acquire_buffer();
+                frames->frames[index].buffer = frame;
+                clear = true;
+            }
+
+            // clear;
+            // begin draw is only called if the output sample hasn't been cleared yet or
+            // the input has a sample that needs to be mixed to output;
+            // this is important to reduce the overhead that would otherwise occur
+            if(clear)
+            {
+                frame->ctx->BeginDraw();
+                frame->ctx->SetTarget(frame->bitmap);
+                frame->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+            }
+
+            // draw
             if(item.arg->single_buffer && item.arg->single_buffer->texture)
             {
-                // -1 for the fact that currently there is only 1 texture in the sample and
-                // thus a position can be calculated that way
-                const size_t index = (size_t)item.arg->frame_end - (size_t)first - 1U;
-                assert_(index < frames->frames.size());
-                const transform_videomixer::device_context_resources* frame = 
-                    static_cast<const transform_videomixer::device_context_resources*>
-                    (frames->frames[index].get());
+                if(!clear)
+                {
+                    frame->ctx->BeginDraw();
+                    frame->ctx->SetTarget(frame->bitmap);
+                }
 
                 CComPtr<ID3D11Texture2D> texture = item.arg->single_buffer->texture;
                 const stream_videomixer_controller::params_t& params = item.arg->params;
@@ -286,16 +319,13 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                     frame->ctx->PopLayer();
                 else
                     frame->ctx->PopAxisAlignedClip();
-            }
-        }
 
-        // end draw
-        for(size_t i = 0; i < (size_t)frame_count; i++)
-        {
-            const transform_videomixer::device_context_resources* frame =
-                static_cast<const transform_videomixer::device_context_resources*>
-                (frames->frames[i].get());
-            CHECK_HR(hr = frame->ctx->EndDraw());
+                if(!clear)
+                    CHECK_HR(hr = frame->ctx->EndDraw())
+            }
+
+            if(clear)
+                CHECK_HR(hr = frame->ctx->EndDraw())
         }
 
         assert_(end > 0);

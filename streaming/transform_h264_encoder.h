@@ -26,7 +26,7 @@ class transform_h264_encoder : public media_source
 {
     friend class stream_h264_encoder;
 public:
-    struct packet {bool drain; media_component_video_args_t args;};
+    struct packet {bool drain; media_component_h264_encoder_args_t args;};
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
     typedef request_queue<packet> request_queue;
@@ -76,10 +76,13 @@ private:
     HRESULT set_output_stream_type();
     HRESULT set_encoder_parameters();
 
-    HRESULT feed_encoder(const request_t&);
+    HRESULT feed_encoder(const media_sample_video_frame&);
 
     void process_request(const media_buffer_h264_t&, request_t&);
     bool process_output(CComPtr<IMFSample>&);
+
+    // returns whether the request can be served
+    bool extract_frame(media_sample_video_frame&, const request_t&);
 
     void events_cb(void*);
     void processing_cb(void*);

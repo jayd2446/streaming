@@ -98,6 +98,7 @@ private:
     void uninitialize() {}
 public:
     // the buffer is readonly
+    // TODO: decide if should make this private
     CComPtr<IMFMediaBuffer> buffer;
 
     virtual ~media_buffer_memory() {}
@@ -154,14 +155,30 @@ typedef std::shared_ptr<media_sample_audio_frames> media_sample_audio_frames_t;
 typedef buffer_pooled<media_sample_audio_frames> media_sample_audio_frames_pooled;
 typedef std::shared_ptr<media_sample_audio_frames_pooled> media_sample_audio_frames_pooled_t;
 
+class media_sample_video_frame
+{
+public:
+    frame_unit pos;
+    static constexpr frame_unit dur = 1;
+    // buffer can be null
+    media_buffer_texture_t buffer;
+
+    media_sample_video_frame() = default;
+    explicit media_sample_video_frame(frame_unit pos) : pos(pos) {}
+};
+
+// currently, only videomixer outputs video_frames;
+// video sources output videomixer samples that only contain a single frame
 class media_sample_video_frames : public buffer_poolable
 {
     friend class buffer_pooled<media_sample_video_frames>;
 private:
     void uninitialize() {this->frames.clear(); this->end = 0;}
 public:
+    // end is the max (pos + dur) of frames
     frame_unit end;
-    std::deque<media_buffer_texture_t> frames;
+    // element must have valid data
+    std::deque<media_sample_video_frame> frames;
 
     media_sample_video_frames() : end(0) {}
     virtual ~media_sample_video_frames() {}
@@ -262,7 +279,8 @@ typedef std::optional<media_component_video_args> media_component_video_args_t;
 class media_component_h264_encoder_args : public media_component_frame_args
 {
 public:
-    // must not be null
+    // must not be null;
+    // frames must be ordered
     media_sample_video_frames_t sample;
     bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
 };
@@ -281,7 +299,8 @@ typedef std::optional<media_component_audio_args> media_component_audio_args_t;
 class media_component_aac_encoder_args : public media_component_frame_args
 {
 public:
-    // must not be null
+    // must not be null;
+    // frames must be ordered
     media_sample_audio_frames_t sample;
     bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
 };

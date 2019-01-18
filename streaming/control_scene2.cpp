@@ -47,7 +47,7 @@ void control_scene2::build_video_topology(const media_stream_t& from,
     }
 }
 
-void control_scene2::build_audio_topology_branch(const media_stream_t& from,
+void control_scene2::build_audio_topology(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
     if(this->disabled)
@@ -66,7 +66,7 @@ void control_scene2::build_audio_topology_branch(const media_stream_t& from,
         if(scene && !scene->disabled)
         {
             no_audio = false;
-            scene->build_audio_topology_branch(from, audiomixer_stream, topology);
+            scene->build_audio_topology(from, audiomixer_stream, topology);
         }
     }
 
@@ -76,7 +76,7 @@ void control_scene2::build_audio_topology_branch(const media_stream_t& from,
             continue;
 
         no_audio = false;
-        elem->build_audio_topology_branch(from, audiomixer_stream, topology);
+        elem->build_audio_topology(from, audiomixer_stream, topology);
     }
 
     if(no_audio)

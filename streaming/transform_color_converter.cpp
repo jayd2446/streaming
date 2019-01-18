@@ -6,27 +6,28 @@
 #include <Mferror.h>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
-//void CHECK_HR(HRESULT hr)
-//{
-//    if(FAILED(hr))
-//        throw HR_EXCEPTION(hr);
-//}
-
 
 transform_color_converter::transform_color_converter(
     const media_session_t& session, context_mutex_t context_mutex) :
     media_source(session),
     texture_pool(new buffer_pool),
+    buffer_pool_video_frames(new buffer_pool_video_frames_t),
     context_mutex(context_mutex)
 {
 }
 
 transform_color_converter::~transform_color_converter()
 {
-    // dispose the pool so that the cyclic dependency between the wrapped container and its
-    // elements is broken
-    buffer_pool::scoped_lock lock(this->texture_pool->mutex);
-    this->texture_pool->dispose();
+    {
+        // dispose the pool so that the cyclic dependency between the wrapped container and its
+        // elements is broken
+        buffer_pool::scoped_lock lock(this->texture_pool->mutex);
+        this->texture_pool->dispose();
+    }
+    {
+        buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
+        this->buffer_pool_video_frames->dispose();
+    }
 }
 
 HRESULT transform_color_converter::initialize(
@@ -157,100 +158,118 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
+media_buffer_texture_t stream_color_converter::acquire_buffer()
+{
+    transform_color_converter::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
+    if(this->transform->texture_pool->is_empty())
+    {
+        media_buffer_texture_t buffer = this->transform->texture_pool->acquire_buffer();
+        this->initialize_buffer(buffer);
+        return buffer;
+    }
+    else
+    {
+        media_buffer_texture_t buffer = this->transform->texture_pool->acquire_buffer();
+        return buffer;
+    }
+}
+
 void stream_color_converter::processing_cb(void*)
 {
     HRESULT hr = S_OK;
-    media_buffer_texture_t output_buffer;
-    media_component_video_args_t args = std::make_optional<media_component_video_args>();
+    media_component_h264_encoder_args_t args;
+    media_sample_video_frames_t frames;
 
-    //assert_(!this->pending_packet.sample.is_null() && !this->pending_packet.sample.silent);
-    //// pass a null sample forward if the sample doesn't have textures
-    //if(this->pending_packet.sample.is_null() || this->pending_packet.sample.silent)
-    //    goto done;
+    if(!this->pending_packet.args)
+        goto done;
 
-    // get output buffer from the pool or create a new one
     {
-        transform_color_converter::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
-        
-        if(this->transform->texture_pool->is_empty())
-        {
-            // create new buffer
-            output_buffer = this->transform->texture_pool->acquire_buffer();
-            this->initialize_buffer(output_buffer);
-            /*std::cout << "creating new..." << std::endl;*/
-        }
-        else
-            output_buffer = this->transform->texture_pool->acquire_buffer();
+        transform_color_converter::buffer_pool_video_frames_t::scoped_lock lock(
+            this->transform->buffer_pool_video_frames->mutex);
+        frames = this->transform->buffer_pool_video_frames->acquire_buffer();
+        frames->initialize();
+
+        frames->end = this->pending_packet.args->sample->end;
     }
 
-    // scope is important here so that the context mutex is unlocked;
-    // failure to unlock it before proceeding to next component
-    // introduces a deadlock scenario
+    for(auto&& item : this->pending_packet.args->sample->frames)
     {
-        CComPtr<ID3D11Texture2D> texture = this->pending_packet.args->single_buffer->texture;
-        assert_(texture);
+        media_sample_video_frame frame(item.pos);
 
-        // create the output view
-        CComPtr<ID3D11VideoProcessorOutputView> output_view;
-        D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
-        view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
-        view_desc.Texture2D.MipSlice = 0;
-        // TODO: include this outputview in the pool aswell
-        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
-            output_buffer->texture, this->transform->enumerator, &view_desc, &output_view));
+        if(item.buffer)
+        {
+            // TODO: acquire buffer here should also allocate device resources the same way
+            // videomixer does
+            CComPtr<ID3D11Texture2D> texture = item.buffer->texture;
+            media_buffer_texture_t output_buffer = this->acquire_buffer();
+            assert_(texture);
 
-        // create the input view for the sample to be converted
-        CComPtr<ID3D11VideoProcessorInputView> input_view;
-        D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
-        desc.FourCC = 0; // uses the same format the input resource has
-        desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-        desc.Texture2D.MipSlice = 0;
-        desc.Texture2D.ArraySlice = 0;
-        CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
-            texture, this->transform->enumerator, &desc, &input_view));
+            // create the output view
+            CComPtr<ID3D11VideoProcessorOutputView> output_view;
+            D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
+            view_desc.ViewDimension = D3D11_VPOV_DIMENSION_TEXTURE2D;
+            view_desc.Texture2D.MipSlice = 0;
+            // TODO: include this outputview in the pool aswell
+            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorOutputView(
+                output_buffer->texture, this->transform->enumerator, &view_desc, &output_view));
 
-        // convert
-        D3D11_VIDEO_PROCESSOR_STREAM stream;
-        RECT dst_rect;
-        dst_rect.top = dst_rect.left = 0;
-        dst_rect.right = transform_h264_encoder::frame_width;
-        dst_rect.bottom = transform_h264_encoder::frame_height;
+            // create the input view for the sample to be converted
+            CComPtr<ID3D11VideoProcessorInputView> input_view;
+            D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC desc;
+            desc.FourCC = 0; // uses the same format the input resource has
+            desc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
+            desc.Texture2D.MipSlice = 0;
+            desc.Texture2D.ArraySlice = 0;
+            CHECK_HR(hr = this->transform->videodevice->CreateVideoProcessorInputView(
+                texture, this->transform->enumerator, &desc, &input_view));
 
-        stream.Enable = TRUE;
-        stream.OutputIndex = 0;
-        stream.InputFrameOrField = 0;
-        stream.PastFrames = 0;
-        stream.FutureFrames = 0;
-        stream.ppPastSurfaces = NULL;
-        stream.pInputSurface = input_view;
-        stream.ppFutureSurfaces = NULL;
-        stream.ppPastSurfacesRight = NULL;
-        stream.pInputSurfaceRight = NULL;
-        stream.ppFutureSurfacesRight = NULL;
+            // convert
+            D3D11_VIDEO_PROCESSOR_STREAM stream;
+            RECT dst_rect;
+            dst_rect.top = dst_rect.left = 0;
+            dst_rect.right = transform_h264_encoder::frame_width;
+            dst_rect.bottom = transform_h264_encoder::frame_height;
 
-        scoped_lock lock(*this->transform->context_mutex);
+            stream.Enable = TRUE;
+            stream.OutputIndex = 0;
+            stream.InputFrameOrField = 0;
+            stream.PastFrames = 0;
+            stream.FutureFrames = 0;
+            stream.ppPastSurfaces = NULL;
+            stream.pInputSurface = input_view;
+            stream.ppFutureSurfaces = NULL;
+            stream.ppPastSurfacesRight = NULL;
+            stream.pInputSurfaceRight = NULL;
+            stream.ppFutureSurfacesRight = NULL;
 
-        // set the target rectangle for the output
-        // (sets the rectangle where the output blit on the output texture will appear)
-        this->transform->videocontext->VideoProcessorSetOutputTargetRect(
-            this->videoprocessor, TRUE, &dst_rect);
+            scoped_lock lock(*this->transform->context_mutex);
 
-        // set the source rectangle of the stream
-        // (the part of the stream texture which will be included in the blit);
-        // false indicates that the whole source is read
-        this->transform->videocontext->VideoProcessorSetStreamSourceRect(
-            this->videoprocessor, 0, FALSE, &dst_rect);
+            // set the target rectangle for the output
+            // (sets the rectangle where the output blit on the output texture will appear)
+            this->transform->videocontext->VideoProcessorSetOutputTargetRect(
+                this->videoprocessor, TRUE, &dst_rect);
 
-        // set the destination rectangle of the stream
-        // (where the stream will appear in the output blit)
-        this->transform->videocontext->VideoProcessorSetStreamDestRect(
-            this->videoprocessor, 0, TRUE, &dst_rect);
+            // set the source rectangle of the stream
+            // (the part of the stream texture which will be included in the blit);
+            // false indicates that the whole source is read
+            this->transform->videocontext->VideoProcessorSetStreamSourceRect(
+                this->videoprocessor, 0, FALSE, &dst_rect);
 
-        // blit
-        const UINT stream_count = 1;
-        CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
-            this->videoprocessor, output_view,
-            0, stream_count, &stream));
+            // set the destination rectangle of the stream
+            // (where the stream will appear in the output blit)
+            this->transform->videocontext->VideoProcessorSetStreamDestRect(
+                this->videoprocessor, 0, TRUE, &dst_rect);
+
+            // blit
+            const UINT stream_count = 1;
+            CHECK_HR(hr = this->transform->videocontext->VideoProcessorBlt(
+                this->videoprocessor, output_view,
+                0, stream_count, &stream));
+
+            frame.buffer = output_buffer;
+        }
+
+        frames->frames.push_back(frame);
     }
 
 done:
@@ -261,12 +280,12 @@ done:
     }
 
     args = this->pending_packet.args;
-    args->single_buffer = output_buffer;
-    // set the args to null so that the sample can be reused
-    this->pending_packet.args.reset();
-        
-    request_packet rp = this->pending_packet.rp;
+    if(args)
+        args->sample = frames;
 
+    // set the args in pending packet to null so that the sample can be reused
+    this->pending_packet.args.reset();
+    request_packet rp = this->pending_packet.rp;
     // TODO: std move should be used
     // remove the rps so that there aren't any circular dependencies at shutdown
     this->pending_packet.rp = request_packet();
@@ -292,7 +311,8 @@ media_stream::result_t stream_color_converter::process_sample(
     if(args_)
     {
         this->pending_packet.args = std::make_optional(
-            static_cast<const media_component_video_args&>(*args_));
+            static_cast<const media_component_h264_encoder_args&>(*args_));
+        assert_(this->pending_packet.args->is_valid());
     }
 
     this->processing_cb(NULL);

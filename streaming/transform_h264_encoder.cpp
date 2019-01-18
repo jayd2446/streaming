@@ -25,17 +25,17 @@ DEFINE_GUID(media_sample_tracker_guid,
 class media_buffer_wrapper : public IMFMediaBuffer, IUnknownImpl
 {
 private:
-    media_component_video_args args;
+    media_buffer_texture_t buffer;
     D3D11_TEXTURE2D_DESC desc;
 public:
     explicit media_buffer_wrapper(const context_mutex_t& context_mutex,
-        const media_component_video_args& args,
+        const media_buffer_texture_t& buffer,
         const CComPtr<IMF2DBuffer>& buffer2d) :
-        args(args)
+        buffer(buffer)
     {
         transform_h264_encoder::scoped_lock lock(*context_mutex);
 
-        this->args.single_buffer->texture->GetDesc(&this->desc);
+        this->buffer->texture->GetDesc(&this->desc);
         assert_(this->desc.Format == DXGI_FORMAT_NV12);
 
         HRESULT hr = S_OK;
@@ -49,17 +49,17 @@ public:
         // was when the texture_buffer was firstly allocated
         // (input type for the encoder implies that the desc won't change)
         CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
-        if(!this->args.single_buffer->texture_buffer)
+        if(!this->buffer->texture_buffer)
         {
-            this->args.single_buffer->texture_buffer_length = len;
-            this->args.single_buffer->texture_buffer.reset(
-                new BYTE[this->args.single_buffer->texture_buffer_length]);
+            this->buffer->texture_buffer_length = len;
+            this->buffer->texture_buffer.reset(
+                new BYTE[this->buffer->texture_buffer_length]);
         }
 
-        assert_(len == this->args.single_buffer->texture_buffer_length);
+        assert_(len == this->buffer->texture_buffer_length);
         CHECK_HR(hr = buffer2d->ContiguousCopyTo(
-            this->args.single_buffer->texture_buffer.get(),
-            this->args.single_buffer->texture_buffer_length));
+            this->buffer->texture_buffer.get(),
+            this->buffer->texture_buffer_length));
 
     done:
         if(FAILED(hr))
@@ -100,7 +100,7 @@ public:
         if(pcbCurrentLength)
             CHECK_HR(hr = this->GetCurrentLength(pcbCurrentLength));
 
-        *ppbBuffer = this->args.single_buffer->texture_buffer.get();
+        *ppbBuffer = this->buffer->texture_buffer.get();
 
     done:
         return hr;
@@ -116,7 +116,7 @@ public:
         if(!pcbCurrentLength)
             CHECK_HR(hr = E_POINTER);
 
-        *pcbCurrentLength = this->args.single_buffer->texture_buffer_length;
+        *pcbCurrentLength = this->buffer->texture_buffer_length;
 
     done:
         return hr;
@@ -136,11 +136,9 @@ public:
 class media_sample_tracker : public IUnknown, IUnknownImpl
 {
 public:
-    // TODO: when converting to multiple buffers, 
-    // this probably should be a single texture buffer only
-    media_component_video_args args;
+    media_buffer_texture_t buffer;
 
-    explicit media_sample_tracker(const media_component_video_args& args) : args(args) {}
+    explicit media_sample_tracker(const media_buffer_texture_t& buffer) : buffer(buffer) {}
     ULONG STDMETHODCALLTYPE AddRef() { return IUnknownImpl::AddRef(); }
     ULONG STDMETHODCALLTYPE Release() { return IUnknownImpl::Release(); }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
@@ -262,14 +260,13 @@ done:
     return hr;
 }
 
-HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
+HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& frame)
 {
     HRESULT hr = S_OK;
 
     CComPtr<IMFMediaBuffer> buffer;
     CComPtr<IMFSample> sample;
     CComPtr<IUnknown> sample_tracker;
-
     // TODO: use multiple buffers;
     // sample tracker should be used for each texture individually
 
@@ -277,8 +274,7 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     if(!this->use_system_memory)
     {
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
-            IID_ID3D11Texture2D,
-            request.sample.args->single_buffer->texture, 0, FALSE, &buffer));
+            IID_ID3D11Texture2D, frame.buffer->texture, 0, FALSE, &buffer));
     }
     else
     {
@@ -286,18 +282,16 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
         CComPtr<IMF2DBuffer> buffer2d;
 
         CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
-            IID_ID3D11Texture2D,
-            request.sample.args->single_buffer->texture, 0, FALSE, &dxgi_buffer));
+            IID_ID3D11Texture2D, frame.buffer->texture, 0, FALSE, &dxgi_buffer));
         CHECK_HR(hr = dxgi_buffer->QueryInterface(&buffer2d));
-        buffer.Attach(new media_buffer_wrapper(
-            this->context_mutex, *request.sample.args, buffer2d));
+        buffer.Attach(new media_buffer_wrapper(this->context_mutex, frame.buffer, buffer2d));
     }
 
     const LONGLONG sample_duration = (LONGLONG)
         (SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den));
 
     // TODO: use multiple buffers
-    time_unit sample_time = convert_to_time_unit(request.sample.args->frame_end - 1,
+    time_unit sample_time = convert_to_time_unit(frame.pos,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
     sample_time -= this->time_shift;
@@ -314,15 +308,15 @@ HRESULT transform_h264_encoder::feed_encoder(const request_t& request)
     CHECK_HR(hr = sample->SetSampleDuration(sample_duration));
     // the amd encoder probably copies the discontinuity flag to output sample,
     // which might cause problems when the sample is passed to sinkwriter
-    if((request.rp.flags & FLAG_DISCONTINUITY) || this->first_sample)
-    {
-        /*CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, TRUE));*/
-        this->first_sample = false;
-    }
+    //if((request.rp.flags & FLAG_DISCONTINUITY) || this->first_sample)
+    //{
+    //    /*CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, TRUE));*/
+    //    this->first_sample = false;
+    //}
     /*else
         CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, FALSE));*/
     // add the tracker to the sample
-    sample_tracker.Attach(new media_sample_tracker(*request.sample.args));
+    sample_tracker.Attach(new media_sample_tracker(frame.buffer));
     CHECK_HR(hr = sample->SetUnknown(media_sample_tracker_guid, sample_tracker));
 
     // feed the encoder
@@ -399,6 +393,22 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
+bool transform_h264_encoder::extract_frame(media_sample_video_frame& frame, const request_t& request)
+{
+    assert_(!frame.buffer);
+
+    if(!request.sample.args)
+        return true;
+
+    while(!request.sample.args->sample->frames.empty() && !frame.buffer)
+    {
+        frame = request.sample.args->sample->frames.front();
+        request.sample.args->sample->frames.pop_front();
+    }
+
+    return request.sample.args->sample->frames.empty();
+}
+
 void transform_h264_encoder::processing_cb(void*)
 {
     // TODO: software encoder drain
@@ -406,68 +416,79 @@ void transform_h264_encoder::processing_cb(void*)
     std::unique_lock<std::recursive_mutex> lock(this->process_mutex);
 
     HRESULT hr = S_OK;
-    
-    request_t request;
-    while((this->encoder_requests || this->software) && this->requests.pop(request))
-    {
-        // TODO: decide how to handle silent sample
-        assert_(request.sample.args);
-        assert_(request.sample.args->single_buffer);
-        assert_(request.sample.args->single_buffer->texture);
 
-        /*assert_(request.sample.sample.buffer->texture);*/
-        const time_unit timestamp = convert_to_time_unit(request.sample.args->frame_end - 1,
+    // TODO: allow non variable framerate
+
+    request_t* request;
+    while((this->encoder_requests || this->software) && (request = this->requests.get()))
+    {
+        media_sample_video_frame video_frame;
+        const bool serve_request = this->extract_frame(video_frame, *request);
+
+        // there must be a valid texture if the buffer is present
+        assert_(!video_frame.buffer || video_frame.buffer->texture);
+
+        const time_unit timestamp = convert_to_time_unit(
+            video_frame.pos,
             transform_h264_encoder::frame_rate_num,
             transform_h264_encoder::frame_rate_den);
-
         if(timestamp <= this->last_time_stamp && timestamp >= 0)
         {
             std::cout << "timestamp error in transform_h264_encoder::processing_cb" << std::endl;
             assert_(false);
         }
 
-    back:
-        hr = this->feed_encoder(request);
-
-        if(timestamp >= 0)
-            this->last_time_stamp = timestamp;
-
-        if(!this->software)
-            this->encoder_requests--;
-        else if(hr == MF_E_NOTACCEPTING)
+        // feed the encoder
+        if(video_frame.buffer)
         {
-            this->process_output_cb(NULL);
-            goto back;
-        }
-        else if(SUCCEEDED(hr))
-        {
-            DWORD status;
-            CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
-            if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
-                this->process_output_cb(NULL);
-        }
-        CHECK_HR(hr);
-        assert_(this->encoder_requests >= 0);
+        back:
+            hr = this->feed_encoder(video_frame);
 
-        // event callback will dispatch the last request
-        if(!request.sample.drain || this->software)
-        {
-            media_buffer_h264_t out_buffer;
+            if(timestamp >= 0)
+                this->last_time_stamp = timestamp;
+
+            if(!this->software)
+                this->encoder_requests--;
+            else if(hr == MF_E_NOTACCEPTING)
             {
-                scoped_lock lock(this->process_output_mutex);
-                out_buffer = std::move(this->out_buffer);
+                this->process_output_cb(NULL);
+                goto back;
             }
-
-            lock.unlock();
-            this->process_request(out_buffer, request);
-            lock.lock();
+            else if(SUCCEEDED(hr))
+            {
+                DWORD status;
+                CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
+                if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
+                    this->process_output_cb(NULL);
+            }
+            CHECK_HR(hr);
+            assert_(this->encoder_requests >= 0);
         }
-        else
+
+        if(serve_request)
         {
-            std::cout << "drain on h264 encoder" << std::endl;
-            this->last_request = request;
-            this->draining = true;
-            CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
+            this->requests.pop(*request);
+
+            // event callback will dispatch the last request
+            if(!request->sample.drain || this->software)
+            {
+                media_buffer_h264_t out_buffer;
+                {
+                    scoped_lock lock(this->process_output_mutex);
+                    out_buffer = std::move(this->out_buffer);
+                }
+
+                lock.unlock();
+                this->process_request(out_buffer, *request);
+                lock.lock();
+            }
+            else
+            {
+                std::cout << "drain on h264 encoder" << std::endl;
+                this->last_request = *request;
+                this->draining = true;
+                CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
+            }
         }
     }
 
@@ -578,7 +599,7 @@ void transform_h264_encoder::process_output_cb(void*)
         hr = sample->GetUnknown(media_sample_tracker_guid, __uuidof(IUnknown), (LPVOID*)&obj);
         if(SUCCEEDED(hr))
             // release the buffer so that it is available for reuse
-            static_cast<media_sample_tracker*>(obj.p)->args.single_buffer = NULL;
+            static_cast<media_sample_tracker*>(obj.p)->buffer = NULL;
         else if(hr != MF_E_ATTRIBUTENOTFOUND)
             CHECK_HR(hr);
         hr = S_OK;
@@ -785,8 +806,11 @@ media_stream::result_t stream_h264_encoder::process_sample(
     request.stream = this;
     request.sample.drain = (rp.request_time == this->drain_point);
     if(args_)
+    {
         request.sample.args = 
-        std::make_optional(static_cast<const media_component_video_args&>(*args_));
+        std::make_optional(static_cast<const media_component_h264_encoder_args&>(*args_));
+        assert_(request.sample.args->is_valid());
+    }
     request.rp = rp;
 
     this->transform->requests.push(request);

@@ -169,164 +169,165 @@ void sink_preview2::draw_sample(const media_component_args* args_)
         video_params = video_control->get_video_params(true);
     }
 
+    // the outlines are drawn even if there's no sample data
 out:
-    // TODO: decide if the outlines are drawn even if the buffer is null;
-    // the outlines should be drawn even when the sample is silent
-    if(args && !args->sample->frames.empty())
+    using namespace D2D1;
+    scoped_lock lock(this->d2d1_context_mutex);
+
+    D2D1_RECT_F preview_rect = this->get_preview_rect();
+    bool invert;
+
+    Matrix3x2F canvas_to_preview = 
+        Matrix3x2F::Scale((FLOAT)transform_videomixer::canvas_width, 
+        (FLOAT)transform_videomixer::canvas_height);
+    invert = canvas_to_preview.Invert();
+    canvas_to_preview = canvas_to_preview * 
+        Matrix3x2F::Scale(preview_rect.right - preview_rect.left,
+            preview_rect.bottom - preview_rect.top);
+    canvas_to_preview = canvas_to_preview * Matrix3x2F::Translation(
+        preview_rect.left, preview_rect.top);
+
+    // find the first available bitmap
+    CComPtr<ID2D1Bitmap1> bitmap;
+    if(args)
     {
-        using namespace D2D1;
-        scoped_lock lock(this->d2d1_context_mutex);
-
-        D2D1_RECT_F preview_rect = this->get_preview_rect();
-        bool invert;
-
-        Matrix3x2F canvas_to_preview = 
-            Matrix3x2F::Scale((FLOAT)transform_videomixer::canvas_width, 
-            (FLOAT)transform_videomixer::canvas_height);
-        invert = canvas_to_preview.Invert();
-        canvas_to_preview = canvas_to_preview * 
-            Matrix3x2F::Scale(preview_rect.right - preview_rect.left,
-                preview_rect.bottom - preview_rect.top);
-        canvas_to_preview = canvas_to_preview * Matrix3x2F::Translation(
-            preview_rect.left, preview_rect.top);
-
-        CComPtr<ID2D1Bitmap1> bitmap = args->sample->frames.back()->bitmap;
-        /*CComPtr<IDXGISurface> surface;
-        CHECK_HR(hr = texture->QueryInterface(&surface));
-        CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
-            surface,
-            BitmapProperties1(
-            D2D1_BITMAP_OPTIONS_NONE,
-            PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE)),
-            &bitmap));*/
-
-        this->d2d1devctx->BeginDraw();
-        this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
-
-        if(preview_rect.left > std::numeric_limits<FLOAT>::epsilon() &&
-            preview_rect.top > std::numeric_limits<FLOAT>::epsilon())
+        for(auto&& item : args->sample->frames)
         {
-            // draw preview rect
-            this->d2d1devctx->SetTransform(canvas_to_preview);
+            if(item.buffer && item.buffer->bitmap)
+            {
+                bitmap = item.buffer->bitmap;
+                break;
+            }
+        }
+    }
+        
+    this->d2d1devctx->BeginDraw();
+    this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
+
+    if(preview_rect.left > std::numeric_limits<FLOAT>::epsilon() &&
+        preview_rect.top > std::numeric_limits<FLOAT>::epsilon())
+    {
+        // draw preview rect
+        this->d2d1devctx->SetTransform(canvas_to_preview);
+        if(bitmap)
             this->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f, 
                 (FLOAT)transform_videomixer::canvas_width,
                 (FLOAT)transform_videomixer::canvas_height));
 
-            if(has_video_control)
-            {
-                /*control_video::video_params_t video_params = video_control->get_video_params(true);*/
-                
-                // draw size box
-                FLOAT box_stroke = 1.5f;
-                /*Matrix3x2F dest = 
-                    Matrix3x2F::Scale(
-                        video_params.rectangle.right - video_params.rectangle.left,
-                        video_params.rectangle.bottom - video_params.rectangle.top) *
-                    Matrix3x2F::Rotation(video_params.rotation) *
-                    Matrix3x2F::Translation(video_params.rectangle.left, video_params.rectangle.top);*/
-                this->d2d1devctx->SetTransform(dest_m * canvas_to_preview);
-
-                /*D2D1_ANTIALIAS_MODE old_mode = this->d2d1devctx->GetAntialiasMode();*/
-                /*this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);*/
-                this->d2d1devctx->DrawRectangle(dest_rect, 
-                    this->box_brush, box_stroke, this->stroke_style);
-                /*this->d2d1devctx->SetAntialiasMode(old_mode);*/
-
-                // draw corners
-                const int highlighted = highlighted_points;
-                ID2D1SolidColorBrush* brush;
-                FLOAT corner_length = this->size_point_radius;
-                FLOAT corner_stroke = 1.5f;
-                this->d2d1devctx->SetTransform(Matrix3x2F::Identity());
-
-                const D2D1_POINT_2F 
-                    corner = Point2F(dest_rect.left, dest_rect.top) * dest_m * canvas_to_preview,
-                    corner2 = Point2F(dest_rect.right, dest_rect.top) * dest_m * canvas_to_preview,
-                    corner3 = Point2F(dest_rect.left, dest_rect.bottom) * dest_m * canvas_to_preview,
-                    corner4 = Point2F(dest_rect.right, dest_rect.bottom) * dest_m * canvas_to_preview;
-
-                if((highlighted & control_video2::SCALE_LEFT) &&
-                    (highlighted & control_video2::SCALE_TOP))
-                    brush = this->highlighted_brush, corner_stroke = 3.f;
-                else
-                    brush = this->line_brush, corner_stroke = 1.5f;
-                this->d2d1devctx->DrawEllipse(Ellipse(corner, corner_length, corner_length), 
-                    brush, corner_stroke);
-                if((highlighted & control_video2::SCALE_RIGHT) &&
-                    (highlighted & control_video2::SCALE_TOP))
-                    brush = this->highlighted_brush, corner_stroke = 3.f;
-                else
-                    brush = this->line_brush, corner_stroke = 1.5f;
-                this->d2d1devctx->DrawEllipse(Ellipse(corner2, corner_length, corner_length),
-                    brush, corner_stroke);
-                if((highlighted & control_video2::SCALE_LEFT) &&
-                    (highlighted & control_video2::SCALE_BOTTOM))
-                    brush = this->highlighted_brush, corner_stroke = 3.f;
-                else
-                    brush = this->line_brush, corner_stroke = 1.5f;
-                this->d2d1devctx->DrawEllipse(Ellipse(corner3, corner_length, corner_length),
-                    brush, corner_stroke);
-                if((highlighted & control_video2::SCALE_RIGHT) &&
-                    (highlighted & control_video2::SCALE_BOTTOM))
-                    brush = this->highlighted_brush, corner_stroke = 3.f;
-                else
-                    brush = this->line_brush, corner_stroke = 1.5f;
-                this->d2d1devctx->DrawEllipse(Ellipse(corner4, corner_length, corner_length),
-                    brush, corner_stroke);
-
-                // draw lines
-                dest_m = Matrix3x2F::Scale(dest_rect.right - dest_rect.left,
-                    dest_rect.bottom - dest_rect.top) * dest_m;
-                const FLOAT dest_rotation = video_params.rotate / 180.f * (FLOAT)M_PI;
-                const FLOAT x_scale = cos(dest_rotation), y_scale = sin(dest_rotation);
-                corner_stroke = 2.f;
-                D2D1_POINT_2F center = Point2F(0.5f, 0.f) * dest_m * canvas_to_preview,
-                    center2 = Point2F(0.f, 0.5f) * dest_m * canvas_to_preview,
-                    center3 = Point2F(0.5f, 1.f) * dest_m * canvas_to_preview,
-                    center4 = Point2F(1.f, 0.5f) * dest_m * canvas_to_preview;
-
-                if(highlighted == control_video2::SCALE_TOP)
-                    brush = this->highlighted_brush, corner_stroke = 3.5f;
-                else
-                    brush = this->line_brush, corner_stroke = 2.f;
-                this->d2d1devctx->DrawLine(
-                    Point2F(center.x - corner_length * y_scale, center.y - corner_length * -x_scale),
-                    Point2F(center.x + corner_length * y_scale, center.y + corner_length * -x_scale),
-                    brush, corner_stroke);
-                if(highlighted == control_video2::SCALE_LEFT)
-                    brush = this->highlighted_brush, corner_stroke = 3.5f;
-                else
-                    brush = this->line_brush, corner_stroke = 2.f;
-                this->d2d1devctx->DrawLine(
-                    Point2F(center2.x - corner_length * x_scale, center2.y - corner_length * y_scale),
-                    Point2F(center2.x + corner_length * x_scale, center2.y + corner_length * y_scale),
-                    brush, corner_stroke);
-                if(highlighted == control_video2::SCALE_BOTTOM)
-                    brush = this->highlighted_brush, corner_stroke = 3.5f;
-                else
-                    brush = this->line_brush, corner_stroke = 2.f;
-                this->d2d1devctx->DrawLine(
-                    Point2F(center3.x - corner_length * y_scale, center3.y - corner_length * -x_scale),
-                    Point2F(center3.x + corner_length * y_scale, center3.y + corner_length * -x_scale),
-                    brush, corner_stroke);
-                if(highlighted == control_video2::SCALE_RIGHT)
-                    brush = this->highlighted_brush, corner_stroke = 3.5f;
-                else
-                    brush = this->line_brush, corner_stroke = 2.f;
-                this->d2d1devctx->DrawLine(
-                    Point2F(center4.x - corner_length * x_scale, center4.y - corner_length * y_scale),
-                    Point2F(center4.x + corner_length * x_scale, center4.y + corner_length * y_scale),
-                    brush, corner_stroke);
-            }
-        }
-
-        CHECK_HR(hr = this->d2d1devctx->EndDraw());
-
-        // dxgi functions need to be synchronized with the context mutex
+        if(has_video_control)
         {
-            scoped_lock lock(*this->context_mutex);
-            CHECK_HR(hr = this->swapchain->Present(0, 0));
+            /*control_video::video_params_t video_params = video_control->get_video_params(true);*/
+                
+            // draw size box
+            FLOAT box_stroke = 1.5f;
+            /*Matrix3x2F dest = 
+                Matrix3x2F::Scale(
+                    video_params.rectangle.right - video_params.rectangle.left,
+                    video_params.rectangle.bottom - video_params.rectangle.top) *
+                Matrix3x2F::Rotation(video_params.rotation) *
+                Matrix3x2F::Translation(video_params.rectangle.left, video_params.rectangle.top);*/
+            this->d2d1devctx->SetTransform(dest_m * canvas_to_preview);
+
+            /*D2D1_ANTIALIAS_MODE old_mode = this->d2d1devctx->GetAntialiasMode();*/
+            /*this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);*/
+            this->d2d1devctx->DrawRectangle(dest_rect, 
+                this->box_brush, box_stroke, this->stroke_style);
+            /*this->d2d1devctx->SetAntialiasMode(old_mode);*/
+
+            // draw corners
+            const int highlighted = highlighted_points;
+            ID2D1SolidColorBrush* brush;
+            FLOAT corner_length = this->size_point_radius;
+            FLOAT corner_stroke = 1.5f;
+            this->d2d1devctx->SetTransform(Matrix3x2F::Identity());
+
+            const D2D1_POINT_2F 
+                corner = Point2F(dest_rect.left, dest_rect.top) * dest_m * canvas_to_preview,
+                corner2 = Point2F(dest_rect.right, dest_rect.top) * dest_m * canvas_to_preview,
+                corner3 = Point2F(dest_rect.left, dest_rect.bottom) * dest_m * canvas_to_preview,
+                corner4 = Point2F(dest_rect.right, dest_rect.bottom) * dest_m * canvas_to_preview;
+
+            if((highlighted & control_video2::SCALE_LEFT) &&
+                (highlighted & control_video2::SCALE_TOP))
+                brush = this->highlighted_brush, corner_stroke = 3.f;
+            else
+                brush = this->line_brush, corner_stroke = 1.5f;
+            this->d2d1devctx->DrawEllipse(Ellipse(corner, corner_length, corner_length), 
+                brush, corner_stroke);
+            if((highlighted & control_video2::SCALE_RIGHT) &&
+                (highlighted & control_video2::SCALE_TOP))
+                brush = this->highlighted_brush, corner_stroke = 3.f;
+            else
+                brush = this->line_brush, corner_stroke = 1.5f;
+            this->d2d1devctx->DrawEllipse(Ellipse(corner2, corner_length, corner_length),
+                brush, corner_stroke);
+            if((highlighted & control_video2::SCALE_LEFT) &&
+                (highlighted & control_video2::SCALE_BOTTOM))
+                brush = this->highlighted_brush, corner_stroke = 3.f;
+            else
+                brush = this->line_brush, corner_stroke = 1.5f;
+            this->d2d1devctx->DrawEllipse(Ellipse(corner3, corner_length, corner_length),
+                brush, corner_stroke);
+            if((highlighted & control_video2::SCALE_RIGHT) &&
+                (highlighted & control_video2::SCALE_BOTTOM))
+                brush = this->highlighted_brush, corner_stroke = 3.f;
+            else
+                brush = this->line_brush, corner_stroke = 1.5f;
+            this->d2d1devctx->DrawEllipse(Ellipse(corner4, corner_length, corner_length),
+                brush, corner_stroke);
+
+            // draw lines
+            dest_m = Matrix3x2F::Scale(dest_rect.right - dest_rect.left,
+                dest_rect.bottom - dest_rect.top) * dest_m;
+            const FLOAT dest_rotation = video_params.rotate / 180.f * (FLOAT)M_PI;
+            const FLOAT x_scale = cos(dest_rotation), y_scale = sin(dest_rotation);
+            corner_stroke = 2.f;
+            D2D1_POINT_2F center = Point2F(0.5f, 0.f) * dest_m * canvas_to_preview,
+                center2 = Point2F(0.f, 0.5f) * dest_m * canvas_to_preview,
+                center3 = Point2F(0.5f, 1.f) * dest_m * canvas_to_preview,
+                center4 = Point2F(1.f, 0.5f) * dest_m * canvas_to_preview;
+
+            if(highlighted == control_video2::SCALE_TOP)
+                brush = this->highlighted_brush, corner_stroke = 3.5f;
+            else
+                brush = this->line_brush, corner_stroke = 2.f;
+            this->d2d1devctx->DrawLine(
+                Point2F(center.x - corner_length * y_scale, center.y - corner_length * -x_scale),
+                Point2F(center.x + corner_length * y_scale, center.y + corner_length * -x_scale),
+                brush, corner_stroke);
+            if(highlighted == control_video2::SCALE_LEFT)
+                brush = this->highlighted_brush, corner_stroke = 3.5f;
+            else
+                brush = this->line_brush, corner_stroke = 2.f;
+            this->d2d1devctx->DrawLine(
+                Point2F(center2.x - corner_length * x_scale, center2.y - corner_length * y_scale),
+                Point2F(center2.x + corner_length * x_scale, center2.y + corner_length * y_scale),
+                brush, corner_stroke);
+            if(highlighted == control_video2::SCALE_BOTTOM)
+                brush = this->highlighted_brush, corner_stroke = 3.5f;
+            else
+                brush = this->line_brush, corner_stroke = 2.f;
+            this->d2d1devctx->DrawLine(
+                Point2F(center3.x - corner_length * y_scale, center3.y - corner_length * -x_scale),
+                Point2F(center3.x + corner_length * y_scale, center3.y + corner_length * -x_scale),
+                brush, corner_stroke);
+            if(highlighted == control_video2::SCALE_RIGHT)
+                brush = this->highlighted_brush, corner_stroke = 3.5f;
+            else
+                brush = this->line_brush, corner_stroke = 2.f;
+            this->d2d1devctx->DrawLine(
+                Point2F(center4.x - corner_length * x_scale, center4.y - corner_length * y_scale),
+                Point2F(center4.x + corner_length * x_scale, center4.y + corner_length * y_scale),
+                brush, corner_stroke);
         }
+    }
+
+    CHECK_HR(hr = this->d2d1devctx->EndDraw());
+
+    // dxgi functions need to be synchronized with the context mutex
+    {
+        scoped_lock lock(*this->context_mutex);
+        CHECK_HR(hr = this->swapchain->Present(0, 0));
     }
 
 done:

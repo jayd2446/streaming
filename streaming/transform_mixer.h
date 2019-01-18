@@ -17,6 +17,9 @@
 // on stream stop the component should serve requests to the request point, so that
 // a component that might stop receives enough samples
 
+// the user params apply to a request only, which means that they might lag behind
+// if the same parameters are applied to samples which have different timestamps
+
 // TODO: investigate reserve calls
 
 // TODO: mix shouldn't be called if the first and end are the same

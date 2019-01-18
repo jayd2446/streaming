@@ -56,7 +56,7 @@ bool stream_audiomixer2::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, fra
     bool discarded)
 {
     assert_(old_in_arg);
-    // TODO: video mixer should update the fields for both sample and old sample aswell
+
     in_arg = std::make_optional<in_arg_t::value_type>();
 
     media_sample_audio_frames_t frames;
@@ -95,6 +95,8 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     assert_(!packets.container.empty());
     assert_(first <= end);
     assert_(!out_arg);
+
+    // arg in packets can be null
 
     HRESULT hr = S_OK;
     const UINT32 out_block_align = 

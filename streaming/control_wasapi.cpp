@@ -13,7 +13,7 @@ control_wasapi::control_wasapi(control_set_t& active_controls, control_pipeline2
 {
 }
 
-void control_wasapi::build_audio_topology_branch(const media_stream_t& from,
+void control_wasapi::build_audio_topology(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
     if(!this->component)

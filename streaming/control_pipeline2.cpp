@@ -353,7 +353,7 @@ void control_pipeline2::build_and_switch_topology()
 
     this->root_scene.build_video_topology(
         mpeg_stream, videomixer_stream, this->video_topology);
-    this->root_scene.build_audio_topology_branch(
+    this->root_scene.build_audio_topology(
         audio_stream, audiomixer_stream, this->audio_topology);
 
     preview_stream->connect_streams(videomixer_stream, this->video_topology);
