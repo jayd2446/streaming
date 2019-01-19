@@ -52,29 +52,29 @@ void sink_file::process()
         request_video_t request;
         while(this->requests_video.pop(request))
         {
-            if(request.sample.buffer)
+            if(request.sample)
             {
-                for(auto&& item : request.sample.buffer->samples)
+                for(auto&& frame : request.sample->sample->frames)
                 {
-                    LONGLONG timestamp;
-                    CHECK_HR(hr = item->GetSampleTime(&timestamp));
-
+                    CComPtr<IMFSample> sample;
+                    const LONGLONG timestamp = (LONGLONG)frame.ts;
+                    const LONGLONG dur = (LONGLONG)frame.dur;
                     // (software encoder returns frames slightly in wrong order,
                     // but mediawriter seems to deal with it)
-                    if(timestamp <= this->last_timestamp && !request.sample.software)
+                    if(timestamp <= this->last_timestamp && !request.sample->software)
                     {
                         std::cout << "timestamp error in sink_file::write_cb video" << std::endl;
                         assert_(false);
                     }
                     this->last_timestamp = timestamp;
 
-                    this->file_output->write_sample(true, item);
+                    this->file_output->write_sample(true, frame.sample);
                 }
             }
 
             lock.unlock();
             this->session->give_sample(request.stream, 
-                reinterpret_cast<const media_component_args*>(&request.sample), request.rp);
+                request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
             lock.lock();
         }
     }
@@ -152,12 +152,15 @@ media_stream::result_t stream_file::process_sample(
 
     if(this->sink->video)
     {
-        const media_sample_h264* sample_h264 = reinterpret_cast<const media_sample_h264*>(args_);
-
         sink_file::request_video_t request;
         request.rp = rp;
         request.stream = this;
-        request.sample = *sample_h264;
+        if(args_)
+        {
+            const media_component_h264_video_args& args =
+                static_cast<const media_component_h264_video_args&>(*args_);
+            request.sample = std::make_optional(args);
+        }
 
         // TODO: requests mutex seems unnecessary
         // add the new sample to queue and drop oldest sample if the queue is full
@@ -166,8 +169,6 @@ media_stream::result_t stream_file::process_sample(
     }
     else
     {
-        /*assert_(dynamic_cast<const media_component_aac_audio_args_t*>(&args_));*/
-
         sink_file::request_audio_t request;
         request.rp = rp;
         request.stream = this;

@@ -107,9 +107,8 @@ template<typename Poolable>
 class buffer_pooled : public Poolable
 {
     friend class buffer_pool<buffer_pooled>;
-    // TODO: enable this assert once media_buffer and media_buffer_poolable are deleted
-    /*static_assert(std::is_base_of<poolable, media_buffer_pooled>::value,
-        "template parameter must inherit from poolable");*/
+    static_assert(std::is_base_of<buffer_poolable, Poolable>::value,
+        "template parameter must inherit from poolable");
 public:
     typedef Poolable buffer_raw_t;
     typedef std::shared_ptr<Poolable> buffer_t;

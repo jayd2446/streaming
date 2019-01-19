@@ -26,6 +26,7 @@ class transform_h264_encoder : public media_source
 {
     friend class stream_h264_encoder;
 public:
+    typedef buffer_pool<media_sample_h264_frames_pooled> buffer_pool_h264_frames_t;
     struct packet {bool drain; media_component_h264_encoder_args_t args;};
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
@@ -40,6 +41,7 @@ public:
     static const UINT32 quality_vs_speed = 50;
 private:
     control_class_t ctrl_pipeline;
+    context_mutex_t context_mutex;
 
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -58,8 +60,8 @@ private:
     std::atomic_bool draining;
     bool first_sample;
 
-    media_buffer_h264_t out_buffer;
-    context_mutex_t context_mutex;
+    std::shared_ptr<buffer_pool_h264_frames_t> buffer_pool_h264_frames;
+    media_sample_h264_frames_t out_sample;
 
     // time shift must be used instead of adjusting the time in the output_file, because
     // it seems that the encoder stores a 'hidden' time field which is
@@ -78,7 +80,7 @@ private:
 
     HRESULT feed_encoder(const media_sample_video_frame&);
 
-    void process_request(const media_buffer_h264_t&, request_t&);
+    void process_request(const media_sample_h264_frames_t&, request_t&);
     bool process_output(CComPtr<IMFSample>&);
 
     // returns whether the request can be served

@@ -35,29 +35,6 @@ typedef int64_t frame_unit;
 frame_unit convert_to_frame_unit(time_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 time_unit convert_to_time_unit(frame_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 
-//// TODO: remove this
-//class media_buffer : public enable_shared_from_this
-//{
-//public:
-//    /*CComPtr<IUnknown> lifetime_tracker;*/
-//
-//    virtual ~media_buffer() {}
-//};
-//
-//typedef std::shared_ptr<media_buffer> media_buffer_t;
-
-// h264 memory buffer
-// TODO: just use media_buffer_samples and remove h264&aac buffers
-class media_buffer_h264 : public enable_shared_from_this
-{
-public:
-    std::deque<CComPtr<IMFSample>> samples;
-    /*CComPtr<IMFSample> sample;*/
-    virtual ~media_buffer_h264() {}
-};
-
-typedef std::shared_ptr<media_buffer_h264> media_buffer_h264_t;
-
 class media_buffer_texture : public buffer_poolable
 {
     friend class buffer_pooled<media_buffer_texture>;
@@ -84,8 +61,6 @@ public:
 typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;
 typedef buffer_pooled<media_buffer_texture> media_buffer_pooled_texture;
 typedef std::shared_ptr<media_buffer_pooled_texture> media_buffer_pooled_texture_t;
-
-
 
 // set to imfsample to ensure that the sample isn't recycled before imfsample has been released;
 // the tracker must be manually removed from the sample
@@ -190,6 +165,30 @@ typedef std::shared_ptr<media_sample_video_frames> media_sample_video_frames_t;
 typedef buffer_pooled<media_sample_video_frames> media_sample_video_frames_pooled;
 typedef std::shared_ptr<media_sample_video_frames_pooled> media_sample_video_frames_pooled_t;
 
+class media_sample_h264_frame
+{
+public:
+    time_unit ts, dur;
+    CComPtr<IMFSample> sample;
+};
+
+class media_sample_h264_frames : public buffer_poolable
+{
+    friend class buffer_pooled<media_sample_h264_frames>;
+private:
+    void uninitialize() {this->frames.clear();}
+public:
+    std::deque<media_sample_h264_frame> frames;
+
+    virtual ~media_sample_h264_frames() {}
+
+    void initialize() {assert_(this->frames.empty());}
+};
+
+typedef std::shared_ptr<media_sample_h264_frames> media_sample_h264_frames_t;
+typedef buffer_pooled<media_sample_h264_frames> media_sample_h264_frames_pooled;
+typedef std::shared_ptr<media_sample_h264_frames_pooled> media_sample_h264_frames_pooled_t;
+
 class media_sample_aac_frame
 {
 public:
@@ -224,20 +223,6 @@ typedef std::shared_ptr<media_sample_aac_frames_pooled> media_sample_aac_frames_
 //    // additional properties(canvas resolution etc) could be accessed from the control pipeline;
 //    // for audio, channel count and bit depth should be bound to media session aswell for
 //    // simplicity
-
-class media_sample_h264
-{
-public:
-    typedef media_buffer_h264_t buffer_t;
-public:
-    // for debugging
-    time_unit timestamp;
-    bool software;
-    media_buffer_h264_t buffer;
-    media_sample_h264() : timestamp(-1) {}
-    explicit media_sample_h264(const media_buffer_h264_t& buffer);
-    virtual ~media_sample_h264() {}
-};
 
 // TODO: optional typedefs should be removed after the mixer uses optionals only internally
 
@@ -286,6 +271,18 @@ public:
 };
 
 typedef std::optional<media_component_h264_encoder_args> media_component_h264_encoder_args_t;
+
+// args for components that expect h264 video data
+class media_component_h264_video_args : public media_component_args
+{
+public:
+    // must not be null
+    media_sample_h264_frames_t sample;
+    // for debugging
+    bool software;
+};
+
+typedef std::optional<media_component_h264_video_args> media_component_h264_video_args_t;
 
 class media_component_audio_args : public media_component_frame_args
 {

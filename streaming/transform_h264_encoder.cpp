@@ -170,7 +170,8 @@ transform_h264_encoder::transform_h264_encoder(const media_session_t& session,
     software(false),
     draining(false),
     first_sample(true),
-    time_shift(-1)
+    time_shift(-1),
+    buffer_pool_h264_frames(new buffer_pool_h264_frames_t)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
     this->process_output_callback.Attach(
@@ -185,6 +186,11 @@ transform_h264_encoder::~transform_h264_encoder()
     CComPtr<IMFShutdown> shutdown;
     if(this->encoder && SUCCEEDED(hr = this->encoder->QueryInterface(&shutdown)))
         hr = shutdown->Shutdown();
+
+    {
+        buffer_pool_h264_frames_t::scoped_lock lock(this->buffer_pool_h264_frames->mutex);
+        this->buffer_pool_h264_frames->dispose();
+    }
 }
 
 HRESULT transform_h264_encoder::set_input_stream_type()
@@ -367,15 +373,15 @@ void transform_h264_encoder::events_cb(void* unk)
     }
     else if(type == METransformDrainComplete)
     {
-        media_buffer_h264_t out_buffer;
+        media_sample_h264_frames_t out_sample;
         request_t request = this->last_request;
         this->last_request = request_t();
         {
             scoped_lock lock(this->process_output_mutex);
-            out_buffer = std::move(this->out_buffer);
+            out_sample = std::move(this->out_sample);
         }
 
-        this->process_request(out_buffer, request);
+        this->process_request(out_sample, request);
     }
     else if(type == MEError)
     {
@@ -473,14 +479,14 @@ void transform_h264_encoder::processing_cb(void*)
             // event callback will dispatch the last request
             if(!request.sample.drain || this->software)
             {
-                media_buffer_h264_t out_buffer;
+                media_sample_h264_frames_t out_sample;
                 {
                     scoped_lock lock(this->process_output_mutex);
-                    out_buffer = std::move(this->out_buffer);
+                    out_sample = std::move(this->out_sample);
                 }
 
                 lock.unlock();
-                this->process_request(out_buffer, request);
+                this->process_request(out_sample, request);
                 lock.lock();
             }
             else
@@ -498,35 +504,31 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-void transform_h264_encoder::process_request(const media_buffer_h264_t& buffer, request_t& request)
+void transform_h264_encoder::process_request(
+    const media_sample_h264_frames_t& sample, request_t& request)
 {
     HRESULT hr = S_OK;
-    media_sample_h264 sample;
+    media_component_h264_video_args_t args;
     request_packet rp = request.rp;
     const media_stream* stream = request.stream;
     LONGLONG duration = -1;
 
-    assert_(!buffer || !buffer->samples.empty());
+    assert_(!sample || !sample->frames.empty());
 
-    if(buffer)
+    if(sample)
     {
-        CHECK_HR(hr = buffer->samples[0]->GetSampleTime(&sample.timestamp));
-        CHECK_HR(hr = buffer->samples[0]->GetSampleDuration(&duration));
+        args = std::make_optional<media_component_h264_video_args>();
+        args->sample = sample;
+        args->software = this->software;
     }
-    /*else
-        sample.timestamp = std::numeric_limits<LONGLONG>::min();*/
 
     this->last_packet = rp.packet_number;
-
-    sample.buffer = buffer;
-    sample.software = this->software;
 
     // reset the sample so that the contained buffer can be reused
     // (optional)
     request.sample.args.reset();
 
-    this->session->give_sample(stream, 
-        reinterpret_cast<const media_component_args*>(&sample), rp);
+    this->session->give_sample(stream, args.has_value() ? &(*args) : NULL, rp);
 
 done:
     if(FAILED(hr))
@@ -605,9 +607,21 @@ void transform_h264_encoder::process_output_cb(void*)
             CHECK_HR(hr);
         hr = S_OK;
 
-        if(!this->out_buffer)
-            this->out_buffer.reset(new media_buffer_h264);
-        this->out_buffer->samples.push_back(sample);
+        if(!this->out_sample)
+        {
+            buffer_pool_h264_frames_t::scoped_lock lock(this->buffer_pool_h264_frames->mutex);
+            this->out_sample = this->buffer_pool_h264_frames->acquire_buffer();
+            this->out_sample->initialize();
+        }
+
+        media_sample_h264_frame frame;
+        LONGLONG ts, dur;
+        CHECK_HR(hr = sample->GetSampleTime(&ts));
+        CHECK_HR(hr = sample->GetSampleDuration(&dur));
+        frame.ts = (time_unit)ts;
+        frame.dur = (time_unit)dur;
+        frame.sample = sample;
+        this->out_sample->frames.push_back(frame);
     }
 
 done:

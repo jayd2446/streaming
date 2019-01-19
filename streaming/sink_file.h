@@ -12,7 +12,7 @@ class sink_file : public media_sink
     friend class stream_file;
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
-    typedef request_queue<media_sample_h264> request_queue_video;
+    typedef request_queue<media_component_h264_video_args_t> request_queue_video;
     typedef request_queue<media_component_aac_audio_args_t> request_queue_audio;
     typedef request_queue_video::request_t request_video_t;
     typedef request_queue_audio::request_t request_audio_t;
