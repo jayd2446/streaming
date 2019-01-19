@@ -159,6 +159,7 @@ media_stream::result_t stream_file::process_sample(
         request.stream = this;
         request.sample = *sample_h264;
 
+        // TODO: requests mutex seems unnecessary
         // add the new sample to queue and drop oldest sample if the queue is full
         sink_file::scoped_lock lock(this->sink->requests_mutex);
         this->sink->requests_video.push(request);

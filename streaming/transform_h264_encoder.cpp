@@ -428,19 +428,19 @@ void transform_h264_encoder::processing_cb(void*)
         // there must be a valid texture if the buffer is present
         assert_(!video_frame.buffer || video_frame.buffer->texture);
 
-        const time_unit timestamp = convert_to_time_unit(
-            video_frame.pos,
-            transform_h264_encoder::frame_rate_num,
-            transform_h264_encoder::frame_rate_den);
-        if(timestamp <= this->last_time_stamp && timestamp >= 0)
-        {
-            std::cout << "timestamp error in transform_h264_encoder::processing_cb" << std::endl;
-            assert_(false);
-        }
-
         // feed the encoder
         if(video_frame.buffer)
         {
+            const time_unit timestamp = convert_to_time_unit(
+                video_frame.pos,
+                transform_h264_encoder::frame_rate_num,
+                transform_h264_encoder::frame_rate_den);
+            if(timestamp <= this->last_time_stamp && timestamp >= 0)
+            {
+                std::cout << "timestamp error in transform_h264_encoder::processing_cb" << std::endl;
+                assert_(false);
+            }
+
         back:
             hr = this->feed_encoder(video_frame);
 
@@ -467,10 +467,11 @@ void transform_h264_encoder::processing_cb(void*)
 
         if(serve_request)
         {
-            this->requests.pop(*request);
+            request_t request;
+            this->requests.pop(request);
 
             // event callback will dispatch the last request
-            if(!request->sample.drain || this->software)
+            if(!request.sample.drain || this->software)
             {
                 media_buffer_h264_t out_buffer;
                 {
@@ -479,13 +480,13 @@ void transform_h264_encoder::processing_cb(void*)
                 }
 
                 lock.unlock();
-                this->process_request(out_buffer, *request);
+                this->process_request(out_buffer, request);
                 lock.lock();
             }
             else
             {
                 std::cout << "drain on h264 encoder" << std::endl;
-                this->last_request = *request;
+                this->last_request = request;
                 this->draining = true;
                 CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
             }
