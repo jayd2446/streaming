@@ -68,6 +68,8 @@ private:
     stream_audio_t audio_sink_stream;
     time_unit last_due_time;
 
+    // TODO: this probably should be moved to sink_mpeg, so that topology switching doesn't
+    // reset the request limit
     std::atomic_int requests;
     int max_requests;
 

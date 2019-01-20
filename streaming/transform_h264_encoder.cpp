@@ -171,7 +171,8 @@ transform_h264_encoder::transform_h264_encoder(const media_session_t& session,
     draining(false),
     first_sample(true),
     time_shift(-1),
-    buffer_pool_h264_frames(new buffer_pool_h264_frames_t)
+    buffer_pool_h264_frames(new buffer_pool_h264_frames_t),
+    buffer_pool_memory(new buffer_pool_memory_t)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
     this->process_output_callback.Attach(
@@ -187,6 +188,10 @@ transform_h264_encoder::~transform_h264_encoder()
     if(this->encoder && SUCCEEDED(hr = this->encoder->QueryInterface(&shutdown)))
         hr = shutdown->Shutdown();
 
+    {
+        buffer_pool_memory_t::scoped_lock lock(this->buffer_pool_memory->mutex);
+        this->buffer_pool_memory->dispose();
+    }
     {
         buffer_pool_h264_frames_t::scoped_lock lock(this->buffer_pool_h264_frames->mutex);
         this->buffer_pool_h264_frames->dispose();
@@ -550,13 +555,22 @@ bool transform_h264_encoder::process_output(CComPtr<IMFSample>& sample)
         output.pSample = NULL;
     else
     {
+        media_buffer_memory_t buffer;
+
         CHECK_HR(hr = MFCreateSample(&sample));
-        CHECK_HR(hr = MFCreateMemoryBuffer(this->output_stream_info.cbSize, &buffer));
-        CHECK_HR(hr = sample->AddBuffer(buffer));
+        {
+            // TODO: the sink writer should call a place marker method for knowing
+            // when the output buffer is safe to reuse;
+            // currently, a new buffer must be allocated each time
+            buffer_pool_memory_t::scoped_lock lock(this->buffer_pool_memory->mutex);
+            buffer.reset(new media_buffer_memory);
+            /*buffer = this->buffer_pool_memory->acquire_buffer();*/
+            buffer->initialize(this->output_stream_info.cbSize);
+        }
+        
+        CHECK_HR(hr = sample->AddBuffer(buffer->buffer));
         output.pSample = sample;
     }
-
-    // TODO: use preallocated memory for the mft
 
     output.dwStreamID = this->output_id;
     output.dwStatus = 0;

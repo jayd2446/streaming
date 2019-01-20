@@ -344,6 +344,7 @@ typename stream_mixer<T>::result_t stream_mixer<T>::request_sample(
     request->sample.first = 0;
     args_t& packets = request->sample.second;
 
+    // TODO: the current leftover size should be added to the reservation
     // reserve twice the size to accommodate for leftover buffer merging
     packets.container.reserve(this->input_streams_props.size() * 2);
     for(size_t i = 0; i < this->input_streams_props.size(); i++)

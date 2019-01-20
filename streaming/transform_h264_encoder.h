@@ -27,6 +27,7 @@ class transform_h264_encoder : public media_source
     friend class stream_h264_encoder;
 public:
     typedef buffer_pool<media_sample_h264_frames_pooled> buffer_pool_h264_frames_t;
+    typedef buffer_pool<media_buffer_memory_pooled> buffer_pool_memory_t;
     struct packet {bool drain; media_component_h264_encoder_args_t args;};
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
@@ -61,6 +62,7 @@ private:
     bool first_sample;
 
     std::shared_ptr<buffer_pool_h264_frames_t> buffer_pool_h264_frames;
+    std::shared_ptr<buffer_pool_memory_t> buffer_pool_memory;
     media_sample_h264_frames_t out_sample;
 
     // time shift must be used instead of adjusting the time in the output_file, because

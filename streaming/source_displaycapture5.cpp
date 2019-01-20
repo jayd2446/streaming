@@ -635,10 +635,11 @@ void stream_displaycapture5_pointer::dispatch(
         args.params.dest_m = D2D1::Matrix3x2F::Identity();
     }
     else
+        // TODO: null buffer not needed anymore
         args.single_buffer = this->null_buffer;
 
     /*sample.timestamp = request.rp.request_time;*/
-    args.frame_end = convert_to_frame_unit(request.rp.request_time/* - SECOND_IN_TIME_UNIT / 2*/,
+    args.frame_end = convert_to_frame_unit(request.rp.request_time /*- SECOND_IN_TIME_UNIT*/,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
     /*sample.silent = !sample.single_buffer->texture;*/

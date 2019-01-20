@@ -123,11 +123,13 @@ void source_wasapi2::serve_cb(void*)
                 this->requests.front().rp.request_time,
                 transform_aac_encoder::sample_rate, 1);
 
+            const bool drain = this->requests.front().sample.drain;
+
             // do not serve the request if there's not enough data
-            if(this->requests.front().sample.drain && this->captured_audio->end < frame_end)
+            if(drain && this->captured_audio->end < frame_end)
                 break;
 
-            if(this->requests.front().sample.drain)
+            if(drain)
                 std::cout << "drain on source_wasapi" << std::endl;
 
             {
@@ -136,12 +138,13 @@ void source_wasapi2::serve_cb(void*)
                 captured_audio->initialize();
             }
 
-            this->captured_audio->move_frames_to(captured_audio.get(),
-                frame_end, this->resampled_block_align);
-
-            args = std::make_optional<media_component_audio_args>();
-            args->frame_end = captured_audio->end;
-            args->sample = std::move(captured_audio);
+            if(this->captured_audio->move_frames_to(captured_audio.get(), 
+                frame_end, this->resampled_block_align) || drain)
+            {
+                args = std::make_optional<media_component_audio_args>();
+                args->frame_end = drain ? frame_end : captured_audio->end;
+                args->sample = std::move(captured_audio);
+            }
         }
 
         request_queue::request_t request = std::move(this->requests.front());
