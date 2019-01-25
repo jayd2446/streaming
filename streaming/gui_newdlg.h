@@ -4,6 +4,7 @@
 #include "control_scene2.h"
 #include "control_pipeline2.h"
 #include "control_displaycapture5.h"
+#include "control_vidcap.h"
 #include "control_wasapi.h"
 #include <string>
 #include <vector>
@@ -24,10 +25,11 @@ private:
 public:
     enum {IDD = IDD_DIALOG_NEW};
 
+    std::vector<control_vidcap::vidcap_params> vidcaps;
     std::vector<control_displaycapture::displaycapture_params> displaycaptures;
     std::vector<control_wasapi::wasapi_params> audios;
     std::wstring new_scene_name;
-    int cursel, audio_sel_offset;
+    int cursel, audio_sel_offset, vidcap_sel_offset;
     int new_item;
 
     explicit gui_newdlg(const control_pipeline2_t&);

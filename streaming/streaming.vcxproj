@@ -192,6 +192,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="control_scene2.cpp" />
+    <ClCompile Include="control_vidcap.cpp" />
     <ClCompile Include="control_video2.cpp" />
     <ClCompile Include="control_wasapi.cpp" />
     <ClCompile Include="gui_mainwnd.cpp" />
@@ -211,6 +212,7 @@
     <ClCompile Include="sink_mpeg2.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture5.cpp" />
+    <ClCompile Include="source_vidcap.cpp" />
     <ClCompile Include="source_wasapi.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
@@ -290,6 +292,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="control_scene2.h" />
+    <ClInclude Include="control_vidcap.h" />
     <ClInclude Include="control_video2.h" />
     <ClInclude Include="control_wasapi.h" />
     <ClInclude Include="gui_mainwnd.h" />
@@ -313,6 +316,7 @@
     <ClInclude Include="sink_mpeg2.h" />
     <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="source_displaycapture5.h" />
+    <ClInclude Include="source_vidcap.h" />
     <ClInclude Include="source_wasapi.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>

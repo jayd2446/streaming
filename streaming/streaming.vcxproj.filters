@@ -153,6 +153,12 @@
     <ClCompile Include="transform_audiomixer2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="source_vidcap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="control_vidcap.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -307,6 +313,12 @@
     </ClInclude>
     <ClInclude Include="transform_audiomixer2.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_vidcap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="control_vidcap.h">
+      <Filter>control</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

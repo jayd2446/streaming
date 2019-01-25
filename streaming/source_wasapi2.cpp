@@ -15,6 +15,8 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
+// TODO: this->captured_audio doesn't need to be a pointer
+
 //extern DWORD capture_work_queue_id;
 //extern LONG capture_audio_priority;
 
@@ -297,6 +299,13 @@ void source_wasapi2::capture_cb(void*)
             this->next_frame_position += 
                 this->resampler.resample(this->next_frame_position, frames, 
                 *this->captured_audio, false);
+
+            // keep the buffer within the limits
+            if(this->captured_audio->move_frames_to(
+                NULL, this->captured_audio->end - maximum_buffer_size, this->resampled_block_align))
+            {
+                std::cout << "source_wasapi buffer limit reached, excess frames discarded" << std::endl;
+            }
         }
     }
 

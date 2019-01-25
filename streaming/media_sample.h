@@ -19,6 +19,13 @@
 #include "enable_shared_from_this.h"
 #include "buffer_pool.h"
 
+/*
+
+input media samples are assumed to be immutable;
+violation of the assumption makes the pipeline break down
+
+*/
+
 #undef max
 #undef min
 
@@ -103,13 +110,19 @@ private:
     // called when the buffer is moved back to pool and just before being destroyed
     // TODO: decide if should call reserve here
     void uninitialize() {this->frames.clear(); this->end = 0;}
+    // returns whether the elem was fully moved/copied to 'to'
+    static bool move_or_share_consecutive_frames_to(
+        media_sample_audio_frames* to, frame_unit end, UINT32 block_align,
+        media_sample_audio_consecutive_frames& elem, bool share);
 public:
     // end must be 0 if there's no valid data(TODO: reconsider this);
     // end is the max (pos + dur) of frames
     frame_unit end;
     // element must have valid data
-    // TODO: make this private so that the end field stays consistent in regard to frames
-    std::deque<media_sample_audio_consecutive_frames> frames;
+    // TODO: make this private so that the end field stays consistent in regard to frames;
+    // vector is used for cache friendliness;
+    // the audio frames sample is pooled so that the capacity of the vector should stabilize
+    std::vector<media_sample_audio_consecutive_frames> frames;
 
     media_sample_audio_frames() : end(0) {}
     virtual ~media_sample_audio_frames() {}
@@ -121,6 +134,8 @@ public:
     // std::numeric_limits::max can be used for moving all frames;
     // block align is assumed to be the same for both samples
     bool move_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align);
+    //// make 'to' reference the frame buffers from this
+    //bool share_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align) const;
 
     // buffer pool methods
     void initialize() {assert_(this->end == 0); assert_(this->frames.empty());}
@@ -157,6 +172,8 @@ public:
 
     media_sample_video_frames() : end(0) {}
     virtual ~media_sample_video_frames() {}
+
+    bool move_frames_to(media_sample_video_frames* to, frame_unit end);
 
     void initialize() {assert_(this->end == 0); assert_(this->frames.empty());}
 };
@@ -244,19 +261,7 @@ typedef std::optional<media_component_frame_args> media_component_frame_args_t;
 class media_component_video_args : public media_component_frame_args
 {
 public:
-    // TODO: for multiple samples, move_frames_to method should be created
-    // as in audio pipeline;
-    // this also probably means that a frame rate converter should be created;
-    // these are only needed if the video source is allowed to offset to a future
-    // time; transform mixer handles the buffering of samples that are late
-
-    /*media_buffer_textures_t buffer;*/
-    // single sample is used until multiple samples need to be used
-    media_buffer_texture_t single_buffer;
-
-    media_component_video_args() = default;
-    explicit media_component_video_args(const media_buffer_texture_t& single_buffer) :
-        single_buffer(single_buffer) {}
+    media_sample_video_frames_t sample;
 };
 
 typedef std::optional<media_component_video_args> media_component_video_args_t;

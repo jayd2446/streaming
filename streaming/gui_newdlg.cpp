@@ -36,7 +36,7 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
                     std::abs(it->output.DesktopCoordinates.bottom - it->output.DesktopCoordinates.top);
 
                 std::wstringstream sts;
-                sts << L"Video Source: ";
+                sts << L"Display Capture Source: ";
                 sts << it->adapter.Description << L": Monitor ";
                 sts << it->output_ordinal << L": " << w << L"x" << h << L" @ ";
                 sts << it->output.DesktopCoordinates.left << L"," 
@@ -44,9 +44,24 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
                 this->combobox.AddString(sts.str().c_str());
             }
-
-            this->audio_sel_offset = (int)this->displaycaptures.size();
         }
+
+        // vidcap
+        {
+            control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+            control_vidcap::list_available_vidcap_params(this->ctrl_pipeline,
+                this->vidcaps);
+
+            for(auto&& item : this->vidcaps)
+            {
+                std::wstring text = L"Video Capture Source: " + item.friendly_name;
+                this->combobox.AddString(text.c_str());
+            }
+        }
+
+        this->vidcap_sel_offset = (int)this->displaycaptures.size();
+        this->audio_sel_offset = (int)this->displaycaptures.size() +
+            (int)this->vidcaps.size();
 
         // audio
         {

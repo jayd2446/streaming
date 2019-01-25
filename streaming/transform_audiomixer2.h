@@ -74,7 +74,8 @@ class stream_audiomixer2 : public stream_audiomixer2_base
 private:
     transform_audiomixer2_t transform;
 
-    bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded);
+    bool move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
+        frame_unit end, bool discarded);
     void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end);
 public:
     explicit stream_audiomixer2(const transform_audiomixer2_t& transform);

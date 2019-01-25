@@ -141,18 +141,78 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
+bool media_sample_audio_frames::move_or_share_consecutive_frames_to(
+    media_sample_audio_frames* to, frame_unit end, UINT32 block_align, 
+    media_sample_audio_consecutive_frames& elem, bool share)
+{
+    assert_(elem.buffer);
+
+    if(elem.pos >= end)
+        return false;
+
+    HRESULT hr = S_OK;
+    bool remove = false;
+    CComPtr<IMFSample> sample;
+    CComPtr<IMFMediaBuffer> buffer, old_buffer;
+    DWORD buflen;
+    media_sample_audio_consecutive_frames new_frames;
+
+    const frame_unit frame_pos = elem.pos;
+    const frame_unit frame_dur = elem.dur;
+    const frame_unit frame_end = frame_pos + frame_dur;
+
+    old_buffer = elem.buffer;
+    CHECK_HR(hr = old_buffer->GetCurrentLength(&buflen));
+
+    const frame_unit frame_diff_end = std::max(frame_end - end, 0LL);
+    const DWORD offset_end = (DWORD)frame_diff_end * block_align;
+    const frame_unit new_frame_pos = frame_pos;
+    const frame_unit new_frame_dur = frame_dur - frame_diff_end;
+
+    assert_(((int)buflen - (int)offset_end) > 0);
+    CHECK_HR(hr = MFCreateMediaBufferWrapper(old_buffer, 0, buflen - offset_end, &buffer));
+    CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+    if(offset_end > 0 && !share)
+    {
+        // remove the moved part of the old buffer
+        CComPtr<IMFMediaBuffer> new_buffer;
+        CHECK_HR(hr = MFCreateMediaBufferWrapper(
+            old_buffer, buflen - offset_end, offset_end, &new_buffer));
+        CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+
+        const frame_unit new_frame_dur = offset_end / block_align;
+        const frame_unit new_frame_pos = frame_pos + frame_dur - new_frame_dur;
+
+        elem.buffer = new_buffer;
+        elem.pos = new_frame_pos;
+        elem.dur = new_frame_dur;
+    }
+    else
+        remove = true;
+
+    new_frames.memory_host = elem.memory_host;
+    new_frames.buffer = buffer;
+    new_frames.pos = new_frame_pos;
+    new_frames.dur = new_frame_dur;
+
+    if(to)
+    {
+        to->frames.push_back(new_frames);
+        to->end = std::max(to->end, new_frames.pos + new_frames.dur);
+    }
+
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
+
+    return remove;
+}
+
 bool media_sample_audio_frames::move_frames_to(media_sample_audio_frames* to,
     frame_unit end, UINT32 block_align)
 {
     assert_(this->end == 0 || !this->frames.empty());
 
-    // TODO: for best performance, a list of preallocated elements should be used for frames,
-    // and std remove if performs this loop and instead of clearing the elem from 'from',
-    // it is erased from the list;
-    // this would allow for constant time removal without the need of allocating a new list element
-    // from heap
-    // (or not)
-    
     bool moved = false;
 
     // the media_sample_audio_consecutive_frames should be lightweight, because it seems that
@@ -164,75 +224,94 @@ bool media_sample_audio_frames::move_frames_to(media_sample_audio_frames* to,
         if(!elem.buffer)
             throw HR_EXCEPTION(E_UNEXPECTED);
 
-        HRESULT hr = S_OK;
-        bool remove = false;
-        CComPtr<IMFSample> sample;
-        CComPtr<IMFMediaBuffer> buffer, old_buffer;
-        DWORD buflen;
-        media_sample_audio_consecutive_frames new_frames;
+        // TODO: sample could have a flag that indicates whether the frames are ordered,
+        // so that the whole list doesn't need to be iterated;
+        // this sample would retain the ordered flag only if this was null when
+        // frames were moved
+        if(elem.pos >= end)
+            return false;
 
-        const frame_unit frame_pos = elem.pos;
-        const frame_unit frame_dur = elem.dur;
-        const frame_unit frame_end = frame_pos + frame_dur;
+        moved = true;
+
+        return move_or_share_consecutive_frames_to(to, end, block_align, elem, false);
+    }), this->frames.end());
+
+    if(end >= this->end)
+    {
+        assert_(this->frames.empty());
+        this->uninitialize();
+    }
+
+    return moved;
+}
+
+//bool media_sample_audio_frames::share_frames_to(
+//    media_sample_audio_frames* to, frame_unit end, UINT32 block_align) const
+//{
+//    assert_(this->end == 0 || !this->frames.empty());
+//
+//    bool shared = false;
+//
+//    for(auto&& elem : this->frames)
+//    {
+//        if(!elem.buffer)
+//            throw HR_EXCEPTION(E_UNEXPECTED);
+//
+//        if(elem.pos >= end)
+//            continue;
+//
+//        shared = true;
+//
+//        move_or_share_consecutive_frames_to(to, end, block_align,
+//            const_cast<media_sample_audio_consecutive_frames&>(elem), true);
+//    }
+//
+//    return shared;
+//}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+bool media_sample_video_frames::move_frames_to(media_sample_video_frames* to, frame_unit end)
+{
+    assert_(this->end == 0 || !this->frames.empty());
+
+    bool moved = false;
+
+    // the media_sample_video_frame should be lightweight, because it seems that
+    // the value is moved within the container
+    // https://en.wikipedia.org/wiki/Erase%E2%80%93remove_idiom
+    this->frames.erase(std::remove_if(this->frames.begin(), this->frames.end(),
+        [&](media_sample_video_frame& elem)
+    {
+        if(!elem.buffer)
+            throw HR_EXCEPTION(E_UNEXPECTED);
 
         // TODO: sample could have a flag that indicates whether the frames are ordered,
         // so that the whole list doesn't need to be iterated;
         // this sample would retain the ordered flag only if this was null when
         // frames were moved
-        if(frame_pos >= end)
+        if(elem.pos >= end)
             return false;
 
+        media_sample_video_frame new_frame;
+
         moved = true;
-
-        old_buffer = elem.buffer;
-        CHECK_HR(hr = old_buffer->GetCurrentLength(&buflen));
-
-        const frame_unit frame_diff_end = std::max(frame_end - end, 0LL);
-        const DWORD offset_end = (DWORD)frame_diff_end * block_align;
-        const frame_unit new_frame_pos = frame_pos;
-        const frame_unit new_frame_dur = frame_dur - frame_diff_end;
-
-        assert_(((int)buflen - (int)offset_end) > 0);
-        CHECK_HR(hr = MFCreateMediaBufferWrapper(old_buffer, 0, buflen - offset_end, &buffer));
-        CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
-        if(offset_end > 0)
-        {
-            // remove the moved part of the old buffer
-            CComPtr<IMFMediaBuffer> new_buffer;
-            CHECK_HR(hr = MFCreateMediaBufferWrapper(
-                old_buffer, buflen - offset_end, offset_end, &new_buffer));
-            CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
-
-            const frame_unit new_frame_dur = offset_end / block_align;
-            const frame_unit new_frame_pos = frame_pos + frame_dur - new_frame_dur;
-
-            elem.buffer = new_buffer;
-            elem.pos = new_frame_pos;
-            elem.dur = new_frame_dur;
-        }
-        else
-            remove = true;
-
-        new_frames.memory_host = elem.memory_host;
-        new_frames.buffer = buffer;
-        new_frames.pos = new_frame_pos;
-        new_frames.dur = new_frame_dur;
+        new_frame.buffer = elem.buffer;
+        new_frame.pos = elem.pos;
 
         if(to)
         {
-            to->frames.push_back(new_frames);
-            to->end = std::max(to->end, new_frames.pos + new_frames.dur);
+            to->frames.push_back(new_frame);
+            to->end = std::max(to->end, new_frame.pos + new_frame.dur);
         }
 
-    done:
-        if(FAILED(hr))
-            throw HR_EXCEPTION(hr);
-
-        return remove;
+        return true;
     }), this->frames.end());
 
-    /*if(to)
-        to->end = std::max(to->end, std::min(end, this->end));*/
     if(end >= this->end)
     {
         assert_(this->frames.empty());

@@ -161,6 +161,25 @@ control_wasapi* control_scene2::add_wasapi(const std::wstring& name, bool add_fr
     return ptr;
 }
 
+control_vidcap* control_scene2::add_vidcap(const std::wstring& name, bool add_front)
+{
+    bool is_video_control, found;
+    this->find_control_iterator(name, is_video_control, found);
+    if(found)
+        return NULL;
+
+    control_vidcap* ptr;
+    control_class_t vidcap_control(ptr = new control_vidcap(this->active_controls, this->pipeline));
+    vidcap_control->parent = this;
+    vidcap_control->name = name;
+    if(!add_front)
+        this->video_controls.push_back(std::move(vidcap_control));
+    else
+        this->video_controls.insert(this->video_controls.begin(), std::move(vidcap_control));
+
+    return ptr;
+}
+
 control_scene2* control_scene2::add_scene(const std::wstring& name, bool add_front)
 {
     bool is_video_control, found;

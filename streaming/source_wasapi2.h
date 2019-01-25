@@ -38,6 +38,8 @@ public:
     // wasapi is always 32 bit float in shared mode
     typedef float bit_depth_t;
     static const INT64 capture_interval_ms = 40;
+    // maximum amount of frames source wasapi holds before discarding
+    static const frame_unit maximum_buffer_size = transform_aac_encoder::sample_rate;
     // the timeout for the request after which it is considered stale
     // and dispatched without accompanying data
     static const time_unit request_timeout = SECOND_IN_TIME_UNIT;
@@ -68,7 +70,6 @@ private:
 
     // request queue is allocated here so that newer requests won't move samples that
     // should be handled by older requests
-    // TODO: recursive mutex probably unnecessary
     std::mutex requests_mutex;
     std::queue<request_queue::request_t> requests;
 

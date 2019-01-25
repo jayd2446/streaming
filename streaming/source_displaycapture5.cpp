@@ -37,6 +37,7 @@ source_displaycapture5::source_displaycapture5(
     newest_pointer_buffer(new media_buffer_texture),
     available_samples(new buffer_pool),
     available_pointer_samples(new buffer_pool),
+    buffer_pool_video_frames(new buffer_pool_video_frames_t),
     context_mutex(context_mutex),
     output_index((UINT)-1),
     same_device(false),
@@ -62,6 +63,10 @@ source_displaycapture5::~source_displaycapture5()
 
         buffer_pool::scoped_lock lock(this->available_pointer_samples->mutex);
         this->available_pointer_samples->dispose();
+    }
+    {
+        buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
+        this->buffer_pool_video_frames->dispose();
     }
 }
 
@@ -480,6 +485,14 @@ void stream_displaycapture5::capture_frame_cb(void*)
     presentation_clock_t clock;
     source_displaycapture5::request_t request;
     media_component_videomixer_args args, pointer_args;
+    media_sample_video_frame frame, pointer_frame;
+
+    {
+        source_displaycapture5::buffer_pool_video_frames_t::scoped_lock 
+            lock(this->source->buffer_pool_video_frames->mutex);
+        args.sample = this->source->buffer_pool_video_frames->acquire_buffer();
+        pointer_args.sample = this->source->buffer_pool_video_frames->acquire_buffer();
+    }
 
     // the stream might serve the request on behalf of some other stream
     {
@@ -504,8 +517,8 @@ void stream_displaycapture5::capture_frame_cb(void*)
     try
     {
         frame_captured = this->source->capture_frame(
-            new_pointer_shape, pointer_position, pointer_args.single_buffer,
-            args.single_buffer, timestamp, clock);
+            new_pointer_shape, pointer_position, pointer_frame.buffer,
+            frame.buffer, timestamp, clock);
     }
     catch(displaycapture_exception)
     {
@@ -518,16 +531,16 @@ void stream_displaycapture5::capture_frame_cb(void*)
     }
 
     if(!frame_captured)
-        args.single_buffer = this->source->newest_buffer;
+        frame.buffer = this->source->newest_buffer;
 
     if(!new_pointer_shape)
-        pointer_args.single_buffer = this->source->newest_pointer_buffer;
+        pointer_frame.buffer = this->source->newest_pointer_buffer;
 
     D3D11_TEXTURE2D_DESC desc;
     D3D11_TEXTURE2D_DESC* ptr_desc = NULL;
-    if(args.single_buffer->texture)
+    if(frame.buffer->texture)
     {
-        args.single_buffer->texture->GetDesc(ptr_desc = &desc);
+        frame.buffer->texture->GetDesc(ptr_desc = &desc);
 
         args.params.source_rect.top = args.params.source_rect.left = 0.f;
         args.params.source_rect.right = (FLOAT)desc.Width;
@@ -553,12 +566,21 @@ void stream_displaycapture5::capture_frame_cb(void*)
         }
     }
 
-    /*sample.timestamp = request.rp.request_time;*/
     args.frame_end = convert_to_frame_unit(request.rp.request_time /*- SECOND_IN_TIME_UNIT*/,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
+    frame.pos = args.frame_end - 1;
 
     lock.unlock();
+
+    if(frame.buffer && frame.buffer->texture)
+    {
+        args.sample->frames.push_back(frame);
+        args.sample->end = frame.pos + frame.dur;
+    }
+    else
+        args.sample.reset();
+    pointer_args.sample->frames.push_back(pointer_frame);
 
     this->source->session->give_sample(request.stream, &args, request.rp);
     static_cast<stream_displaycapture5*>(request.stream)->pointer_stream->dispatch(
@@ -607,6 +629,7 @@ media_stream::result_t stream_displaycapture5::process_sample(
 
 stream_displaycapture5_pointer::stream_displaycapture5_pointer(const source_displaycapture5_t& source) :
     source(source),
+    // TODO: null buffer not needed anymore
     null_buffer(new media_buffer_texture)
 {
 }
@@ -618,10 +641,14 @@ void stream_displaycapture5_pointer::dispatch(
     media_component_videomixer_args& args,
     source_displaycapture5::request_t& request)
 {
-    if(pointer_position.Visible && desktop_desc && args.single_buffer->texture)
+    args.frame_end = convert_to_frame_unit(request.rp.request_time /*- SECOND_IN_TIME_UNIT*/,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
+
+    if(pointer_position.Visible && desktop_desc && args.sample->frames[0].buffer->texture)
     {
         D3D11_TEXTURE2D_DESC desc;
-        args.single_buffer->texture->GetDesc(&desc);
+        args.sample->frames[0].buffer->texture->GetDesc(&desc);
 
         args.params.source_rect.left = args.params.source_rect.top = 0.f;
         args.params.source_rect.right = (FLOAT)desc.Width;
@@ -633,16 +660,12 @@ void stream_displaycapture5_pointer::dispatch(
         args.params.dest_rect.bottom = args.params.dest_rect.top + (FLOAT)desc.Height;
         args.params.source_m = D2D1::Matrix3x2F::Identity();
         args.params.dest_m = D2D1::Matrix3x2F::Identity();
+
+        args.sample->frames[0].pos = args.frame_end - 1;
+        args.sample->end = args.sample->frames[0].pos + args.sample->frames[0].dur;
     }
     else
-        // TODO: null buffer not needed anymore
-        args.single_buffer = this->null_buffer;
-
-    /*sample.timestamp = request.rp.request_time;*/
-    args.frame_end = convert_to_frame_unit(request.rp.request_time /*- SECOND_IN_TIME_UNIT*/,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
-    /*sample.silent = !sample.single_buffer->texture;*/
+        args.sample.reset();
 
     this->source->session->give_sample(this, &args, request.rp);
 }

@@ -147,6 +147,10 @@ void sink_preview2::draw_sample(const media_component_args* args_)
     const media_component_h264_encoder_args* args = 
         static_cast<const media_component_h264_encoder_args*>(args_);
 
+    // the outlines aren't drawn if there's no sample data
+    if(!args)
+        return;
+
     HRESULT hr = S_OK;
     bool has_video_control = false;
     int highlighted_points;
@@ -169,7 +173,6 @@ void sink_preview2::draw_sample(const media_component_args* args_)
         video_params = video_control->get_video_params(true);
     }
 
-    // the outlines are drawn even if there's no sample data
 out:
     using namespace D2D1;
     scoped_lock lock(this->d2d1_context_mutex);

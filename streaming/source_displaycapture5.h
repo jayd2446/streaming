@@ -34,6 +34,7 @@ class source_displaycapture5 : public media_source
     friend class stream_displaycapture5_pointer;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef buffer_pool<media_sample_video_frames_pooled> buffer_pool_video_frames_t;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
     struct empty {};
     typedef request_queue<empty>::request_t request_t;
@@ -50,6 +51,7 @@ private:
     CComPtr<ID3D11Texture2D> stage_src, stage_dst;
     UINT output_index;
 
+    std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     std::shared_ptr<buffer_pool> available_samples, available_pointer_samples;
     media_buffer_texture_t newest_buffer, newest_pointer_buffer;
 

@@ -15,7 +15,8 @@
 #include <atomic>
 
 // on stream stop the component should serve requests to the request point, so that
-// a component that might stop receives enough samples
+// a component that might stop receives enough samples;
+// at other times, a component is allowed serve samples from zero up to the request point
 
 // the user params apply to a request only, which means that they might lag behind
 // if the same parameters are applied to samples which have different timestamps
@@ -114,13 +115,15 @@ private:
     frame_unit find_common_frame_end(const args_t&);
     void process(typename request_queue::request_t&, bool drain);
 protected:
-    // moves all frames from the sample in old_in_arg to the sample in in_arg up to end
-    // and updates the fields for in_arg and old_in_arg;
-    // the sample in old_in_arg is assumed to be non null;
-    // returns whether the old_in_arg became null(all frames were moved);
+    // moves all frames from 'from' to 'to', using the 'reference' as the source for samples,
+    // and updates the fields of 'from' and 'to';
+    // 'reference' is assumed to be valid;
+    // returns whether 'from' became null(all frames were moved);
     // discarded flag indicates whether the sample is immediately discarded
-    virtual bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded) = 0;
+    virtual bool move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
+        frame_unit end, bool discarded) = 0;
     // mixes all the frames in args to out up to end;
+    // the samples in args shouldn't be modified;
     // NOTE: mixing must be multithreading safe
     virtual void mix(out_arg_t& out, args_t&, frame_unit first, frame_unit end) = 0;
 public:
@@ -275,27 +278,31 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
     // discard frames that are below the old cutoff point
     for(auto&& item : packets.container)
     {
-        in_arg_t discarded;
+        in_arg_t discarded, modified;
         if(item.arg)
         {
             const bool ret = 
-                this->move_frames(discarded, item.arg, old_cutoff, true);
-            assert_((ret && !item.arg) || (!ret && item.arg));
+                this->move_frames(discarded, modified, item.arg, old_cutoff, true);
+            item.arg = modified;
+
+            assert_((ret && !modified) || (!ret && modified));
         }
     }
 
     // add frames to the output request that are between the old and the new cutoff point
     for(auto&& item : packets.container)
     {
-        in_arg_t new_arg;
-
+        in_arg_t new_arg, modified;
         if(item.arg)
         {
             bool ret;
-            if(!(ret = this->move_frames(new_arg, item.arg, this->cutoff, false)))
+            if(!(ret = this->move_frames(new_arg, modified, item.arg, this->cutoff, false)))
+            {
+                item.arg = modified;
                 // assign the item to the leftover buffer since it was only partly moved
                 this->leftover[item.stream_index].container.push_back(item);
-            assert_((ret && !item.arg) || (!ret && item.arg));
+            }
+            assert_((ret && !modified) || (!ret && modified));
         }
 
         // assign the processed arg to the request

@@ -244,82 +244,39 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
 
         control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
 
-        if(dlg.cursel < dlg.audio_sel_offset)
+        if(dlg.cursel < dlg.vidcap_sel_offset)
         {
-            static int k = 0;
-            /*for(int j = 0; j < (k ? 1 : 85); j++)
-            {*/
-            // video
-            static FLOAT i = 0.f;
-
-            const LONG display_w = 
-                std::abs(dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.right - 
-                    dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.left),
-                display_h = 
-                std::abs(dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.bottom -
-                    dlg.displaycaptures[dlg.cursel].output.DesktopCoordinates.top);
-
-            //stream_videomixer_controller::params_t params;
-            //D2D1_RECT_F dest_rect;
-            //const FLOAT dest_rot = -i * 100.f;
-            //params.source_rect = { 0.f };
-            //params.dest_rect = { 0.f };
-            //params.source_rect.right = (FLOAT)display_w - i * 40.f;
-            //params.source_rect.bottom = (FLOAT)display_h - i * 4.f;
-            //params.source_rect.left = i * 4.f;
-            //params.source_rect.top = i * 4.f;
-            //params.source_m = D2D1::Matrix3x2F::Rotation(-i * 10.f);
-
-            //params.dest_rect = D2D1::RectF(0.f, 0.f, 1.f, 1.f);
-            ///*params.dest_angle = -i * 10.f;*/
-            //dest_rect.left = i * 4.f;
-            //dest_rect.top = i * 4.f;
-            //dest_rect.right =
-            //    (FLOAT)std::min((LONG)transform_videomixer::canvas_width, display_w) - i * 40.f;
-            //dest_rect.bottom =
-            //    (FLOAT)std::min((LONG)transform_videomixer::canvas_height, display_h) - i * 40.f;
-
-            //params.dest_m = D2D1::Matrix3x2F::Scale(
-            //    dest_rect.right - dest_rect.left, dest_rect.bottom - dest_rect.top) *
-            //    D2D1::Matrix3x2F::Rotation(dest_rot) *
-            //    D2D1::Matrix3x2F::Translation(dest_rect.left, dest_rect.top);
-
-            //// axis aligned clip is faster if the dest rect is axis aligned
-            //params.axis_aligned_clip = (dest_rot == 0.f);
-
-            //// TODO:
-            //static short z_order = 0;
-            //params.z_order = z_order++;
-
-            i += 1.f;
-
             // add the displaycapture and set its params
             std::wostringstream sts;
             sts << L"displaycapture" << this->video_counter;
             control_displaycapture& displaycapture = *scene->add_displaycapture(std::move(sts.str()));
             this->video_counter++;
 
-            /*displaycapture.videoprocessor_params.reset(new stream_videoprocessor2_controller);
-            displaycapture.videoprocessor_params->set_params(params);*/
             displaycapture.set_displaycapture_params(dlg.displaycaptures[dlg.cursel]);
             // displaycapture params must be set before setting video params
             displaycapture.apply_default_video_params();
 
             // TODO: just add items instead of rebuilding the tree
             this->set_source_tree(scene);
+        }
+        else if(dlg.cursel < dlg.audio_sel_offset)
+        {
+            std::wostringstream sts;
+            sts << L"vidcap" << this->video_counter;
+            control_vidcap* vidcap = scene->add_vidcap(std::move(sts.str()));
+            this->video_counter++;
 
-            /*((control_class*)this->ctrl_pipeline.get())->activate();*/
+            // TODO: the vidcap control should probably host a dialog where the parameters
+            // can be chosen
+            const int index = dlg.cursel - dlg.vidcap_sel_offset;
+            vidcap->set_vidcap_params(dlg.vidcaps[index]);
+            vidcap->apply_default_video_params();
 
-            /*CTreeItem item = this->wnd_sourcetree.InsertItem(L"Video", TVI_ROOT, TVI_LAST);*/
-            /*}*/
-            k = 1;
+            this->set_source_tree(scene);
         }
         else
         {
             // audio
-            static int k = 0;
-            /*for(int j = 0; j < 10; j++)
-            {*/
             const int index = dlg.cursel - dlg.audio_sel_offset;
 
             std::wostringstream sts;
@@ -331,10 +288,6 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
 
             // TODO: just add items instead of rebuilding the tree
             this->set_source_tree(scene);
-            /*CTreeItem item = this->wnd_sourcetree.InsertItem(L"Audio", TVI_ROOT, TVI_LAST);*/
-            /*((control_class*)this->ctrl_pipeline.get())->activate();*/
-            /*}*/
-            k = 1;
         }
 
         ((control_class*)this->ctrl_pipeline.get())->activate();

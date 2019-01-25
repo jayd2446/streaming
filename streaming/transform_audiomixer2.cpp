@@ -14,7 +14,6 @@ transform_audiomixer2::transform_audiomixer2(const media_session_t& session) :
     buffer_pool_memory(new buffer_pool_memory_t),
     buffer_pool_audio_frames(new buffer_pool_audio_frames_t)
 {
-    
 }
 
 transform_audiomixer2::~transform_audiomixer2()
@@ -52,41 +51,49 @@ stream_audiomixer2::stream_audiomixer2(const transform_audiomixer2_t& transform)
 {
 }
 
-bool stream_audiomixer2::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end,
-    bool discarded)
+bool stream_audiomixer2::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
+    frame_unit end, bool discarded)
 {
-    assert_(old_in_arg);
+    assert_(reference);
 
-    in_arg = std::make_optional<in_arg_t::value_type>();
+    to = std::make_optional<in_arg_t::value_type>();
+    from = std::make_optional<in_arg_t::value_type>();
 
-    media_sample_audio_frames_t frames;
-    if(!discarded)
+    to->frame_end = end;
+
+    from->frame_end = reference->frame_end;
+
+    if(reference->sample)
     {
-        transform_audiomixer2::buffer_pool_audio_frames_t::scoped_lock lock(
-            this->transform->buffer_pool_audio_frames->mutex);
-        frames = this->transform->buffer_pool_audio_frames->acquire_buffer();
-        frames->initialize();
-    }
+        {
+            transform_audiomixer2::buffer_pool_audio_frames_t::scoped_lock lock(
+                this->transform->buffer_pool_audio_frames->mutex);
+            from->sample = this->transform->buffer_pool_audio_frames->acquire_buffer();
+            from->sample->initialize();
+        }
 
-    // set old_in_arg
-    if(old_in_arg->sample)
-    {
-        const bool moved = old_in_arg->sample->move_frames_to(frames.get(), end,
+        // *from->sample = *reference->sample
+        // could be used, but currently the fields are assigned individually
+        from->sample->frames = reference->sample->frames;
+        from->sample->end = reference->sample->end;
+
+        if(!discarded)
+        {
+            transform_audiomixer2::buffer_pool_audio_frames_t::scoped_lock lock(
+                this->transform->buffer_pool_audio_frames->mutex);
+            to->sample = this->transform->buffer_pool_audio_frames->acquire_buffer();
+            to->sample->initialize();
+        }
+
+        const bool moved = from->sample->move_frames_to(to->sample.get(), end,
             transform_audiomixer2::bit_depth / 8 * transform_aac_encoder::channels);
-
         if(moved && discarded)
-            std::cout << "discarded frames" << std::endl;
+            std::cout << "discarded audio frames" << std::endl;
     }
-    if(end >= old_in_arg->frame_end)
-        // make the old_sample null
-        old_in_arg.reset();
+    if(end >= from->frame_end)
+        from.reset();
 
-    // set in_arg
-    // TODO: when adding audiomixer args, the params must be assigned to in_arg aswell
-    in_arg->frame_end = end;
-    in_arg->sample = frames;
-
-    return !old_in_arg;
+    return !from;
 }
 
 void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,

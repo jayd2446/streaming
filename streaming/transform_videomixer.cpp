@@ -128,25 +128,50 @@ stream_videomixer::device_context_resources_t stream_videomixer::acquire_buffer(
     }
 }
 
-bool stream_videomixer::move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end,
-    bool discarded)
+bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
+    frame_unit end, bool discarded)
 {
-    assert_(old_in_arg);
+    assert_(reference);
 
-    in_arg = std::make_optional<in_arg_t::value_type>();
+    to = std::make_optional<in_arg_t::value_type>();
+    from = std::make_optional<in_arg_t::value_type>();
 
-    // just assign because the args only store a single sample currently
-    if(old_in_arg->frame_end <= end)
+    to->params = reference->params;
+    to->frame_end = end;
+
+    from->params = reference->params;
+    from->frame_end = reference->frame_end;
+
+    if(reference->sample)
     {
-        in_arg->single_buffer = old_in_arg->single_buffer;
-        in_arg->params = old_in_arg->params;
+        {
+            transform_videomixer::buffer_pool_video_frames_t::scoped_lock lock(
+                this->transform->buffer_pool_video_frames->mutex);
+            from->sample = this->transform->buffer_pool_video_frames->acquire_buffer();
+            from->sample->initialize();
+        }
+
+        // *from->sample = *reference->sample
+        // could be used, but currently the fields are assigned individually
+        from->sample->frames = reference->sample->frames;
+        from->sample->end = reference->sample->end;
+
+        if(!discarded)
+        {
+            transform_videomixer::buffer_pool_video_frames_t::scoped_lock lock(
+                this->transform->buffer_pool_video_frames->mutex);
+            to->sample = this->transform->buffer_pool_video_frames->acquire_buffer();
+            to->sample->initialize();
+        }
+
+        const bool moved = from->sample->move_frames_to(to->sample.get(), end);
+        if(moved && discarded)
+            std::cout << "discarded video frames" << std::endl;
     }
-    if(end >= old_in_arg->frame_end)
-        old_in_arg.reset();
+    if(end >= from->frame_end)
+        from.reset();
 
-    in_arg->frame_end = end;
-
-    return !old_in_arg;
+    return !from;
 }
 
 void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
@@ -162,9 +187,9 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         [](const packet_t& a, const packet_t& b)
     {
         // null packets are ordered first
-        if(!a.valid_user_params || !a.arg || !a.arg->single_buffer)
+        if(!a.valid_user_params || !a.arg || !a.arg->sample)
             return false;
-        if(!b.valid_user_params || !b.arg || !b.arg->single_buffer)
+        if(!b.valid_user_params || !b.arg || !b.arg->sample)
             return true;
 
         return (a.stream_index < b.stream_index);
@@ -187,47 +212,40 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         for(frame_unit i = 0; i < frame_count; i++)
             frames->frames.push_back(media_sample_video_frame(first + i));
 
+        // TODO: cache the last used texture for each input stream;
+        // the implementation of constant frame rate is the above case, but the cached
+        // texture is the mix
+
         // draw
         for(auto&& item : packets.container)
         {
-            if(!item.arg)
+            // TODO: this is probably never true(first case)
+            if(!item.arg || !item.arg->sample)
                 continue;
 
-            // -1 for the fact that currently there is only 1 texture in the sample and
-            // thus a position can be calculated that way
-            bool clear = false;
-            const size_t index = (size_t)item.arg->frame_end - (size_t)first - 1U;
-            device_context_resources_t frame =
-                std::static_pointer_cast<transform_videomixer::device_context_resources>(
-                    frames->frames[index].buffer);
-            if(!frame)
-            {
-                frame = this->acquire_buffer();
-                frames->frames[index].buffer = frame;
-                clear = true;
-            }
+            // TODO: recording an empty source is currently broken
 
-            // clear;
-            // begin draw is only called if the output sample hasn't been cleared yet or
-            // the input has a sample that needs to be mixed to output;
-            // this is important to reduce the overhead that would otherwise occur
-            if(clear)
+            assert_(end >= item.arg->sample->end);
+            for(auto&& frame_ : item.arg->sample->frames)
             {
-                frame->ctx->BeginDraw();
-                frame->ctx->SetTarget(frame->bitmap);
-                frame->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
-            }
-
-            // draw
-            if(item.arg->single_buffer && item.arg->single_buffer->texture)
-            {
-                if(!clear)
+                bool clear = false;
+                const size_t index = (size_t)frame_.pos - (size_t)first;
+                device_context_resources_t frame =
+                    std::static_pointer_cast<transform_videomixer::device_context_resources>(
+                        frames->frames[index].buffer);
+                if(!frame)
                 {
-                    frame->ctx->BeginDraw();
-                    frame->ctx->SetTarget(frame->bitmap);
+                    frame = this->acquire_buffer();
+                    frames->frames[index].buffer = frame;
+                    clear = true;
                 }
 
-                CComPtr<ID3D11Texture2D> texture = item.arg->single_buffer->texture;
+                frame->ctx->BeginDraw();
+                frame->ctx->SetTarget(frame->bitmap);
+                if(clear)
+                    frame->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+
+                CComPtr<ID3D11Texture2D> texture = frame_.buffer->texture;
                 const stream_videomixer_controller::params_t& params = item.arg->params;
                 const stream_videomixer_controller::params_t& user_params =
                     item.valid_user_params ? item.user_params : params;
@@ -320,12 +338,8 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                 else
                     frame->ctx->PopAxisAlignedClip();
 
-                if(!clear)
-                    CHECK_HR(hr = frame->ctx->EndDraw())
+                CHECK_HR(hr = frame->ctx->EndDraw());
             }
-
-            if(clear)
-                CHECK_HR(hr = frame->ctx->EndDraw())
         }
 
         assert_(end > 0);
@@ -337,6 +351,7 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
     // out_arg will be null if frame_count was 0
 
+    // TODO: test this
 done:
     if(FAILED(hr))
     {

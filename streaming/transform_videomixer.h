@@ -44,14 +44,9 @@ class media_component_videomixer_args : public media_component_video_args
 public:
     stream_videomixer_controller::params_t params;
 
-    media_component_videomixer_args() {}
-    explicit media_component_videomixer_args(const media_buffer_texture_t& single_buffer) :
-        media_component_video_args(single_buffer) {}
+    media_component_videomixer_args() = default;
     explicit media_component_videomixer_args(const stream_videomixer_controller::params_t& params) :
         params(params) {}
-    media_component_videomixer_args(const stream_videomixer_controller::params_t& params,
-        const media_buffer_texture_t& single_buffer) :
-        params(params), media_component_video_args(single_buffer) {}
 };
 
 typedef std::optional<media_component_videomixer_args> media_component_videomixer_args_t;
@@ -112,7 +107,8 @@ private:
     void initialize_resources(const device_context_resources_t& resources);
     device_context_resources_t acquire_buffer();
 
-    bool move_frames(in_arg_t& in_arg, in_arg_t& old_in_arg, frame_unit end, bool discarded);
+    bool move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
+        frame_unit end, bool discarded);
     void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end);
 public:
     explicit stream_videomixer(const transform_videomixer_t& transform);

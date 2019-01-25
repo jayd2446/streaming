@@ -2,7 +2,7 @@
 #include "control_class.h"
 #include "control_displaycapture5.h"
 #include "control_wasapi.h"
-//#include "transform_videoprocessor2.h"
+#include "control_vidcap.h"
 #include "transform_videomixer.h"
 #include <string>
 #include <vector>
@@ -46,6 +46,7 @@ public:
     // returns NULL if the name wasn't unique
     control_displaycapture* add_displaycapture(const std::wstring& name, bool add_front = true);
     control_wasapi* add_wasapi(const std::wstring& name, bool add_front = true);
+    control_vidcap* add_vidcap(const std::wstring& name, bool add_front = true);
     control_scene2* add_scene(const std::wstring& name, bool add_front = false);
 
     void switch_scene(bool is_video_control, int control_index);
