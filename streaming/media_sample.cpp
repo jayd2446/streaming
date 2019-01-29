@@ -69,7 +69,7 @@ time_unit convert_to_time_unit(frame_unit pos, frame_unit frame_rate_num, frame_
 
 void media_buffer_memory::initialize(DWORD len)
 {
-    static const DWORD alignment = 16;
+    static constexpr DWORD alignment = 16;
 
     HRESULT hr = S_OK;
     // allocate a new buffer
@@ -105,13 +105,48 @@ done:
 /////////////////////////////////////////////////////////////////
 
 
-void media_buffer_texture::initialize(const CComPtr<ID3D11Device>& dev,
-    const D3D11_TEXTURE2D_DESC& desc, const D3D11_SUBRESOURCE_DATA* subrsrc)
+void media_buffer_texture::uninitialize()
 {
+    assert_(this->initialized);
+
     HRESULT hr = S_OK;
+    CComPtr<IDXGIResource> resource;
+    if(this->texture && this->managed_by_this)
+    {
+        CHECK_HR(hr = this->texture->QueryInterface(&resource));
+        CHECK_HR(hr = resource->SetEvictionPriority(DXGI_RESOURCE_PRIORITY_MINIMUM));
+    }
+    else
+        this->texture = NULL;
+
+    this->initialized = false;
+    this->managed_by_this = true;
+
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
+}
+
+void media_buffer_texture::initialize(const CComPtr<ID3D11Device>& dev,
+    const D3D11_TEXTURE2D_DESC& desc, const D3D11_SUBRESOURCE_DATA* subrsrc, bool reinitialize)
+{
+    assert_(!this->initialized);
+
+    HRESULT hr = S_OK;
+
+    if(reinitialize)
+        this->texture = NULL;
 
     if(this->texture)
     {
+        CComPtr<IDXGIResource> resource;
+        // TODO: if the settings do not match, a new texture should be created
+        // and the mismatch should be printed
+
+        // restore the default eviction priority
+        CHECK_HR(hr = this->texture->QueryInterface(&resource));
+        CHECK_HR(hr = resource->SetEvictionPriority(DXGI_RESOURCE_PRIORITY_NORMAL));
+
 #ifdef _DEBUG
         CComPtr<ID3D11Device> old_dev;
         D3D11_TEXTURE2D_DESC old_desc;
@@ -130,9 +165,24 @@ void media_buffer_texture::initialize(const CComPtr<ID3D11Device>& dev,
     else
         CHECK_HR(hr = dev->CreateTexture2D(&desc, subrsrc, &this->texture))
 
+    this->initialized = true;
+
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
+}
+
+void media_buffer_texture::initialize(const CComPtr<ID3D11Texture2D>& texture)
+{
+    assert_(!this->initialized);
+    assert_(!this->texture);
+
+    if(!texture)
+        throw HR_EXCEPTION(E_UNEXPECTED);
+
+    this->texture = texture;
+    this->initialized = true;
+    this->managed_by_this = false;
 }
 
 
@@ -145,8 +195,6 @@ bool media_sample_audio_frames::move_or_share_consecutive_frames_to(
     media_sample_audio_frames* to, frame_unit end, UINT32 block_align, 
     media_sample_audio_consecutive_frames& elem, bool share)
 {
-    assert_(elem.buffer);
-
     if(elem.pos >= end)
         return false;
 
@@ -161,35 +209,43 @@ bool media_sample_audio_frames::move_or_share_consecutive_frames_to(
     const frame_unit frame_dur = elem.dur;
     const frame_unit frame_end = frame_pos + frame_dur;
 
-    old_buffer = elem.buffer;
-    CHECK_HR(hr = old_buffer->GetCurrentLength(&buflen));
-
     const frame_unit frame_diff_end = std::max(frame_end - end, 0LL);
     const DWORD offset_end = (DWORD)frame_diff_end * block_align;
     const frame_unit new_frame_pos = frame_pos;
     const frame_unit new_frame_dur = frame_dur - frame_diff_end;
 
-    assert_(((int)buflen - (int)offset_end) > 0);
-    CHECK_HR(hr = MFCreateMediaBufferWrapper(old_buffer, 0, buflen - offset_end, &buffer));
-    CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+    if(elem.buffer)
+    {
+        old_buffer = elem.buffer;
+        CHECK_HR(hr = old_buffer->GetCurrentLength(&buflen));
+
+        assert_(((int)buflen - (int)offset_end) > 0);
+        CHECK_HR(hr = MFCreateMediaBufferWrapper(old_buffer, 0, buflen - offset_end, &buffer));
+        CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+    }
+
     if(offset_end > 0 && !share)
     {
-        // remove the moved part of the old buffer
-        CComPtr<IMFMediaBuffer> new_buffer;
-        CHECK_HR(hr = MFCreateMediaBufferWrapper(
-            old_buffer, buflen - offset_end, offset_end, &new_buffer));
-        CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+        if(elem.buffer)
+        {
+            // remove the moved part of the old buffer
+            CComPtr<IMFMediaBuffer> new_buffer;
+            CHECK_HR(hr = MFCreateMediaBufferWrapper(
+                old_buffer, buflen - offset_end, offset_end, &new_buffer));
+            CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+            elem.buffer = new_buffer;
+        }
 
         const frame_unit new_frame_dur = offset_end / block_align;
         const frame_unit new_frame_pos = frame_pos + frame_dur - new_frame_dur;
 
-        elem.buffer = new_buffer;
         elem.pos = new_frame_pos;
         elem.dur = new_frame_dur;
     }
     else
         remove = true;
 
+    assert_((elem.memory_host && buffer) || (!elem.memory_host && !elem.buffer));
     new_frames.memory_host = elem.memory_host;
     new_frames.buffer = buffer;
     new_frames.pos = new_frame_pos;
@@ -221,9 +277,7 @@ bool media_sample_audio_frames::move_frames_to(media_sample_audio_frames* to,
     this->frames.erase(std::remove_if(this->frames.begin(), this->frames.end(), 
         [&](media_sample_audio_consecutive_frames& elem)
     {
-        if(!elem.buffer)
-            throw HR_EXCEPTION(E_UNEXPECTED);
-
+        assert_(elem.dur > 0);
         // TODO: sample could have a flag that indicates whether the frames are ordered,
         // so that the whole list doesn't need to be iterated;
         // this sample would retain the ordered flag only if this was null when
@@ -268,55 +322,3 @@ bool media_sample_audio_frames::move_frames_to(media_sample_audio_frames* to,
 //
 //    return shared;
 //}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
-bool media_sample_video_frames::move_frames_to(media_sample_video_frames* to, frame_unit end)
-{
-    assert_(this->end == 0 || !this->frames.empty());
-
-    bool moved = false;
-
-    // the media_sample_video_frame should be lightweight, because it seems that
-    // the value is moved within the container
-    // https://en.wikipedia.org/wiki/Erase%E2%80%93remove_idiom
-    this->frames.erase(std::remove_if(this->frames.begin(), this->frames.end(),
-        [&](media_sample_video_frame& elem)
-    {
-        if(!elem.buffer)
-            throw HR_EXCEPTION(E_UNEXPECTED);
-
-        // TODO: sample could have a flag that indicates whether the frames are ordered,
-        // so that the whole list doesn't need to be iterated;
-        // this sample would retain the ordered flag only if this was null when
-        // frames were moved
-        if(elem.pos >= end)
-            return false;
-
-        media_sample_video_frame new_frame;
-
-        moved = true;
-        new_frame.buffer = elem.buffer;
-        new_frame.pos = elem.pos;
-
-        if(to)
-        {
-            to->frames.push_back(new_frame);
-            to->end = std::max(to->end, new_frame.pos + new_frame.dur);
-        }
-
-        return true;
-    }), this->frames.end());
-
-    if(end >= this->end)
-    {
-        assert_(this->frames.empty());
-        this->uninitialize();
-    }
-
-    return moved;
-}

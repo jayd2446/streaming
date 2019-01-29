@@ -1,6 +1,8 @@
 #pragma once
 #include "media_component.h"
 
+// TODO: probably unnecessary
+
 class media_sink : public media_component
 {
 private:

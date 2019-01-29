@@ -1,7 +1,7 @@
 #pragma once
 #include "control_class.h"
 #include "control_video2.h"
-#include "source_displaycapture5.h"
+#include "source_displaycapture.h"
 #include "transform_videomixer.h"
 #include <vector>
 
@@ -21,7 +21,7 @@ public:
 private:
     /*control_pipeline2& pipeline;*/
     displaycapture_params params;
-    source_displaycapture5_t component;
+    source_displaycapture_t component;
     stream_videomixer_controller_t videomixer_params;
 
     media_stream_t stream, pointer_stream;

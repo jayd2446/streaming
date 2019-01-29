@@ -1,6 +1,6 @@
 #pragma once
 
-#include "media_source.h"
+#include "media_component.h"
 #include "media_stream.h"
 #include "media_sample.h"
 #include "request_packet.h"
@@ -32,7 +32,7 @@ class stream_mixer;
 
 // in arg and out arg are assumed to be of std optional type
 template<class InArg, class UserParamsController, class OutArg>
-class transform_mixer : public media_source
+class transform_mixer : public media_component
 {
     friend class stream_mixer<transform_mixer<InArg, UserParamsController, OutArg>>;
 public:
@@ -106,15 +106,14 @@ private:
     frame_unit cutoff;
     std::unique_ptr<args_t[]> leftover;
 
-    void on_stream_start(time_unit);
-    void on_stream_stop(time_unit);
-
     // converts by using the frame rate in component
     frame_unit convert_to_frame_unit(time_unit);
     void initialize_packet(packet_t&);
     frame_unit find_common_frame_end(const args_t&);
     void process(typename request_queue::request_t&, bool drain);
 protected:
+    virtual void on_stream_start(time_unit);
+    virtual void on_stream_stop(time_unit);
     // moves all frames from 'from' to 'to', using the 'reference' as the source for samples,
     // and updates the fields of 'from' and 'to';
     // 'reference' is assumed to be valid;
@@ -130,6 +129,8 @@ public:
     explicit stream_mixer(const transform_mixer_t& transform);
     virtual ~stream_mixer() {}
 
+    size_t get_input_stream_count() const {return this->input_streams_props.size();}
+
     // user_params can be NULL
     void connect_streams(
         const media_stream_t& from,
@@ -141,10 +142,14 @@ public:
 };
 
 
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
 
 template<class T, class U, class V>
 transform_mixer<T, U, V>::transform_mixer(const media_session_t& session) :
-    media_source(session), initialized(false)
+    media_component(session), initialized(false)
 {
 }
 
@@ -313,6 +318,7 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
     const frame_unit cutoff = this->cutoff;
     assert_(old_cutoff <= this->cutoff);
 
+    // TODO: decide if should call mix when old_cutoff and cutoff are the same
     this->unlock();
     this->mix(out, packets, old_cutoff, cutoff);
 

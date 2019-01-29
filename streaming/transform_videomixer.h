@@ -9,6 +9,7 @@
 #include <atlbase.h>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
@@ -39,14 +40,26 @@ public:
 
 typedef std::shared_ptr<stream_videomixer_controller> stream_videomixer_controller_t;
 
-class media_component_videomixer_args : public media_component_video_args
+class media_sample_video_mixer_frame : public media_sample_video_frame
 {
 public:
+    // params are considered valid only if the buffer is not silent
     stream_videomixer_controller::params_t params;
+};
 
-    media_component_videomixer_args() = default;
-    explicit media_component_videomixer_args(const stream_videomixer_controller::params_t& params) :
-        params(params) {}
+typedef media_sample_video_frames_template<media_sample_video_mixer_frame>
+media_sample_video_mixer_frames;
+typedef std::shared_ptr<media_sample_video_mixer_frames> media_sample_video_mixer_frames_t;
+typedef buffer_pooled<media_sample_video_mixer_frames> media_sample_video_mixer_frames_pooled;
+typedef std::shared_ptr<media_sample_video_mixer_frames_pooled> 
+media_sample_video_mixer_frames_pooled_t;
+
+class media_component_videomixer_args : public media_component_frame_args
+{
+public:
+    // if the sample is non-null, it must not be empty;
+    // null buffer frames are silent
+    media_sample_video_mixer_frames_t sample;
 };
 
 typedef std::optional<media_component_videomixer_args> media_component_videomixer_args_t;
@@ -66,6 +79,7 @@ private:
     typedef std::shared_ptr<device_context_resources_pooled> device_context_resources_pooled_t;
 public:
     typedef buffer_pool<media_sample_video_frames_pooled> buffer_pool_video_frames_t;
+    typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_mixer_frames_t;
     typedef buffer_pool<device_context_resources_pooled> buffer_pool;
 
     // TODO: canvas size should probably be a float
@@ -77,6 +91,7 @@ private:
 
     std::shared_ptr<buffer_pool> texture_pool;
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
+    std::shared_ptr<buffer_pool_video_mixer_frames_t> buffer_pool_video_mixer_frames;
 
     CComPtr<ID2D1Factory1> d2d1factory;
     CComPtr<ID3D11Device> d3d11dev;
@@ -104,9 +119,9 @@ private:
     typedef transform_videomixer::device_context_resources_t device_context_resources_t;
     transform_videomixer_t transform;
 
+    void initialize_texture(const media_buffer_texture_t&);
     void initialize_resources(const device_context_resources_t& resources);
     device_context_resources_t acquire_buffer();
-
     bool move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
         frame_unit end, bool discarded);
     void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end);

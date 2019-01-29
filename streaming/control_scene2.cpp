@@ -40,8 +40,9 @@ void control_scene2::build_video_topology(const media_stream_t& from,
     if(no_video)
     {
         source_empty_video_t empty_source(new source_empty_video(this->pipeline.session));
-        media_stream_t empty_stream = empty_source->create_stream();
+        empty_source->initialize();
 
+        media_stream_t empty_stream = empty_source->create_stream(topology->get_clock());
         empty_stream->connect_streams(from, topology);
         videomixer_stream->connect_streams(empty_stream, NULL, topology);
     }

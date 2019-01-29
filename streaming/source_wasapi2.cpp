@@ -21,7 +21,7 @@
 //extern LONG capture_audio_priority;
 
 source_wasapi2::source_wasapi2(const media_session_t& session) :
-    media_source(session),
+    media_component(session),
     started(false), capture(false), in_wait_queue(false), serve_in_wait_queue(false),
     native_frame_base(std::numeric_limits<frame_unit>::min()),
     /*devposition_base(std::numeric_limits<frame_unit>::min()),*/

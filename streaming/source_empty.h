@@ -1,10 +1,14 @@
 #pragma once
-#include "media_source.h"
+#include "source_base.h"
+#include "media_component.h"
 #include "media_stream.h"
 #include "async_callback.h"
+#include "transform_videomixer.h"
 #include <memory>
 
-class source_empty_audio : public media_source
+// TODO: source empty could be a template class
+
+class source_empty_audio : public media_component
 {
 public:
     explicit source_empty_audio(const media_session_t& session);
@@ -29,28 +33,36 @@ public:
     result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
 
-class source_empty_video : public media_source
+class source_empty_video : public source_base<media_component_videomixer_args>
 {
+    friend class stream_empty_video;
+public:
+    typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_frames_t;
+    static const frame_unit maximum_buffer_size = 30;
+private:
+    std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
+    frame_unit last_frame_end;
+
+    stream_source_base_t create_derived_stream();
+    bool get_samples_end(const request_t&, frame_unit& end);
+    void make_request(request_t&, frame_unit frame_end);
+    void dispatch(request_t&);
 public:
     explicit source_empty_video(const media_session_t& session);
-    media_stream_t create_stream();
+    ~source_empty_video();
+
+    void initialize();
 };
 
 typedef std::shared_ptr<source_empty_video> source_empty_video_t;
 
-class stream_empty_video : public media_stream
+class stream_empty_video : public stream_source_base<source_base<media_component_videomixer_args>>
 {
-public:
-    typedef async_callback<stream_empty_video> async_callback_t;
 private:
     source_empty_video_t source;
-    media_buffer_texture_t buffer;
-    CComPtr<async_callback_t> callback;
-    request_packet rp;
-    void callback_f(void*);
+    void on_component_start(time_unit);
 public:
     explicit stream_empty_video(const source_empty_video_t&);
-
-    result_t request_sample(const request_packet&, const media_stream*);
-    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };
+
+typedef std::shared_ptr<stream_empty_video> stream_empty_video_t;

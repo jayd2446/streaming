@@ -1,6 +1,6 @@
 #pragma once
 
-#include "media_source.h"
+#include "media_component.h"
 #include "media_stream.h"
 #include "async_callback.h"
 #include <d3d11.h>
@@ -12,7 +12,7 @@
 // color space converter;
 // also provides a pool for samples that are submitted to the encoder
 
-class transform_color_converter : public media_source
+class transform_color_converter : public media_component
 {
     friend class stream_color_converter;
 public:

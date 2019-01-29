@@ -265,3 +265,5 @@ __pycache__/
 /streaming/control_video.h
 /streaming/control_video.cpp
 *.rar
+/streaming/source_displaycapture_legacy.cpp
+/streaming/source_displaycapture_legacy.h

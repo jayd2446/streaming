@@ -38,6 +38,9 @@ public:
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
     struct empty {};
     typedef request_queue<empty>::request_t request_t;
+
+    // maximum amount of frames source displaycapture holds before discarding
+    static const frame_unit maximum_buffer_size = 30;
 private:
     control_class_t ctrl_pipeline;
 
@@ -54,6 +57,8 @@ private:
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     std::shared_ptr<buffer_pool> available_samples, available_pointer_samples;
     media_buffer_texture_t newest_buffer, newest_pointer_buffer;
+    frame_unit last_captured_frame_end;
+    media_buffer_texture_t last_captured_buffer, last_captured_pointer_buffer;
 
     std::recursive_mutex capture_frame_mutex;
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
@@ -96,7 +101,7 @@ public:
         time_unit& timestamp,
         const presentation_clock_t&);
 
-    stream_displaycapture5_t create_stream();
+    stream_displaycapture5_t create_stream(presentation_clock_t&&);
     stream_displaycapture5_pointer_t create_pointer_stream();
 
     // currently displaycapture initialization never fails;
@@ -118,7 +123,7 @@ public:
 
 typedef std::shared_ptr<source_displaycapture5> source_displaycapture5_t;
 
-class stream_displaycapture5 : public media_stream
+class stream_displaycapture5 : public media_stream_clock_sink
 {
 public:
     typedef async_callback<stream_displaycapture5> async_callback_t;
@@ -130,6 +135,7 @@ private:
 
     stream_displaycapture5_pointer_t pointer_stream;
 
+    void on_component_start(time_unit);
     void capture_frame_cb(void*);
 public:
     explicit stream_displaycapture5(const source_displaycapture5_t& source);

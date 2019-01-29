@@ -1,6 +1,6 @@
 #pragma once
 
-#include "media_source.h"
+#include "media_component.h"
 #include "media_stream.h"
 #include <mfapi.h>
 #include <memory>
@@ -14,7 +14,7 @@
 
 // aac encoder only accepts 48khz and 2 channel audio
 
-class transform_aac_encoder : public media_source
+class transform_aac_encoder : public media_component
 {
     friend class stream_aac_encoder;
 public:

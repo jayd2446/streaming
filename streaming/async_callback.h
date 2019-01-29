@@ -102,10 +102,10 @@ public:
         return MFPutWorkItem(this->native.work_queue, &this->native, NULL);
     }
     // the parent must be same for each call
-    HRESULT mf_put_work_item(const std::weak_ptr<T>& parent) 
+    HRESULT mf_put_work_item(const std::weak_ptr<T>& parent, IUnknown* state = NULL)
     {
         this->set_callback(parent);
-        return MFPutWorkItem(this->native.work_queue, &this->native, NULL);
+        return MFPutWorkItem(this->native.work_queue, &this->native, state);
     }
     HRESULT mf_put_waiting_work_item(
         const std::weak_ptr<T>& parent, 

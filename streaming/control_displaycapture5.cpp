@@ -28,11 +28,11 @@ void control_displaycapture::build_video_topology(const media_stream_t& from,
 
     if(!this->reference)
     {
-        stream_displaycapture5_t displaycapture_stream = this->component->create_stream();
-        stream_displaycapture5_pointer_t displaycapture_pointer_stream = 
-            this->component->create_pointer_stream();
-
-        displaycapture_stream->set_pointer_stream(displaycapture_pointer_stream);
+        source_displaycapture::stream_source_base_t displaycapture_stream =
+            this->component->create_stream(topology->get_clock());
+        media_stream_t displaycapture_pointer_stream =
+            this->component->create_pointer_stream(
+                std::static_pointer_cast<stream_displaycapture>(displaycapture_stream));
 
         // connect from the 'from' stream to this stream
         displaycapture_pointer_stream->connect_streams(from, topology);
@@ -64,7 +64,7 @@ void control_displaycapture::build_video_topology(const media_stream_t& from,
 
 void control_displaycapture::activate(const control_set_t& last_set, control_set_t& new_set)
 {
-    source_displaycapture5_t component;
+    source_displaycapture_t component;
 
     this->stream = NULL;
     this->pointer_stream = NULL;
@@ -107,19 +107,19 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
         if(!component)
         {
             // create a new component since it was not found in the last or in the new set
-            source_displaycapture5_t displaycapture_source(
-                new source_displaycapture5(this->pipeline.session, this->pipeline.context_mutex));
+            source_displaycapture_t displaycapture_source(
+                new source_displaycapture(this->pipeline.session, this->pipeline.context_mutex));
 
             if(this->params.adapter_ordinal == this->pipeline.d3d11dev_adapter)
                 displaycapture_source->initialize(
                     this->pipeline.shared_from_this<control_pipeline2>(),
                     this->params.output_ordinal, 
                     this->pipeline.d3d11dev, this->pipeline.devctx);
-            else
+            /*else
                 displaycapture_source->initialize(
                     this->pipeline.shared_from_this<control_pipeline2>(),
                     this->params.adapter_ordinal, this->params.output_ordinal, 
-                    this->pipeline.dxgifactory, this->pipeline.d3d11dev, this->pipeline.devctx);
+                    this->pipeline.dxgifactory, this->pipeline.d3d11dev, this->pipeline.devctx);*/
 
             component = displaycapture_source;
         }

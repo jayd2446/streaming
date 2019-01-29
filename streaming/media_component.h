@@ -14,7 +14,7 @@ class control_class;
 // TODO: rename this typedef to control_pipeline_t
 typedef std::shared_ptr<control_class> control_class_t;
 
-// TODO: sink and source component type classes probably useless
+// TODO: sink component type class probably useless
 class media_component : public enable_shared_from_this
 {
 public:

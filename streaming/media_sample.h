@@ -46,8 +46,12 @@ class media_buffer_texture : public buffer_poolable
 {
     friend class buffer_pooled<media_buffer_texture>;
 private:
-    // the buffer should be always initialized with the same desc and device
-    void uninitialize() {}
+    bool initialized, managed_by_this;
+protected:
+    // TODO: idxgiresource should be cached;
+    // if a class is derived from media_buffer_texture, its uninitialize method
+    // must call this
+    virtual void uninitialize();
 public:
     // TODO: the memory buffer should be a derived class of this defined in h264 encoder;
     // rename the texture_buffer to memory_buffer
@@ -57,12 +61,22 @@ public:
     // TODO: this bitmap should be set in displaycapture aswell so that videomixer
     // doesn't need to create it for every input texture
     CComPtr<ID2D1Bitmap1> bitmap;
+    // texture must not be null
     CComPtr<ID3D11Texture2D> texture;
+    media_buffer_texture() : initialized(false), managed_by_this(true) {}
     virtual ~media_buffer_texture() {}
 
-    // currently, initialize doesn't initialize the bitmap
+    // TODO: if the settings do not match, a new texture should be created
+    // and the mismatch should be printed
+    // currently, initialize doesn't initialize the bitmap;
+    // reinitialize flag is used for resetting the texture data
     void initialize(const CComPtr<ID3D11Device>&,
-        const D3D11_TEXTURE2D_DESC&, const D3D11_SUBRESOURCE_DATA*);
+        const D3D11_TEXTURE2D_DESC&, const D3D11_SUBRESOURCE_DATA*, bool reinitialize = false);
+    // the provided texture must not be managed by a media_buffer_texture instance;
+    // texture must not be null
+    // TODO: this should be defined in a derived class of this, so that
+    // wrapped textures aren't part of the same pool as managed textures
+    void initialize(const CComPtr<ID3D11Texture2D>&);
 };
 
 typedef std::shared_ptr<media_buffer_texture> media_buffer_texture_t;
@@ -98,9 +112,12 @@ class media_sample_audio_consecutive_frames
 {
 public:
     frame_unit pos, dur;
+    // null buffer indicates a silent frame
     // a wrapper of the original buffer(or the original buffer)
     CComPtr<IMFMediaBuffer> buffer;
     media_buffer_memory_t memory_host;
+
+    media_sample_audio_consecutive_frames() : dur(0) {}
 };
 
 class media_sample_audio_frames : public buffer_poolable
@@ -115,6 +132,8 @@ private:
         media_sample_audio_frames* to, frame_unit end, UINT32 block_align,
         media_sample_audio_consecutive_frames& elem, bool share);
 public:
+    // TODO: set the end to min() when there's no data
+
     // end must be 0 if there's no valid data(TODO: reconsider this);
     // end is the max (pos + dur) of frames
     frame_unit end;
@@ -148,36 +167,44 @@ typedef std::shared_ptr<media_sample_audio_frames_pooled> media_sample_audio_fra
 class media_sample_video_frame
 {
 public:
-    frame_unit pos;
-    static constexpr frame_unit dur = 1;
-    // buffer can be null
+    frame_unit pos, dur;
+    // null buffer indicates a silent frame
     media_buffer_texture_t buffer;
 
-    media_sample_video_frame() = default;
-    explicit media_sample_video_frame(frame_unit pos) : pos(pos) {}
+    media_sample_video_frame() : dur(0) {}
+    // TODO: remove this
+    explicit media_sample_video_frame(frame_unit pos) : pos(pos), dur(1) {}
 };
 
-// currently, only videomixer outputs video_frames;
-// video sources output videomixer samples that only contain a single frame
-class media_sample_video_frames : public buffer_poolable
+template<typename FrameType>
+class media_sample_video_frames_template : public buffer_poolable
 {
-    friend class buffer_pooled<media_sample_video_frames>;
+    friend class buffer_pooled<media_sample_video_frames_template<FrameType>>;
+public:
+    typedef FrameType sample_t;
 private:
     void uninitialize() {this->frames.clear(); this->end = 0;}
 public:
+    // TODO: set the initial end position to absolute minimum, so that max can be used
+    // even if the end is technically undefined
     // end is the max (pos + dur) of frames
     frame_unit end;
     // element must have valid data
-    std::deque<media_sample_video_frame> frames;
+    std::deque<sample_t> frames;
 
-    media_sample_video_frames() : end(0) {}
-    virtual ~media_sample_video_frames() {}
+    media_sample_video_frames_template() : end(0) {}
+    virtual ~media_sample_video_frames_template() {}
 
-    bool move_frames_to(media_sample_video_frames* to, frame_unit end);
+    // end functions shouldn't be called if the frames is empty
+    /*frame_unit get_end() const {assert_(!this->frames.empty()); return this->end;}
+    void set_end(frame_unit end) {assert_(!this->frames.empty()); this->end = end;}*/
+
+    bool move_frames_to(media_sample_video_frames_template* to, frame_unit end);
 
     void initialize() {assert_(this->end == 0); assert_(this->frames.empty());}
 };
 
+typedef media_sample_video_frames_template<media_sample_video_frame> media_sample_video_frames;
 typedef std::shared_ptr<media_sample_video_frames> media_sample_video_frames_t;
 typedef buffer_pooled<media_sample_video_frames> media_sample_video_frames_pooled;
 typedef std::shared_ptr<media_sample_video_frames_pooled> media_sample_video_frames_pooled_t;
@@ -261,6 +288,8 @@ typedef std::optional<media_component_frame_args> media_component_frame_args_t;
 class media_component_video_args : public media_component_frame_args
 {
 public:
+    // if the sample is non-null, it must not be empty;
+    // null buffer frames are silent
     media_sample_video_frames_t sample;
 };
 
@@ -270,7 +299,8 @@ class media_component_h264_encoder_args : public media_component_frame_args
 {
 public:
     // must not be null;
-    // frames must be ordered
+    // frames must be ordered;
+    // null buffer frames are simply discarded
     media_sample_video_frames_t sample;
     bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
 };
@@ -292,6 +322,8 @@ typedef std::optional<media_component_h264_video_args> media_component_h264_vide
 class media_component_audio_args : public media_component_frame_args
 {
 public:
+    // if the sample is non-null, it must not be empty;
+    // null buffer frames are silent
     media_sample_audio_frames_t sample;
 };
 
@@ -318,3 +350,66 @@ public:
 };
 
 typedef std::optional<media_component_aac_audio_args> media_component_aac_audio_args_t;
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+template<typename T>
+bool media_sample_video_frames_template<T>::move_frames_to(
+    media_sample_video_frames_template* to, frame_unit end)
+{
+    assert_(this->end == 0 || !this->frames.empty());
+
+    bool moved = false;
+
+    // the media_sample_video_frame should be lightweight, because it seems that
+    // the value is moved within the container
+    // https://en.wikipedia.org/wiki/Erase%E2%80%93remove_idiom
+    this->frames.erase(std::remove_if(this->frames.begin(), this->frames.end(), 
+        [&](sample_t& elem)
+    {
+        assert_(elem.dur > 0);
+        // TODO: sample could have a flag that indicates whether the frames are ordered,
+        // so that the whole list doesn't need to be iterated;
+        // this sample would retain the ordered flag only if this was null when
+        // frames were moved
+        if(elem.pos >= end)
+            return false;
+
+        moved = true;
+
+        bool remove = false;
+        sample_t new_frame = elem;
+
+        if(end >= (elem.pos + elem.dur))
+        {
+            new_frame.dur = elem.dur;
+            remove = true;
+        }
+        else
+        {
+            new_frame.dur = end - new_frame.pos;
+            elem.dur = (elem.pos + elem.dur) - end;
+            elem.pos = end;
+        }
+
+        if(to)
+        {
+            to->frames.push_back(new_frame);
+            to->end = std::max(to->end, new_frame.pos + new_frame.dur);
+        }
+
+        return remove;
+    }), this->frames.end());
+
+    if(end >= this->end)
+    {
+        assert_(this->frames.empty());
+        this->uninitialize();
+    }
+
+    return moved;
+}

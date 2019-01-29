@@ -159,6 +159,9 @@
     <ClCompile Include="control_vidcap.cpp">
       <Filter>control</Filter>
     </ClCompile>
+    <ClCompile Include="source_displaycapture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -177,9 +180,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="IUnknownImpl.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="media_source.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="media_sink.h">
@@ -319,6 +319,12 @@
     </ClInclude>
     <ClInclude Include="control_vidcap.h">
       <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="source_base.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_displaycapture.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

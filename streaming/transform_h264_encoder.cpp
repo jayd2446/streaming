@@ -160,7 +160,7 @@ public:
 
 transform_h264_encoder::transform_h264_encoder(const media_session_t& session, 
     context_mutex_t context_mutex) :
-    media_source(session),
+    media_component(session),
     encoder_requests(0),
     last_time_stamp(std::numeric_limits<time_unit>::min()),
     last_time_stamp2(std::numeric_limits<time_unit>::min()),

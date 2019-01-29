@@ -7,7 +7,7 @@
 #undef max
 
 transform_aac_encoder::transform_aac_encoder(const media_session_t& session) : 
-    media_source(session),
+    media_component(session),
     last_time_stamp(std::numeric_limits<frame_unit>::min()),
     time_shift(-1),
     buffer_pool_memory(new buffer_pool_memory_t),

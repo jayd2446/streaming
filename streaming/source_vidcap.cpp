@@ -9,27 +9,12 @@
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 source_vidcap::source_vidcap(const media_session_t& session) :
-    media_source(session),
-    started(false),
+    source_base(session),
     buffer_pool_texture(new buffer_pool_texture_t),
     buffer_pool_video_frames(new buffer_pool_video_frames_t),
-    captured_video(new media_sample_video_frames),
-    serve_callback_event(CreateEvent(NULL, TRUE, FALSE, NULL))
+    captured_video(new media_sample_video_mixer_frames)
 {
-    HRESULT hr = S_OK;
-
-    if(!this->serve_callback_event)
-        CHECK_HR(hr = E_UNEXPECTED);
-
     this->capture_callback.Attach(new async_callback_t(&source_vidcap::capture_cb));
-    this->serve_callback.Attach(new async_callback_t(&source_vidcap::serve_cb));
-
-    CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->serve_callback->native,
-        NULL, &this->serve_callback_result));
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 }
 
 source_vidcap::~source_vidcap()
@@ -42,96 +27,56 @@ source_vidcap::~source_vidcap()
         buffer_pool_texture_t::scoped_lock lock(this->buffer_pool_texture->mutex);
         this->buffer_pool_texture->dispose();
     }
-
-    std::cout << "stopping vidcap..." << std::endl;
-
-    HRESULT hr = S_OK;
-
-    // canceling the work item is important so that the data associated with the callback
-    // is released
-    if(this->serve_in_wait_queue)
-        hr = MFCancelWorkItem(this->serve_callback_key);
 }
 
-HRESULT source_vidcap::queue_new_capture()
+source_vidcap::stream_source_base_t source_vidcap::create_derived_stream()
 {
-    HRESULT hr = S_OK;
-    CHECK_HR(hr = this->capture_callback->mf_put_work_item(
-        this->shared_from_this<source_vidcap>()));
-
-done:
-    return hr;
+    return stream_vidcap_t(new stream_vidcap(this->shared_from_this<source_vidcap>()));
 }
 
-void source_vidcap::serve_cb(void*)
+bool source_vidcap::get_samples_end(const request_t& request, frame_unit& end)
 {
-    std::unique_lock<std::mutex> lock(this->requests_mutex);
-    HRESULT hr = S_OK;
+    scoped_lock lock(this->captured_video_mutex);
+    if(this->captured_video->frames.empty())
+        return false;
 
-    while(!this->requests.empty())
+    end = this->captured_video->end;
+    return true;
+}
+
+void source_vidcap::make_request(request_t& request, frame_unit frame_end)
+{
+    media_sample_video_mixer_frames_t captured_video;
     {
-        media_sample_video_frames_t captured_video;
-        media_component_videomixer_args_t args;
-        {
-            scoped_lock lock(this->captured_video_mutex);
-            const frame_unit frame_end = convert_to_frame_unit(
-                this->requests.front().rp.request_time,
-                transform_h264_encoder::frame_rate_num,
-                transform_h264_encoder::frame_rate_den);
-
-            const bool drain = this->requests.front().sample.drain;
-
-            // do not serve the request if there's not enough data
-            if(drain && this->captured_video->end < frame_end)
-                break;
-
-            if(drain)
-                std::cout << "drain on source_vidcap" << std::endl;
-
-            {
-                buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
-                captured_video = this->buffer_pool_video_frames->acquire_buffer();
-                captured_video->initialize();
-            }
-
-            if(this->captured_video->move_frames_to(captured_video.get(), frame_end) || drain)
-            {
-                // TODO: decide if frame info should be retrieved from texture desc
-                stream_videomixer_controller::params_t params;
-                params.source_rect.top = params.source_rect.left = 0.f;
-                params.source_rect.right = (FLOAT)this->frame_width;
-                params.source_rect.bottom = (FLOAT)this->frame_height;
-                params.dest_rect = params.source_rect;
-                params.source_m = params.dest_m = D2D1::Matrix3x2F::Identity();
-
-                args = std::make_optional<media_component_videomixer_args>(params);
-                args->frame_end = drain ? frame_end : captured_video->end;
-                args->sample = std::move(captured_video);
-            }
-        }
-
-        request_queue::request_t request = std::move(this->requests.front());
-        this->requests.pop();
-
-        lock.unlock();
-        this->session->give_sample(request.stream, args.has_value() ? &(*args) : NULL, request.rp);
-        lock.lock();
+        buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
+        captured_video = this->buffer_pool_video_frames->acquire_buffer();
+        captured_video->initialize();
     }
 
-    ResetEvent(this->serve_callback_event);
+    scoped_lock lock(this->captured_video_mutex);
+    if(this->captured_video->move_frames_to(captured_video.get(), frame_end))
+    {
+        media_component_videomixer_args_t& args = request.sample;
+        args = std::make_optional<media_component_videomixer_args>();
 
-    CHECK_HR(hr = this->serve_callback->mf_put_waiting_work_item(
-        this->shared_from_this<source_vidcap>(), this->serve_callback_event, 0,
-        this->serve_callback_result, &this->serve_callback_key));
+        args->frame_end = frame_end;
+        args->sample = std::move(captured_video);
+        // the sample must not be empty
+        assert_(!args->sample->frames.empty());
+    }
+}
 
-done:
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw HR_EXCEPTION(hr);
+void source_vidcap::dispatch(request_t& request)
+{
+    this->session->give_sample(request.stream, request.sample.has_value() ?
+        &(*request.sample) : NULL, request.rp);
 }
 
 void source_vidcap::capture_cb(void*)
 {
     HRESULT hr = S_OK;
+
+    //  this is assumed to be singlethreaded
 
     DWORD stream_index, flags;
     LONGLONG timestamp;
@@ -169,7 +114,7 @@ void source_vidcap::capture_cb(void*)
         CComPtr<IMFDXGIBuffer> dxgi_buffer;
         CComPtr<ID3D11Texture2D> texture;
         presentation_time_source_t time_source = this->session->get_time_source();
-        media_sample_video_frame frame;
+        media_sample_video_mixer_frame frame;
 
         if(!time_source)
         {
@@ -188,20 +133,65 @@ void source_vidcap::capture_cb(void*)
             time_source->system_time_to_time_source((time_unit)timestamp),
             transform_h264_encoder::frame_rate_num,
             transform_h264_encoder::frame_rate_den);
+        frame.dur = 1;
         {
             buffer_pool_texture_t::scoped_lock lock(this->buffer_pool_texture->mutex);
             frame.buffer = this->buffer_pool_texture->acquire_buffer();
-            frame.buffer->texture = texture;
+            frame.buffer->initialize(texture);
         }
 
-        // add the frame to frames
+        if(frame.buffer)
+        {
+            frame.params.source_rect.top = frame.params.source_rect.left = 0.f;
+            frame.params.source_rect.right = (FLOAT)this->frame_width;
+            frame.params.source_rect.bottom = (FLOAT)this->frame_height;
+            frame.params.dest_rect = frame.params.source_rect;
+            frame.params.source_m = frame.params.dest_m = D2D1::Matrix3x2F::Identity();
+        }
+
+        // add the frame to captured frames
         {
             scoped_lock lock(this->captured_video_mutex);
+
+            // fill possible skipped frames with the last frame buffer
+            const frame_unit skipped_frames_dur = (frame.pos - this->last_captured_frame_end);
+            if(skipped_frames_dur > 0)
+            {
+                media_sample_video_mixer_frame duplicate_frame;
+                duplicate_frame.pos = this->last_captured_frame_end;
+                duplicate_frame.dur = skipped_frames_dur;
+                duplicate_frame.buffer = this->last_captured_buffer;
+
+                if(duplicate_frame.buffer)
+                {
+                    duplicate_frame.params.source_rect.top = 
+                        duplicate_frame.params.source_rect.left = 0.f;
+                    duplicate_frame.params.source_rect.right = (FLOAT)this->frame_width;
+                    duplicate_frame.params.source_rect.bottom = (FLOAT)this->frame_height;
+                    duplicate_frame.params.dest_rect = duplicate_frame.params.source_rect;
+                    duplicate_frame.params.source_m = duplicate_frame.params.dest_m = 
+                        D2D1::Matrix3x2F::Identity();
+                }
+
+                this->captured_video->end = std::max(
+                    this->captured_video->end, duplicate_frame.pos + duplicate_frame.dur);
+                this->captured_video->frames.push_back(std::move(duplicate_frame));
+            }
+
+            this->last_captured_buffer = frame.buffer;
+            this->last_captured_frame_end = frame.pos + frame.dur;
+
+            // add the new frame
             this->captured_video->end = std::max(
                 this->captured_video->end, frame.pos + frame.dur);
             this->captured_video->frames.push_back(std::move(frame));
 
-            // keep the buffer within the limits
+            // TODO: source vidcap must serve silent samples before the first sample,
+            // otherwise the other sources buffer too much
+
+            // because the end is accessed here, the captured video must not be empty
+            assert_(!this->captured_video->frames.empty());
+            // keep the frames buffer within the limits
             if(this->captured_video->move_frames_to(NULL,
                 this->captured_video->end - maximum_buffer_size))
             {
@@ -215,17 +205,31 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-void source_vidcap::initialize(const control_class_t& ctrl_pipeline, 
+HRESULT source_vidcap::queue_new_capture()
+{
+    HRESULT hr = S_OK;
+    CHECK_HR(hr = this->capture_callback->mf_put_work_item(
+        this->shared_from_this<source_vidcap>()));
+done:
+    return hr;
+}
+
+void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     const CComPtr<ID3D11Device>& d3d11dev,
     const std::wstring& symbolic_link)
 {
+    HRESULT hr = S_OK;
+
     assert_(!this->device);
+
+    this->source_base::initialize(
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
 
     this->d3d11dev = d3d11dev;
     this->symbolic_link = symbolic_link;
     this->ctrl_pipeline = ctrl_pipeline;
 
-    HRESULT hr = S_OK;
     CComPtr<IMFAttributes> attributes;
     CComPtr<IMFMediaType> output_type;
 
@@ -275,25 +279,12 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     CHECK_HR(hr = MFGetAttributeSize(this->output_type, MF_MT_FRAME_SIZE,
         &this->frame_width, &this->frame_height));
 
-    this->started = true;
-    CHECK_HR(hr = this->queue_new_capture());
-
-    CHECK_HR(hr = this->serve_callback->mf_put_waiting_work_item(
-        this->shared_from_this<source_vidcap>(), this->serve_callback_event, 0,
-        this->serve_callback_result, &this->serve_callback_key));
-    this->serve_in_wait_queue = true;
+    // new capture is queued on component start, so that
+    // the last_captured_frame_end variable isn't accessed before assigned
 
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
-}
-
-media_stream_t source_vidcap::create_stream(presentation_clock_t&& clock)
-{
-    stream_vidcap_t stream(new stream_vidcap(this->shared_from_this<source_vidcap>()));
-    stream->register_sink(clock);
-
-    return stream;
 }
 
 
@@ -303,34 +294,22 @@ media_stream_t source_vidcap::create_stream(presentation_clock_t&& clock)
 
 
 stream_vidcap::stream_vidcap(const source_vidcap_t& source) :
-    media_stream_clock_sink(source.get()),
-    source(source),
-    drain_point(std::numeric_limits<time_unit>::min())
+    stream_source_base(source),
+    source(source)
 {
 }
 
-void stream_vidcap::on_stream_stop(time_unit t)
+void stream_vidcap::on_component_start(time_unit t)
 {
-    this->drain_point = t;
-}
+    HRESULT hr = S_OK;
 
-media_stream::result_t stream_vidcap::request_sample(const request_packet& rp, const media_stream*)
-{
-    source_vidcap::scoped_lock lock(this->source->requests_mutex);
-    source_vidcap::request_queue::request_t request;
-    request.rp = rp;
-    request.stream = this;
-    request.sample.drain = (this->drain_point == rp.request_time);
-    this->source->requests.push(request);
+    this->source->last_captured_frame_end = convert_to_frame_unit(t,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
 
-    return OK;
-}
+    CHECK_HR(hr = this->source->queue_new_capture());
 
-media_stream::result_t stream_vidcap::process_sample(
-    const media_component_args*, const request_packet&, const media_stream*)
-{
-    source_vidcap::scoped_lock lock(this->source->requests_mutex);
-    SetEvent(this->source->serve_callback_event);
-
-    return OK;
+done:
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        throw HR_EXCEPTION(hr);
 }

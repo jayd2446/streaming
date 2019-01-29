@@ -9,7 +9,7 @@
 
 transform_color_converter::transform_color_converter(
     const media_session_t& session, context_mutex_t context_mutex) :
-    media_source(session),
+    media_component(session),
     texture_pool(new buffer_pool),
     buffer_pool_video_frames(new buffer_pool_video_frames_t),
     context_mutex(context_mutex)
@@ -151,7 +151,8 @@ void stream_color_converter::initialize_buffer(const media_buffer_texture_t& buf
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.Format = DXGI_FORMAT_NV12;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-    CHECK_HR(hr = this->transform->d3d11dev->CreateTexture2D(&desc, &subrsrc, &buffer->texture));
+
+    buffer->initialize(this->transform->d3d11dev, desc, &subrsrc);
 
 done:
     if(FAILED(hr))
@@ -161,17 +162,10 @@ done:
 media_buffer_texture_t stream_color_converter::acquire_buffer()
 {
     transform_color_converter::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
-    if(this->transform->texture_pool->is_empty())
-    {
-        media_buffer_texture_t buffer = this->transform->texture_pool->acquire_buffer();
-        this->initialize_buffer(buffer);
-        return buffer;
-    }
-    else
-    {
-        media_buffer_texture_t buffer = this->transform->texture_pool->acquire_buffer();
-        return buffer;
-    }
+    media_buffer_texture_t buffer;
+    this->initialize_buffer(buffer);
+
+    return buffer;
 }
 
 void stream_color_converter::processing_cb(void*)

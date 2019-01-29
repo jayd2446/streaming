@@ -1,6 +1,6 @@
 #pragma once
 
-#include "media_source.h"
+#include "media_component.h"
 #include "media_stream.h"
 #include "async_callback.h"
 #include "presentation_clock.h"
@@ -26,7 +26,7 @@ typedef std::shared_ptr<source_wasapi2> source_wasapi2_t;
 
 struct IMMDevice;
 
-class source_wasapi2 : public media_source
+class source_wasapi2 : public media_component
 {
     friend class stream_wasapi2;
 public:

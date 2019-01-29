@@ -1,6 +1,6 @@
 #pragma once
 
-#include "media_source.h"
+#include "media_component.h"
 #include "media_stream.h"
 #include "async_callback.h"
 #include "control_class.h"
@@ -22,7 +22,7 @@ typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
 // the encoder currently acts as a sink;
 // the first packet must be 0
 
-class transform_h264_encoder : public media_source
+class transform_h264_encoder : public media_component
 {
     friend class stream_h264_encoder;
 public:
