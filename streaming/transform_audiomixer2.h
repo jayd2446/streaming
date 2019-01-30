@@ -29,18 +29,31 @@ public:
 
 typedef std::shared_ptr<stream_audiomixer2_controller> stream_audiomixer2_controller_t;
 
-class media_component_audiomixer2_args : public media_component_audio_args
+class media_sample_audio_mixer_frame : public media_sample_audio_consecutive_frames
 {
 public:
+    // params are considered valid only if the buffer is not silent
     stream_audiomixer2_controller::params_t params;
-
-    media_component_audiomixer2_args() {}
-    explicit media_component_audiomixer2_args(const stream_audiomixer2_controller::params_t& params) :
-        params(params) {}
 };
 
-// TODO: enable media_component_audiomixer2_args
-typedef transform_mixer<media_component_audio_args_t, stream_audiomixer2_controller,
+typedef media_sample_audio_frames_template<media_sample_audio_mixer_frame>
+media_sample_audio_mixer_frames;
+typedef std::shared_ptr<media_sample_audio_mixer_frames> media_sample_audio_mixer_frames_t;
+typedef buffer_pooled<media_sample_audio_mixer_frames> media_sample_audio_mixer_frames_pooled;
+typedef std::shared_ptr<media_sample_audio_mixer_frames_pooled>
+media_sample_audio_mixer_frames_pooled_t;
+
+class media_component_audiomixer_args : public media_component_frame_args
+{
+public:
+    // if the sample is non-null, it must not be empty;
+    // null buffer frames are silent
+    media_sample_audio_mixer_frames_t sample;
+};
+
+typedef std::optional<media_component_audiomixer_args> media_component_audiomixer_args_t;
+
+typedef transform_mixer<media_component_audiomixer_args_t, stream_audiomixer2_controller,
     media_component_aac_encoder_args_t> transform_audiomixer2_base;
 typedef stream_mixer<transform_audiomixer2_base> stream_audiomixer2_base;
 typedef std::shared_ptr<stream_audiomixer2_base> stream_audiomixer2_base_t;
@@ -51,13 +64,16 @@ class transform_audiomixer2 : public transform_audiomixer2_base
 public:
     typedef buffer_pool<media_buffer_memory_pooled> buffer_pool_memory_t;
     typedef buffer_pool<media_sample_audio_frames_pooled> buffer_pool_audio_frames_t;
+    typedef buffer_pool<media_sample_audio_mixer_frames_pooled> buffer_pool_audio_mixer_frames_t;
     // the bit depth mixer expects for input samples;
     // resampler should output to this bit depth
     typedef float bit_depth_t;
     static const UINT32 bit_depth = sizeof(bit_depth_t) * 8;
+    static const UINT32 block_align = bit_depth / 8 * transform_aac_encoder::channels;
 private:
     std::shared_ptr<buffer_pool_memory_t> buffer_pool_memory;
     std::shared_ptr<buffer_pool_audio_frames_t> buffer_pool_audio_frames;
+    std::shared_ptr<buffer_pool_audio_mixer_frames_t> buffer_pool_audio_mixer_frames;
 
     stream_mixer_t create_derived_stream();
 public:

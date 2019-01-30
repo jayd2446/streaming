@@ -53,6 +53,15 @@ void source_vidcap::make_request(request_t& request, frame_unit frame_end)
         captured_video->initialize();
     }
 
+    // null args are passed if the source has too new samples for the request;
+    // if this happens on drain, transform_mixer will emit a warning, which can be ignored
+
+    // TODO: decide what to do if the source has samples with greater sample times than the
+    // frame_end;
+    // probably should just set the frame end without a sample: skipping frames
+    // (source base could do that)
+    // (or serve null samples)
+
     scoped_lock lock(this->captured_video_mutex);
     if(this->captured_video->move_frames_to(captured_video.get(), frame_end))
     {
@@ -200,8 +209,12 @@ void source_vidcap::capture_cb(void*)
         }
     }
 
+    CHECK_HR(hr = this->queue_new_capture());
+
 done:
-    if(FAILED(hr = this->queue_new_capture()) && hr != MF_E_SHUTDOWN)
+    // TODO: source_vidcap should handle a case where the device is being used by another app
+
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
         throw HR_EXCEPTION(hr);
 }
 

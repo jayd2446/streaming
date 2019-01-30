@@ -240,7 +240,6 @@ void source_displaycapture::dispatch(request_t& request)
 
 HRESULT source_displaycapture::initialize_pointer_texture(media_buffer_texture_t& pointer)
 {
-    HRESULT hr = S_OK;
     D3D11_SUBRESOURCE_DATA init_data;
 
     switch(this->pointer_shape_info.Type)
@@ -280,8 +279,7 @@ HRESULT source_displaycapture::initialize_pointer_texture(media_buffer_texture_t
         break;
     }
 
-done:
-    return hr;
+    return S_OK;
 }
 
 HRESULT source_displaycapture::create_pointer_texture(
@@ -481,10 +479,9 @@ void source_displaycapture::initialize(
     this->d3d11dev2 = this->d3d11dev = d3d11dev;
     this->d3d11devctx2 = this->d3d11devctx = devctx;
     this->output_index = output_index;
+    this->same_device = true;
 
     CHECK_HR(hr = this->reinitialize(output_index));
-
-    this->same_device = true;
 
 done:
     if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)

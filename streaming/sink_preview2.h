@@ -33,6 +33,8 @@ private:
     FLOAT size_point_radius;
     std::atomic_bool render;
 
+    media_buffer_texture_t last_buffer;
+
     HWND hwnd;
     UINT width, height;
     CComPtr<ID2D1Factory1> d2d1factory;

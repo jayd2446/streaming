@@ -180,7 +180,6 @@ bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t
     if(end >= from->frame_end)
         from.reset();
 
-    // TODO: audio mixer should be modified to include this aswell
     // reset the samples of 'from' and 'to' if they contain no data,
     // because frame collections with empty data is not currently allowed
     if(from && from->sample && from->sample->frames.empty())
@@ -195,8 +194,10 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     frame_unit first, frame_unit end)
 {
     assert_(!packets.container.empty());
+    assert_(!out_arg);
 
-    // arg in packets can be null(when frame_count == 0);
+    // arg in packets can be null when frame_count == 0 or
+    // if a source passed null args on a drain point;
     // the whole leftover buffer is merged to packets
 
     HRESULT hr = S_OK;
@@ -210,7 +211,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     std::sort(packets.container.begin(), packets.container.end(),
         [](const packet_t& a, const packet_t& b)
     {
-        assert_(a.arg && b.arg);
         return (a.stream_index < b.stream_index);
     });
 
@@ -223,7 +223,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     }
 
     // TODO: reserve should be used for this
-
     for(frame_unit i = 0; i < frame_count; i++)
         frames->frames.push_back(media_sample_video_frame(first + i));
 
@@ -238,17 +237,13 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
     // TODO: the end of samples in case if the sample is empty should be properly defined
 
-    // TODO: audio mixer should mix the frames the same way as videomixer;
-    // empty frame collection is not allowed
-
     // draw
     for(auto&& item : packets.container)
     {
+        // null arg happens only if a source passed null args on drain;
         // arg with empty sample indicates a frame skip;
-        // sample with empty buffer indicates a silent frame
-
-        assert_(item.arg);
-        if(!item.arg->sample)
+        // frame with empty buffer indicates a silent frame
+        if(!item.arg || !item.arg->sample)
             continue;
 
         assert_(end >= item.arg->sample->end);
@@ -258,7 +253,8 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         {
             for(frame_unit pos = frame_.pos; pos < (frame_.pos + frame_.dur); pos++)
             {
-                assert_(pos >= first);
+                assert_(first <= pos);
+                assert_(end > pos);
 
                 bool clear = false;
                 const size_t index = (size_t)(pos - first);
@@ -391,10 +387,11 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         }
     }
 
-    assert_(end > 0);
     frames->end = end;
+
+    assert_(end > 0);
     out_arg = std::make_optional<out_arg_t::value_type>();
-    out_arg->sample = frames;
+    out_arg->sample = std::move(frames);
     out_arg->frame_end = end;
 
     // TODO: test this

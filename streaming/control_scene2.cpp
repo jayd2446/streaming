@@ -83,8 +83,9 @@ void control_scene2::build_audio_topology(const media_stream_t& from,
     if(no_audio)
     {
         source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
-        media_stream_t empty_stream = empty_source->create_stream();
+        empty_source->initialize();
 
+        media_stream_t empty_stream = empty_source->create_stream(topology->get_clock());
         empty_stream->connect_streams(from, topology);
         audiomixer_stream->connect_streams(empty_stream, NULL, topology);
     }

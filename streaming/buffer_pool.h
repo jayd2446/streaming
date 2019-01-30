@@ -97,9 +97,14 @@ public:
 
 class buffer_poolable : public enable_shared_from_this
 {
-    // classes derived from poolable must implement uninitialize()
+    // classes derived from this must implement initialize and uninitialize
 private:
+    bool initialized;
+protected:
+    virtual void initialize() {this->initialized = true;}
+    virtual void uninitialize() {assert_(this->initialized); this->initialized = false;}
 public:
+    buffer_poolable() : initialized(false) {}
     virtual ~buffer_poolable() {}
 };
 

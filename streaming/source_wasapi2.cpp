@@ -438,8 +438,7 @@ void source_wasapi2::initialize(const control_class_t& ctrl_pipeline,
     if(!this->capture)
         CHECK_HR(hr = this->initialize_render(device, engine_format));
 
-    this->resampled_block_align = 
-        transform_audiomixer2::bit_depth / 8 * transform_aac_encoder::channels;
+    this->resampled_block_align = transform_audiomixer2::block_align;
 
     // initialize resampler
     this->resampler.initialize(

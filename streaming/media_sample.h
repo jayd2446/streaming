@@ -15,6 +15,7 @@
 #include <d2d1_1.h>
 #include <atlbase.h>
 #include <mfidl.h>
+#include <mfapi.h>
 #include "assert.h"
 #include "enable_shared_from_this.h"
 #include "buffer_pool.h"
@@ -22,7 +23,7 @@
 /*
 
 input media samples are assumed to be immutable;
-violation of the assumption makes the pipeline break down
+violation of the assumption makes the pipeline not work
 
 */
 
@@ -46,7 +47,7 @@ class media_buffer_texture : public buffer_poolable
 {
     friend class buffer_pooled<media_buffer_texture>;
 private:
-    bool initialized, managed_by_this;
+    bool managed_by_this;
 protected:
     // TODO: idxgiresource should be cached;
     // if a class is derived from media_buffer_texture, its uninitialize method
@@ -63,7 +64,7 @@ public:
     CComPtr<ID2D1Bitmap1> bitmap;
     // texture must not be null
     CComPtr<ID3D11Texture2D> texture;
-    media_buffer_texture() : initialized(false), managed_by_this(true) {}
+    media_buffer_texture() : managed_by_this(true) {}
     virtual ~media_buffer_texture() {}
 
     // TODO: if the settings do not match, a new texture should be created
@@ -91,7 +92,7 @@ class media_buffer_memory : public buffer_poolable
 {
     friend class buffer_pooled<media_buffer_memory>;
 private:
-    void uninitialize() {}
+    void uninitialize() {this->buffer_poolable::uninitialize();}
 public:
     // the buffer is readonly
     // TODO: decide if should make this private
@@ -115,36 +116,75 @@ public:
     // null buffer indicates a silent frame
     // a wrapper of the original buffer(or the original buffer)
     CComPtr<IMFMediaBuffer> buffer;
+    // hosts the memory of the buffer; resetting this causes the buffer
+    // become invalid
     media_buffer_memory_t memory_host;
 
     media_sample_audio_consecutive_frames() : dur(0) {}
 };
 
-class media_sample_audio_frames : public buffer_poolable
-{
-    friend class buffer_pooled<media_sample_audio_frames>;
-private:
-    // called when the buffer is moved back to pool and just before being destroyed
-    // TODO: decide if should call reserve here
-    void uninitialize() {this->frames.clear(); this->end = 0;}
-    // returns whether the elem was fully moved/copied to 'to'
-    static bool move_or_share_consecutive_frames_to(
-        media_sample_audio_frames* to, frame_unit end, UINT32 block_align,
-        media_sample_audio_consecutive_frames& elem, bool share);
-public:
-    // TODO: set the end to min() when there's no data
+//class media_sample_audio_frames : public buffer_poolable
+//{
+//    friend class buffer_pooled<media_sample_audio_frames>;
+//private:
+//    // called when the buffer is moved back to pool and just before being destroyed
+//    // TODO: decide if should call reserve here
+//    void uninitialize() {this->frames.clear(); this->end = 0; this->buffer_poolable::uninitialize();}
+//    // returns whether the elem was fully moved/copied to 'to'
+//    static bool move_or_share_consecutive_frames_to(
+//        media_sample_audio_frames* to, frame_unit end, UINT32 block_align,
+//        media_sample_audio_consecutive_frames& elem, bool share);
+//public:
+//    // TODO: set the end to min() when there's no data
+//
+//    // end must be 0 if there's no valid data(TODO: reconsider this);
+//    // end is the max (pos + dur) of frames
+//    frame_unit end;
+//    // element must have valid data
+//    // TODO: make this private so that the end field stays consistent in regard to frames;
+//    // vector is used for cache friendliness;
+//    // the audio frames sample is pooled so that the capacity of the vector should stabilize
+//    std::vector<media_sample_audio_consecutive_frames> frames;
+//
+//    media_sample_audio_frames() : end(0) {}
+//    virtual ~media_sample_audio_frames() {}
+//
+//    // moves part from this to 'to'
+//    // returns whether any frames were moved;
+//    // to can be null, in which case the contents from this are discarded;
+//    // std move is used for conventional move where the contents of this are replaced;
+//    // std::numeric_limits::max can be used for moving all frames;
+//    // block align is assumed to be the same for both samples
+//    bool move_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align);
+//    //// make 'to' reference the frame buffers from this
+//    //bool share_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align) const;
+//
+//    // buffer pool methods
+//    void initialize() 
+//    {assert_(this->end == 0); assert_(this->frames.empty()); this->buffer_poolable::initialize();}
+//};
 
-    // end must be 0 if there's no valid data(TODO: reconsider this);
+// frametype should be either media_sample_audio_consecutive_frames or a derived type of it
+template<typename FrameType>
+class media_sample_audio_frames_template : public buffer_poolable
+{
+    friend class buffer_pooled<media_sample_audio_frames_template<FrameType>>;
+public:
+    typedef FrameType sample_t;
+private:
+    void uninitialize() {this->frames.clear(); this->end = 0; this->buffer_poolable::uninitialize();}
+public:
+    // TODO: set the initial end position to absolute minimum, so that max can be used
+    // even if the end is technically undefined
     // end is the max (pos + dur) of frames
     frame_unit end;
-    // element must have valid data
-    // TODO: make this private so that the end field stays consistent in regard to frames;
+    // element must have valid data;
     // vector is used for cache friendliness;
     // the audio frames sample is pooled so that the capacity of the vector should stabilize
-    std::vector<media_sample_audio_consecutive_frames> frames;
+    std::vector<sample_t> frames;
 
-    media_sample_audio_frames() : end(0) {}
-    virtual ~media_sample_audio_frames() {}
+    media_sample_audio_frames_template() : end(0) {}
+    virtual ~media_sample_audio_frames_template() {}
 
     // moves part from this to 'to'
     // returns whether any frames were moved;
@@ -152,14 +192,15 @@ public:
     // std move is used for conventional move where the contents of this are replaced;
     // std::numeric_limits::max can be used for moving all frames;
     // block align is assumed to be the same for both samples
-    bool move_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align);
-    //// make 'to' reference the frame buffers from this
-    //bool share_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align) const;
+    bool move_frames_to(media_sample_audio_frames_template* to, frame_unit end, UINT32 block_align);
 
     // buffer pool methods
-    void initialize() {assert_(this->end == 0); assert_(this->frames.empty());}
+    void initialize()
+    {assert_(this->end == 0); assert_(this->frames.empty()); this->buffer_poolable::initialize();}
 };
 
+typedef media_sample_audio_frames_template<media_sample_audio_consecutive_frames> 
+media_sample_audio_frames;
 typedef std::shared_ptr<media_sample_audio_frames> media_sample_audio_frames_t;
 typedef buffer_pooled<media_sample_audio_frames> media_sample_audio_frames_pooled;
 typedef std::shared_ptr<media_sample_audio_frames_pooled> media_sample_audio_frames_pooled_t;
@@ -176,6 +217,7 @@ public:
     explicit media_sample_video_frame(frame_unit pos) : pos(pos), dur(1) {}
 };
 
+// frametype should be either media_sample_video_frame or a derived type of it
 template<typename FrameType>
 class media_sample_video_frames_template : public buffer_poolable
 {
@@ -183,13 +225,14 @@ class media_sample_video_frames_template : public buffer_poolable
 public:
     typedef FrameType sample_t;
 private:
-    void uninitialize() {this->frames.clear(); this->end = 0;}
+    void uninitialize() {this->frames.clear(); this->end = 0; this->buffer_poolable::uninitialize();}
 public:
     // TODO: set the initial end position to absolute minimum, so that max can be used
     // even if the end is technically undefined
     // end is the max (pos + dur) of frames
     frame_unit end;
     // element must have valid data
+    // TODO: use vector
     std::deque<sample_t> frames;
 
     media_sample_video_frames_template() : end(0) {}
@@ -201,7 +244,8 @@ public:
 
     bool move_frames_to(media_sample_video_frames_template* to, frame_unit end);
 
-    void initialize() {assert_(this->end == 0); assert_(this->frames.empty());}
+    void initialize() 
+    {assert_(this->end == 0); assert_(this->frames.empty()); this->buffer_poolable::initialize();}
 };
 
 typedef media_sample_video_frames_template<media_sample_video_frame> media_sample_video_frames;
@@ -220,13 +264,13 @@ class media_sample_h264_frames : public buffer_poolable
 {
     friend class buffer_pooled<media_sample_h264_frames>;
 private:
-    void uninitialize() {this->frames.clear();}
+    void uninitialize() {this->frames.clear(); this->buffer_poolable::uninitialize();}
 public:
     std::deque<media_sample_h264_frame> frames;
 
     virtual ~media_sample_h264_frames() {}
 
-    void initialize() {assert_(this->frames.empty());}
+    void initialize() {assert_(this->frames.empty()); this->buffer_poolable::initialize();}
 };
 
 typedef std::shared_ptr<media_sample_h264_frames> media_sample_h264_frames_t;
@@ -249,14 +293,14 @@ class media_sample_aac_frames : public buffer_poolable
 private:
     // called when the buffer is moved back to pool and just before being destroyed
     // TODO: decide if should call reserve here
-    void uninitialize() {this->frames.clear();}
+    void uninitialize() {this->frames.clear(); this->buffer_poolable::uninitialize();}
 public:
     std::deque<media_sample_aac_frame> frames;
 
     virtual ~media_sample_aac_frames() {}
 
     // buffer pool methods
-    void initialize() {assert_(this->frames.empty());}
+    void initialize() {assert_(this->frames.empty()); this->buffer_poolable::initialize();}
 };
 
 typedef std::shared_ptr<media_sample_aac_frames> media_sample_aac_frames_t;
@@ -357,6 +401,116 @@ typedef std::optional<media_component_aac_audio_args> media_component_aac_audio_
 /////////////////////////////////////////////////////////////////
 
 
+#define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
+
+template<typename T>
+bool media_sample_audio_frames_template<T>::move_frames_to(
+    media_sample_audio_frames_template* to, frame_unit end, UINT32 block_align)
+{
+    assert_(this->end == 0 || !this->frames.empty());
+
+    bool moved = false;
+
+    // the media_sample_audio_consecutive_frames should be lightweight, because it seems that
+    // the value is moved within the container
+    // https://en.wikipedia.org/wiki/Erase%E2%80%93remove_idiom
+    this->frames.erase(std::remove_if(this->frames.begin(), this->frames.end(),
+        [&](sample_t& elem)
+    {
+        assert_(elem.dur > 0);
+
+        // TODO: sample could have a flag that indicates whether the frames are ordered,
+        // so that the whole list doesn't need to be iterated;
+        // this sample would retain the ordered flag only if this was null when
+        // frames were moved
+        if(elem.pos >= end)
+            return false;
+
+        moved = true;
+
+        HRESULT hr = S_OK;
+        bool remove = false;
+        CComPtr<IMFSample> sample;
+        CComPtr<IMFMediaBuffer> buffer, old_buffer;
+        DWORD buflen = 0;
+        sample_t new_frames = elem;
+
+        const frame_unit frame_pos = elem.pos;
+        const frame_unit frame_dur = elem.dur;
+        const frame_unit frame_end = frame_pos + frame_dur;
+
+        const frame_unit frame_diff_end = std::max(frame_end - end, 0LL);
+        const DWORD offset_end = (DWORD)frame_diff_end * block_align;
+        const frame_unit new_frame_pos = frame_pos;
+        const frame_unit new_frame_dur = frame_dur - frame_diff_end;
+
+        if(elem.buffer)
+        {
+            old_buffer = elem.buffer;
+            CHECK_HR(hr = old_buffer->GetCurrentLength(&buflen));
+
+            assert_(((int)buflen - (int)offset_end) > 0);
+            CHECK_HR(hr = MFCreateMediaBufferWrapper(old_buffer, 0, buflen - offset_end, &buffer));
+            CHECK_HR(hr = buffer->SetCurrentLength(buflen - offset_end));
+        }
+
+        if(offset_end > 0)
+        {
+            if(elem.buffer)
+            {
+                // remove the moved part of the old buffer
+                CComPtr<IMFMediaBuffer> new_buffer;
+                CHECK_HR(hr = MFCreateMediaBufferWrapper(
+                    old_buffer, buflen - offset_end, offset_end, &new_buffer));
+                CHECK_HR(hr = new_buffer->SetCurrentLength(offset_end));
+                elem.buffer = new_buffer;
+            }
+
+            const frame_unit new_frame_dur = offset_end / block_align;
+            const frame_unit new_frame_pos = frame_pos + frame_dur - new_frame_dur;
+
+            elem.pos = new_frame_pos;
+            elem.dur = new_frame_dur;
+        }
+        else
+            remove = true;
+
+        assert_((elem.memory_host && buffer) || (!elem.memory_host && !elem.buffer));
+        new_frames.memory_host = elem.memory_host;
+        new_frames.buffer = buffer;
+        new_frames.pos = new_frame_pos;
+        new_frames.dur = new_frame_dur;
+
+        if(to)
+        {
+            to->frames.push_back(new_frames);
+            to->end = std::max(to->end, new_frames.pos + new_frames.dur);
+        }
+
+    done:
+        if(FAILED(hr))
+            throw HR_EXCEPTION(hr);
+
+        return remove;
+
+    }), this->frames.end());
+
+    if(end >= this->end)
+    {
+        assert_(this->frames.empty());
+        // set the end to 'undefined' state
+        this->end = 0;
+    }
+
+    return moved;
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
 template<typename T>
 bool media_sample_video_frames_template<T>::move_frames_to(
     media_sample_video_frames_template* to, frame_unit end)
@@ -372,6 +526,7 @@ bool media_sample_video_frames_template<T>::move_frames_to(
         [&](sample_t& elem)
     {
         assert_(elem.dur > 0);
+
         // TODO: sample could have a flag that indicates whether the frames are ordered,
         // so that the whole list doesn't need to be iterated;
         // this sample would retain the ordered flag only if this was null when
@@ -408,8 +563,11 @@ bool media_sample_video_frames_template<T>::move_frames_to(
     if(end >= this->end)
     {
         assert_(this->frames.empty());
-        this->uninitialize();
+        // set the end to 'undefined' state
+        this->end = 0;
     }
 
     return moved;
 }
+
+#undef CHECK_HR

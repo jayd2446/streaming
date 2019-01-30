@@ -147,9 +147,18 @@ void sink_preview2::draw_sample(const media_component_args* args_)
     const media_component_h264_encoder_args* args = 
         static_cast<const media_component_h264_encoder_args*>(args_);
 
-    // the outlines aren't drawn if there's no sample data
-    if(!args)
-        return;
+    if(args)
+    {
+        // find the first available bitmap
+        for(auto&& item : args->sample->frames)
+        {
+            if(item.buffer && item.buffer->bitmap)
+            {
+                this->last_buffer = item.buffer;
+                break;
+            }
+        }
+    }
 
     HRESULT hr = S_OK;
     bool has_video_control = false;
@@ -192,17 +201,8 @@ out:
 
     // find the first available bitmap
     CComPtr<ID2D1Bitmap1> bitmap;
-    if(args)
-    {
-        for(auto&& item : args->sample->frames)
-        {
-            if(item.buffer && item.buffer->bitmap)
-            {
-                bitmap = item.buffer->bitmap;
-                break;
-            }
-        }
-    }
+    if(this->last_buffer)
+        bitmap = this->last_buffer->bitmap;
         
     this->d2d1devctx->BeginDraw();
     this->d2d1devctx->Clear(ColorF(ColorF::DimGray));

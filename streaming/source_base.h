@@ -48,7 +48,7 @@ protected:
     virtual bool get_samples_end(const request_t&, frame_unit& end) = 0;
     // populates the sample field of the request;
     // fetched samples must include padding frames;
-    // make_request should assign the frame_end to args::frame_end;
+    // make_request should only add frames up to the frame_end point;
     // the sample collection in the request must not be empty;
     // singlethreaded
     virtual void make_request(request_t&, frame_unit frame_end) = 0;
