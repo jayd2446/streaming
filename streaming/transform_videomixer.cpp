@@ -226,6 +226,9 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     for(frame_unit i = 0; i < frame_count; i++)
         frames->frames.push_back(media_sample_video_frame(first + i));
 
+    // indicates whether the out arg will have any encodeable frames
+    bool has_frames = false;
+
     // TODO: audio mixer should allocate a buffer of end-first,
     // but after mixing it creates a buffer wrapper with min pos and max end of mixed samples;
     // this will make the audio mixing process equivalent to video mixing;
@@ -251,6 +254,8 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         assert_(!item.arg->sample->frames.empty());
         for(auto&& frame_ : item.arg->sample->frames)
         {
+            has_frames = true;
+
             for(frame_unit pos = frame_.pos; pos < (frame_.pos + frame_.dur); pos++)
             {
                 assert_(first <= pos);
@@ -393,6 +398,7 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     out_arg = std::make_optional<out_arg_t::value_type>();
     out_arg->sample = std::move(frames);
     out_arg->frame_end = end;
+    out_arg->has_frames = has_frames;
 
     // TODO: test this
 done:

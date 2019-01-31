@@ -96,6 +96,13 @@ void stream_audio::dispatch_process()
     this->sink->session->begin_give_sample(this, this->topology);
 }
 
+media_stream::result_t stream_audio::request_sample(const request_packet& rp, const media_stream*)
+{
+    if(!this->sink->session->request_sample(this, rp))
+        return FATAL_ERROR;
+    return OK;
+}
+
 media_stream::result_t stream_audio::process_sample(
     const media_component_args*, const request_packet& rp, const media_stream*)
 {

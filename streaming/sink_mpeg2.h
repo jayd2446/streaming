@@ -55,6 +55,8 @@ class stream_mpeg2 : public media_stream_clock_sink, public presentation_clock_s
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    struct empty {};
+    typedef request_queue<empty> request_queue;
     /*typedef presentation_time_source::time_unit_t time_unit_t;*/
 private:
     sink_mpeg2_t sink;
@@ -72,6 +74,7 @@ private:
     // reset the request limit
     std::atomic_int requests;
     int max_requests;
+    request_queue requests_queue;
 
     // for debug
     int unavailable;
@@ -98,6 +101,6 @@ public:
     // presentation_clock_sink
     bool get_clock(presentation_clock_t&);
     // media_stream
-    result_t request_sample(const request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
+    result_t request_sample(const request_packet&, const media_stream*);
     result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };

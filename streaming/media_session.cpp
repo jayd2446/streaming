@@ -104,8 +104,7 @@ bool media_session::give_sample(
     return true;
 }
 
-bool media_session::begin_request_sample(const media_stream* stream,
-    const request_packet& incomplete_rp)
+bool media_session::begin_request_sample(media_stream* stream, const request_packet& incomplete_rp)
 {
     request_packet rp = incomplete_rp;
 
@@ -133,7 +132,7 @@ bool media_session::begin_request_sample(const media_stream* stream,
         std::cout << "topology switched" << std::endl;
     }
 
-    const bool ret = this->request_sample(stream, rp);
+    const bool ret = (stream->request_sample(rp, NULL) != media_stream::FATAL_ERROR);
     this->request_chain_lock.unlock();
 
     return ret;

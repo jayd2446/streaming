@@ -62,10 +62,12 @@ public:
         const request_packet&);
 
     // begins and completes the request_sample call chain and handles topology switching;
-    // the request call chain is atomic
-    bool begin_request_sample(const media_stream* this_stream, const request_packet&);
-    // begins the give_sample call chain
-    void begin_give_sample(const media_stream* this_stream, const media_topology_t&);
+    // the request call chain is atomic;
+    // begin_request_sample calls the sink_stream request_sample
+    bool begin_request_sample(media_stream* sink_stream, const request_packet&);
+    // begins the give_sample call chain;
+    // begin_give_sample calls the streams connected to sink_stream
+    void begin_give_sample(const media_stream* sink_stream, const media_topology_t&);
 };
 
 typedef std::shared_ptr<media_session> media_session_t;

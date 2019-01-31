@@ -29,7 +29,6 @@ struct request_packet
 
 class media_stream;
 
-// TODO: after dropping topology branching, the queue works for streams aswell
 template<class Sample>
 class request_queue
 {
@@ -129,7 +128,10 @@ void request_queue<T>::initialize_queue(const request_packet& rp)
 
         this->first_packet_number =
             this->last_packet_number = rp.topology->get_first_packet_number();
-        this->requests.push_back(request_t());
+
+        request_t request;
+        request.rp.packet_number = INVALID_PACKET_NUMBER;
+        this->requests.push_back(std::move(request));
     }
 }
 

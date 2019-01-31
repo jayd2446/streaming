@@ -123,47 +123,6 @@ public:
     media_sample_audio_consecutive_frames() : dur(0) {}
 };
 
-//class media_sample_audio_frames : public buffer_poolable
-//{
-//    friend class buffer_pooled<media_sample_audio_frames>;
-//private:
-//    // called when the buffer is moved back to pool and just before being destroyed
-//    // TODO: decide if should call reserve here
-//    void uninitialize() {this->frames.clear(); this->end = 0; this->buffer_poolable::uninitialize();}
-//    // returns whether the elem was fully moved/copied to 'to'
-//    static bool move_or_share_consecutive_frames_to(
-//        media_sample_audio_frames* to, frame_unit end, UINT32 block_align,
-//        media_sample_audio_consecutive_frames& elem, bool share);
-//public:
-//    // TODO: set the end to min() when there's no data
-//
-//    // end must be 0 if there's no valid data(TODO: reconsider this);
-//    // end is the max (pos + dur) of frames
-//    frame_unit end;
-//    // element must have valid data
-//    // TODO: make this private so that the end field stays consistent in regard to frames;
-//    // vector is used for cache friendliness;
-//    // the audio frames sample is pooled so that the capacity of the vector should stabilize
-//    std::vector<media_sample_audio_consecutive_frames> frames;
-//
-//    media_sample_audio_frames() : end(0) {}
-//    virtual ~media_sample_audio_frames() {}
-//
-//    // moves part from this to 'to'
-//    // returns whether any frames were moved;
-//    // to can be null, in which case the contents from this are discarded;
-//    // std move is used for conventional move where the contents of this are replaced;
-//    // std::numeric_limits::max can be used for moving all frames;
-//    // block align is assumed to be the same for both samples
-//    bool move_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align);
-//    //// make 'to' reference the frame buffers from this
-//    //bool share_frames_to(media_sample_audio_frames* to, frame_unit end, UINT32 block_align) const;
-//
-//    // buffer pool methods
-//    void initialize() 
-//    {assert_(this->end == 0); assert_(this->frames.empty()); this->buffer_poolable::initialize();}
-//};
-
 // frametype should be either media_sample_audio_consecutive_frames or a derived type of it
 template<typename FrameType>
 class media_sample_audio_frames_template : public buffer_poolable
@@ -346,6 +305,7 @@ public:
     // frames must be ordered;
     // null buffer frames are simply discarded
     media_sample_video_frames_t sample;
+    bool has_frames;
     bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
 };
 

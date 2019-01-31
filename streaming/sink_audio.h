@@ -59,6 +59,6 @@ public:
     explicit stream_audio(const sink_audio_t& sink);
 
     // media_stream
-    result_t request_sample(const request_packet&, const media_stream* = NULL) {assert_(false); return OK;}
+    result_t request_sample(const request_packet&, const media_stream*);
     result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
 };

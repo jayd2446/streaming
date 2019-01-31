@@ -60,19 +60,35 @@ void source_vidcap::make_request(request_t& request, frame_unit frame_end)
     // frame_end;
     // probably should just set the frame end without a sample: skipping frames
     // (source base could do that)
-    // (or serve null samples)
+    // (or serve null samples);
+    // this can be easily reproduced by switching to an another scene before vidcap
+    // has fetched the first frame
 
     scoped_lock lock(this->captured_video_mutex);
-    if(this->captured_video->move_frames_to(captured_video.get(), frame_end))
-    {
-        media_component_videomixer_args_t& args = request.sample;
-        args = std::make_optional<media_component_videomixer_args>();
+    const bool moved = this->captured_video->move_frames_to(captured_video.get(), frame_end);
 
-        args->frame_end = frame_end;
+    media_component_videomixer_args_t& args = request.sample;
+    args = std::make_optional<media_component_videomixer_args>();
+
+    args->frame_end = frame_end;
+    // frames are simply skipped if there is no sample for the args
+    if(moved)
+    {
         args->sample = std::move(captured_video);
         // the sample must not be empty
         assert_(!args->sample->frames.empty());
     }
+
+    //if(this->captured_video->move_frames_to(captured_video.get(), frame_end))
+    //{
+    //    media_component_videomixer_args_t& args = request.sample;
+    //    args = std::make_optional<media_component_videomixer_args>();
+
+    //    args->frame_end = frame_end;
+    //    args->sample = std::move(captured_video);
+    //    // the sample must not be empty
+    //    assert_(!args->sample->frames.empty());
+    //}
 }
 
 void source_vidcap::dispatch(request_t& request)

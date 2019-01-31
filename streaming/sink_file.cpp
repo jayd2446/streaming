@@ -70,12 +70,12 @@ void sink_file::process()
 
                     this->file_output->write_sample(true, frame.sample);
                 }
-            }
 
-            lock.unlock();
-            this->session->give_sample(request.stream, 
-                request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
-            lock.lock();
+                lock.unlock();
+                this->session->give_sample(request.stream,
+                    request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
+                lock.lock();
+            }
         }
     }
     else
@@ -163,9 +163,18 @@ media_stream::result_t stream_file::process_sample(
         }
 
         // TODO: requests mutex seems unnecessary
-        // add the new sample to queue and drop oldest sample if the queue is full
-        sink_file::scoped_lock lock(this->sink->requests_mutex);
-        this->sink->requests_video.push(request);
+        {
+            sink_file::scoped_lock lock(this->sink->requests_mutex);
+            this->sink->requests_video.push(request);
+        }
+
+        // pass null requests downstream
+        if(!args_)
+        {
+            this->unlock();
+            this->sink->session->give_sample(this, NULL, request.rp);
+            this->lock();
+        }
     }
     else
     {
@@ -180,14 +189,14 @@ media_stream::result_t stream_file::process_sample(
         }
 
         // add the new sample to queue and drop oldest sample if the queue is full
-        sink_file::scoped_lock lock(this->sink->requests_mutex);
-        this->sink->requests_audio.push(request);
+        {
+            sink_file::scoped_lock lock(this->sink->requests_mutex);
+            this->sink->requests_audio.push(request);
+        }
     }
 
     this->unlock();
     this->sink->process();
-
-    /*this->sink->session->give_sample(this, sample, rp, false);*/
 
     return OK;
 }

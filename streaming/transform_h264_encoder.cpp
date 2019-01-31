@@ -298,6 +298,7 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
         buffer.Attach(new media_buffer_wrapper(this->context_mutex, frame.buffer, buffer2d));
     }
 
+    assert_(frame.dur == 1);
     const LONGLONG sample_duration = (LONGLONG)
         (SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den));
 
@@ -428,11 +429,17 @@ void transform_h264_encoder::processing_cb(void*)
 
     HRESULT hr = S_OK;
 
-    // TODO: allow non variable framerate
+    // this same problem is present in aac encoder aswell
+
+    // output is only attached to requests that contain valid input data;
+    // this really doesn't pose a problem, because the encoder itself outputs frames
+    // only when it has been given enough input frames
 
     request_t* request;
     while((this->encoder_requests || this->software) && (request = this->requests.get()))
     {
+        const bool non_null_request = request->sample.drain ||
+            (request->sample.args && request->sample.args->has_frames);
         media_sample_video_frame video_frame;
         const bool serve_request = this->extract_frame(video_frame, *request);
 
@@ -481,28 +488,33 @@ void transform_h264_encoder::processing_cb(void*)
             request_t request;
             this->requests.pop(request);
 
-            // event callback will dispatch the last request
-            if(!request.sample.drain || this->software)
+            // h264 stream has already served all null requests
+            if(non_null_request)
             {
-                media_sample_h264_frames_t out_sample;
+                // event callback will dispatch the last request
+                if(!request.sample.drain || this->software)
                 {
-                    scoped_lock lock(this->process_output_mutex);
-                    out_sample = std::move(this->out_sample);
-                }
+                    media_sample_h264_frames_t out_sample;
+                    {
+                        scoped_lock lock(this->process_output_mutex);
+                        out_sample = std::move(this->out_sample);
+                    }
 
-                lock.unlock();
-                this->process_request(out_sample, request);
-                lock.lock();
-            }
-            else
-            {
-                std::cout << "drain on h264 encoder" << std::endl;
-                this->last_request = request;
-                this->draining = true;
-                CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
+                    lock.unlock();
+                    this->process_request(out_sample, request);
+                    lock.lock();
+                }
+                else
+                {
+                    std::cout << "drain on h264 encoder" << std::endl;
+                    this->last_request = request;
+                    this->draining = true;
+                    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
+                }
             }
         }
-    }
+}
+
 
 done:
     if(FAILED(hr))
@@ -843,6 +855,14 @@ media_stream::result_t stream_h264_encoder::process_sample(
     request.rp = rp;
 
     this->transform->requests.push(request);
+
+    // pass null requests downstream
+    if(!request.sample.drain && (!request.sample.args || !request.sample.args->has_frames))
+    {
+        this->unlock();
+        this->transform->session->give_sample(this, NULL, request.rp);
+        this->lock();
+    }
 
     /*std::cout << rp.packet_number << std::endl;*/
 
