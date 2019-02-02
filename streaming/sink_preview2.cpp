@@ -167,8 +167,9 @@ void sink_preview2::draw_sample(const media_component_args* args_)
     D2D1::Matrix3x2F dest_m;
     control_video2::video_params_t video_params;
     {
-        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-        if(this->ctrl_pipeline->selected_items.empty())
+        // only try to lock so that the pipeline doesn't stall on component initializations
+        std::unique_lock<std::recursive_mutex> lock(this->ctrl_pipeline->mutex, std::try_to_lock);
+        if(!lock.owns_lock() || this->ctrl_pipeline->selected_items.empty())
             goto out;
         control_video2* video_control = 
             dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0]);

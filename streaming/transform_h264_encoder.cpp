@@ -278,7 +278,7 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
     CComPtr<IMFMediaBuffer> buffer;
     CComPtr<IMFSample> sample;
     CComPtr<IUnknown> sample_tracker;
-    // TODO: use multiple buffers;
+
     // sample tracker should be used for each texture individually
 
     // create the input sample buffer
@@ -302,7 +302,6 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
     const LONGLONG sample_duration = (LONGLONG)
         (SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den));
 
-    // TODO: use multiple buffers
     time_unit sample_time = convert_to_time_unit(frame.pos,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);

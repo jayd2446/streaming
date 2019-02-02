@@ -123,7 +123,9 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     // currently, audio mixer simply allocates a buffer size of (end - first),
     // which has a side effect of audiomixer possibly generating new data - a property that
     // should be only restricted to sources where the sample data generation has an upper limit
-    // (audio mixer should work similarly to video mixer)
+    // (audio mixer should work similarly to video mixer);
+    // TODO: when audio mixer is updated to work similarly to video mixer,
+    // source_wasapi needs to add silent frames by itself
 
     HRESULT hr = S_OK;
     const UINT32 out_block_align = 

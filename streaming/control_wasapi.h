@@ -1,6 +1,6 @@
 #pragma once
 #include "control_class.h"
-#include "source_wasapi2.h"
+#include "source_wasapi.h"
 #include "transform_audiomixer2.h"
 #include <vector>
 
@@ -17,7 +17,7 @@ public:
 private:
     control_pipeline2& pipeline;
     wasapi_params params;
-    source_wasapi2_t component;
+    source_wasapi_t component;
     stream_audiomixer2_controller_t audiomixer_params;
 
     // stream and reference enable multiple controls to use the same

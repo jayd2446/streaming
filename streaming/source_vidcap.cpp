@@ -12,7 +12,8 @@ source_vidcap::source_vidcap(const media_session_t& session) :
     source_base(session),
     buffer_pool_texture(new buffer_pool_texture_t),
     buffer_pool_video_frames(new buffer_pool_video_frames_t),
-    captured_video(new media_sample_video_mixer_frames)
+    captured_video(new media_sample_video_mixer_frames),
+    broken(false)
 {
     this->capture_callback.Attach(new async_callback_t(&source_vidcap::capture_cb));
 }
@@ -36,12 +37,22 @@ source_vidcap::stream_source_base_t source_vidcap::create_derived_stream()
 
 bool source_vidcap::get_samples_end(const request_t& request, frame_unit& end)
 {
-    scoped_lock lock(this->captured_video_mutex);
-    if(this->captured_video->frames.empty())
-        return false;
+    if(!this->broken)
+    {
+        scoped_lock lock(this->captured_video_mutex);
+        if(this->captured_video->frames.empty())
+            return false;
 
-    end = this->captured_video->end;
-    return true;
+        end = this->captured_video->end;
+        return true;
+    }
+    else
+    {
+        end = convert_to_frame_unit(request.rp.request_time,
+            transform_h264_encoder::frame_rate_num,
+            transform_h264_encoder::frame_rate_den);
+        return true;
+    }
 }
 
 void source_vidcap::make_request(request_t& request, frame_unit frame_end)
@@ -78,17 +89,6 @@ void source_vidcap::make_request(request_t& request, frame_unit frame_end)
         // the sample must not be empty
         assert_(!args->sample->frames.empty());
     }
-
-    //if(this->captured_video->move_frames_to(captured_video.get(), frame_end))
-    //{
-    //    media_component_videomixer_args_t& args = request.sample;
-    //    args = std::make_optional<media_component_videomixer_args>();
-
-    //    args->frame_end = frame_end;
-    //    args->sample = std::move(captured_video);
-    //    // the sample must not be empty
-    //    assert_(!args->sample->frames.empty());
-    //}
 }
 
 void source_vidcap::dispatch(request_t& request)
@@ -228,10 +228,11 @@ void source_vidcap::capture_cb(void*)
     CHECK_HR(hr = this->queue_new_capture());
 
 done:
-    // TODO: source_vidcap should handle a case where the device is being used by another app
-
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw HR_EXCEPTION(hr);
+    {
+        this->broken = true;
+        this->request_reinitialization(this->ctrl_pipeline);
+    }
 }
 
 HRESULT source_vidcap::queue_new_capture()

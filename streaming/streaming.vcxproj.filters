@@ -84,9 +84,6 @@
     <ClCompile Include="output_file.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="source_wasapi.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="transform_audiomixer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -160,6 +157,9 @@
       <Filter>control</Filter>
     </ClCompile>
     <ClCompile Include="source_displaycapture.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="source_wasapi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -254,9 +254,6 @@
     <ClInclude Include="output_file.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source_wasapi.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="transform_audiomixer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -324,6 +321,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="source_displaycapture.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_wasapi.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

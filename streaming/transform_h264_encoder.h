@@ -56,8 +56,6 @@ private:
     std::recursive_mutex process_mutex, process_output_mutex;
     std::atomic_int32_t encoder_requests;
 
-    // should be accessed only in processing_cb which is singlethreaded
-    /*std::queue<request_t> queued_requests;*/
     request_queue requests;
     request_t last_request;
     std::atomic_bool draining;

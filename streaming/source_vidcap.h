@@ -55,6 +55,8 @@ private:
     CComPtr<IMFAttributes> source_reader_attributes;
     std::wstring symbolic_link;
 
+    bool broken;
+
     stream_source_base_t create_derived_stream();
     bool get_samples_end(const request_t&, frame_unit& end);
     void make_request(request_t&, frame_unit frame_end);

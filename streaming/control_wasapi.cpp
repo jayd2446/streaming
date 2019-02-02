@@ -50,7 +50,7 @@ void control_wasapi::build_audio_topology(const media_stream_t& from,
 
 void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_set)
 {
-    source_wasapi2_t component;
+    source_wasapi_t component;
 
     this->stream = NULL;
     this->reference = NULL;
@@ -90,7 +90,7 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
         if(!component)
         {
             // create a new component since it was not found in the last or in the new set
-            source_wasapi2_t wasapi_source(new source_wasapi2(this->pipeline.audio_session));
+            source_wasapi_t wasapi_source(new source_wasapi(this->pipeline.audio_session));
 
             wasapi_source->initialize(this->pipeline.shared_from_this<control_pipeline2>(),
                 this->params.device_id, this->params.capture);
