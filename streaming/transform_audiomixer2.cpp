@@ -155,7 +155,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
         out_buffer->initialize(out_buffer_len);
     }
 
-	bool has_frames = false;
+    bool has_frames = false;
     out_bit_depth_t* out_data_base;
     CHECK_HR(hr = out_buffer->buffer->SetCurrentLength(out_buffer_len));
     CHECK_HR(hr = out_buffer->buffer->Lock((BYTE**)&out_data_base, NULL, NULL));
@@ -177,7 +177,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
             assert_(first <= consec_frames.pos);
             assert_(end >= (consec_frames.pos + consec_frames.dur));
 
-			has_frames = true;
+            has_frames = true;
 
             if(!consec_frames.buffer)
                 continue;
@@ -225,7 +225,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     out_arg = std::make_optional<out_arg_t::value_type>();
     out_arg->sample = std::move(frames);
     out_arg->frame_end = end;
-	out_arg->has_frames = has_frames;
+    out_arg->has_frames = has_frames;
 
 done:
     if(FAILED(hr))

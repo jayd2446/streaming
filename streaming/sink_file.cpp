@@ -106,10 +106,10 @@ void sink_file::process()
                     this->file_output->write_sample(false, sample);
                 }
 
-				lock.unlock();
-				this->session->give_sample(request.stream,
-					request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
-				lock.lock();
+		        lock.unlock();
+		        this->session->give_sample(request.stream,
+			        request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
+		        lock.lock();
             }
         }
     }
@@ -193,13 +193,13 @@ media_stream::result_t stream_file::process_sample(
             this->sink->requests_audio.push(request);
         }
 
-		// pass null requests downstream
-		if(!args_)
-		{
-			this->unlock();
-			this->sink->session->give_sample(this, NULL, request.rp);
-			this->lock();
-		}
+	    // pass null requests downstream
+        if(!args_)
+        {
+	        this->unlock();
+	        this->sink->session->give_sample(this, NULL, request.rp);
+	        this->lock();
+        }
     }
 
     this->unlock();
