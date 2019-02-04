@@ -98,7 +98,7 @@ void stream_audio::dispatch_process()
 
 media_stream::result_t stream_audio::request_sample(const request_packet& rp, const media_stream*)
 {
-    this->requests_queue.initialize_queue(rp);
+	this->requests_queue.initialize_queue(rp);
 
     if(!this->sink->session->request_sample(this, rp))
         return FATAL_ERROR;
@@ -110,18 +110,18 @@ media_stream::result_t stream_audio::process_sample(
 {
     this->requests--;
 
-    request_queue::request_t request;
-    request.stream = this;
-    request.rp = rp;
-    this->requests_queue.push(request);
+	request_queue::request_t request;
+	request.stream = this;
+	request.rp = rp;
+	this->requests_queue.push(request);
 
-    // check if the last request has been processed and stop further processing in that case
-    while(this->requests_queue.pop(request))
-	    if(request.rp.request_time == this->stop_point)
-	    {
-		    assert_(!this->requests_queue.get());
-		    this->processing = false;
-	    }
+	// check if the last request has been processed and stop further processing in that case
+	while(this->requests_queue.pop(request))
+		if(request.rp.request_time == this->stop_point)
+		{
+			assert_(!this->requests_queue.get());
+			this->processing = false;
+		}
 
     return OK;
 }

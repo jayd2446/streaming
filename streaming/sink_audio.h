@@ -34,8 +34,8 @@ class stream_audio : public media_stream_clock_sink
     friend class stream_mpeg2;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    struct empty {};
-    typedef request_queue<empty> request_queue;
+	struct empty {};
+	typedef request_queue<empty> request_queue;
 private:
     sink_audio_t sink;
     volatile bool requesting, processing;
@@ -46,7 +46,7 @@ private:
 
     std::atomic_int requests;
     int max_requests;
-    request_queue requests_queue;
+	request_queue requests_queue;
 
     // for debug
     int unavailable;
