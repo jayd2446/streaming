@@ -36,9 +36,6 @@
     <ClCompile Include="presentation_clock.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="transform_videoprocessor.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="media_sample.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -49,9 +46,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="sink_preview2.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="source_displaycapture5.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="transform_aac_encoder.cpp">
@@ -66,25 +60,10 @@
     <ClCompile Include="sink_mpeg2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="transform_audiomix.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="transform_audioprocessor.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="gui_newdlg.cpp">
       <Filter>gui</Filter>
     </ClCompile>
-    <ClCompile Include="control_pipeline.cpp">
-      <Filter>control</Filter>
-    </ClCompile>
-    <ClCompile Include="control_scene.cpp">
-      <Filter>control</Filter>
-    </ClCompile>
     <ClCompile Include="output_file.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="transform_audiomixer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="media_stream.cpp">
@@ -129,19 +108,10 @@
     <ClCompile Include="control_class.cpp">
       <Filter>control</Filter>
     </ClCompile>
-    <ClCompile Include="transform_videoprocessor2.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="control_video2.cpp">
       <Filter>control</Filter>
     </ClCompile>
-    <ClCompile Include="stream_worker.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="transform_videomixer.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="source_wasapi2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="audio_resampler.cpp">
@@ -188,9 +158,6 @@
     <ClInclude Include="presentation_clock.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="transform_videoprocessor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="async_callback.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -206,16 +173,10 @@
     <ClInclude Include="sink_preview2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="source_displaycapture5.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="request_packet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="transform_aac_encoder.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="stream_worker.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="sink_audio.h">
@@ -227,12 +188,6 @@
     <ClInclude Include="assert.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="transform_audiomix.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="transform_audioprocessor.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="wtl.h">
       <Filter>gui</Filter>
     </ClInclude>
@@ -242,19 +197,10 @@
     <ClInclude Include="gui_newdlg.h">
       <Filter>gui</Filter>
     </ClInclude>
-    <ClInclude Include="control_pipeline.h">
-      <Filter>control</Filter>
-    </ClInclude>
-    <ClInclude Include="control_scene.h">
-      <Filter>control</Filter>
-    </ClInclude>
     <ClInclude Include="media_component.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="output_file.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="transform_audiomixer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="gui_mainwnd.h">
@@ -287,9 +233,6 @@
     <ClInclude Include="control_pipeline2.h">
       <Filter>control</Filter>
     </ClInclude>
-    <ClInclude Include="transform_videoprocessor2.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="control_video2.h">
       <Filter>control</Filter>
     </ClInclude>
@@ -300,9 +243,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="buffer_pool.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="source_wasapi2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="audio_resampler.h">
