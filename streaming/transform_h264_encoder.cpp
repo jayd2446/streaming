@@ -840,6 +840,8 @@ media_stream::result_t stream_h264_encoder::request_sample(const request_packet&
 media_stream::result_t stream_h264_encoder::process_sample(
     const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
+	// TODO: lock probably not needed here
+
     this->lock();
 
     transform_h264_encoder::request_t request;

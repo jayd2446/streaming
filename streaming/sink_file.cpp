@@ -105,12 +105,12 @@ void sink_file::process()
                     //sink writer buffers samples
                     this->file_output->write_sample(false, sample);
                 }
-            }
 
-            lock.unlock();
-            this->session->give_sample(request.stream, 
-                request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
-            lock.lock();
+				lock.unlock();
+				this->session->give_sample(request.stream,
+					request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
+				lock.lock();
+            }
         }
     }
 
@@ -188,11 +188,18 @@ media_stream::result_t stream_file::process_sample(
             request.sample = std::make_optional(args);
         }
 
-        // add the new sample to queue and drop oldest sample if the queue is full
         {
             sink_file::scoped_lock lock(this->sink->requests_mutex);
             this->sink->requests_audio.push(request);
         }
+
+		// pass null requests downstream
+		if(!args_)
+		{
+			this->unlock();
+			this->sink->session->give_sample(this, NULL, request.rp);
+			this->lock();
+		}
     }
 
     this->unlock();

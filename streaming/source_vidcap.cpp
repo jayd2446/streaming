@@ -107,6 +107,8 @@ void source_vidcap::capture_cb(void*)
     LONGLONG timestamp;
     CComPtr<IMFSample> sample;
 
+    // TODO: this needs to be updated to async calls
+
     // TODO: drain here
     CHECK_HR(hr = this->source_reader->ReadSample(
         (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,

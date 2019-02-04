@@ -291,8 +291,6 @@ media_stream::result_t stream_mpeg2::process_sample(
 {
     this->requests--;
 
-    // TODO: audio sink should use a request queue aswell
-
     request_queue::request_t request;
     request.stream = this;
     request.rp = rp;

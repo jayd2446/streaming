@@ -340,6 +340,7 @@ public:
     // must not be null;
     // frames must be ordered
     media_sample_audio_frames_t sample;
+	bool has_frames;
     bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
 };
 

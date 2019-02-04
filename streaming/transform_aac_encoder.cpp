@@ -182,9 +182,13 @@ void transform_aac_encoder::processing_cb(void*)
 
     while(this->requests.pop(request))
     {
+		const bool non_null_request = request.sample.drain ||
+			(request.sample.args && request.sample.args->has_frames);
         media_component_aac_encoder_args_t& args = request.sample.args;
         media_component_aac_audio_args_t out_args;
-        if(args)
+
+		// null requests were passed already
+        if(non_null_request)
         {
             assert_(args->is_valid());
             if(this->encode(*args->sample, *request.sample.out_sample, request.sample.drain))
@@ -192,12 +196,12 @@ void transform_aac_encoder::processing_cb(void*)
                 out_args = std::make_optional<media_component_aac_audio_args>();
                 out_args->sample = std::move(request.sample.out_sample);
             }
-        }
 
-        lock.unlock();
-        this->session->give_sample(
-            request.stream, out_args.has_value() ? &(*out_args) : NULL, request.rp);
-        lock.lock();
+			lock.unlock();
+			this->session->give_sample(
+				request.stream, out_args.has_value() ? &(*out_args) : NULL, request.rp);
+			lock.lock();
+        }
     }
 
 done:
@@ -395,6 +399,11 @@ media_stream::result_t stream_aac_encoder::process_sample(
     request.sample.out_sample = out_sample;
 
     this->transform->requests.push(request);
+
+	// pass null requests downstream
+	if(!request.sample.drain && (!request.sample.args || !request.sample.args->has_frames))
+		this->transform->session->give_sample(this, NULL, request.rp);
+
     this->transform->processing_cb(NULL);
 
     return OK;
