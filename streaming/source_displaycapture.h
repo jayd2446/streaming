@@ -1,5 +1,6 @@
 #pragma once
 #include "source_base.h"
+#include "video_source_helper.h"
 #include "transform_videomixer.h"
 #include <d3d11.h>
 #include <dxgi.h>
@@ -31,23 +32,20 @@ class source_displaycapture : public source_base<displaycapture_args>
     friend class stream_displaycapture;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_frames_t;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
-    // maximum amount of frames source displaycapture holds before discarding
-    static const frame_unit maximum_buffer_size = 30;
 private:
     control_class_t ctrl_pipeline;
     // since the dxgi output duplication seems to use the d3d11 context,
     // the mutex must be locked when capturing a frame
     context_mutex_t context_mutex;
 
+    video_source_helper source_helper, source_pointer_helper;
+
     DXGI_OUTDUPL_POINTER_POSITION pointer_position;
     std::vector<BYTE> pointer_buffer;
     DXGI_OUTDUPL_POINTER_SHAPE_INFO pointer_shape_info;
-    std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     std::shared_ptr<buffer_pool> available_samples, available_pointer_samples;
     media_buffer_texture_t newest_buffer, newest_pointer_buffer;
-    frame_unit last_captured_frame_end;
 
     CComPtr<IDXGIOutput5> output;
     CComPtr<IDXGIOutputDuplication> output_duplication;

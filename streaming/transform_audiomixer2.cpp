@@ -138,9 +138,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     media_buffer_memory_t out_buffer;
     const DWORD out_buffer_len = (UINT32)frame_count * out_block_align;
 
-    assert_(frame_count >= 0);
-    if(frame_count == 0)
-        return;
+    assert_(frame_count > 0);
 
     {
         transform_audiomixer2::buffer_pool_audio_frames_t::scoped_lock lock(

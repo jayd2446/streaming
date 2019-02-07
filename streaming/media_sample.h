@@ -152,6 +152,7 @@ public:
     // std::numeric_limits::max can be used for moving all frames;
     // block align is assumed to be the same for both samples
     bool move_frames_to(media_sample_audio_frames_template* to, frame_unit end, UINT32 block_align);
+    // TODO: add_consecutive_frames which takes a sample_t
 
     // buffer pool methods
     void initialize()
@@ -174,6 +175,8 @@ public:
     media_sample_video_frame() : dur(0) {}
     // TODO: remove this
     explicit media_sample_video_frame(frame_unit pos) : pos(pos), dur(1) {}
+
+    frame_unit end() const {assert_(this->dur > 0); return this->pos + this->dur;}
 };
 
 // frametype should be either media_sample_video_frame or a derived type of it
@@ -202,6 +205,12 @@ public:
     void set_end(frame_unit end) {assert_(!this->frames.empty()); this->end = end;}*/
 
     bool move_frames_to(media_sample_video_frames_template* to, frame_unit end);
+    // adds new frame and sets the end position;
+    // returns the added frame
+    // TODO: remove this
+    sample_t& add_consecutive_frames(frame_unit pos, frame_unit dur, 
+        const media_buffer_texture_t& = NULL);
+    sample_t& add_consecutive_frames(const sample_t&);
 
     void initialize() 
     {assert_(this->end == 0); assert_(this->frames.empty()); this->buffer_poolable::initialize();}
@@ -471,6 +480,36 @@ bool media_sample_audio_frames_template<T>::move_frames_to(
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
 
+
+template<typename T>
+typename media_sample_video_frames_template<T>::sample_t&
+media_sample_video_frames_template<T>::add_consecutive_frames(const sample_t& new_frame)
+{
+    assert_(new_frame.dur > 0);
+
+    this->frames.push_back(new_frame);
+    this->end = std::max(new_frame.pos + new_frame.dur, this->end);
+
+    return this->frames.back();
+}
+
+template<typename T>
+typename media_sample_video_frames_template<T>::sample_t&
+media_sample_video_frames_template<T>::add_consecutive_frames(frame_unit pos, frame_unit dur,
+    const media_buffer_texture_t& buffer)
+{
+    assert_(dur > 0);
+
+    sample_t new_frame;
+    new_frame.pos = pos;
+    new_frame.dur = dur;
+    new_frame.buffer = buffer;
+
+    this->frames.push_back(std::move(new_frame));
+    this->end = std::max(pos + dur, this->end);
+
+    return this->frames.back();
+}
 
 template<typename T>
 bool media_sample_video_frames_template<T>::move_frames_to(

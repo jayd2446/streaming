@@ -132,6 +132,9 @@
     <ClCompile Include="source_wasapi.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="video_source_helper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -264,6 +267,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="source_wasapi.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="video_source_helper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

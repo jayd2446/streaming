@@ -271,6 +271,19 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
         std::cout << "drain on mixer" << std::endl;
     }
 
+    // move everything to the leftover container if the cutoff is same as the old cutoff;
+    // this is an optimization so that the pipeline doesn't cause too much overhead if
+    // a source has a lower fps than the pipeline
+    if(this->cutoff == old_cutoff)
+    {
+        for(auto&& item : packets.container)
+        {
+            if(item.arg)
+                this->leftover[item.stream_index].container.push_back(item);
+        }
+        goto out;
+    }
+
     // move the leftover packets to the request
     for(size_t i = 0; i < this->input_streams_props.size(); i++)
     {
@@ -314,13 +327,15 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
         item.arg = new_arg;
     }
 
+out:
     out_arg_t out;
     const frame_unit cutoff = this->cutoff;
     assert_(old_cutoff <= this->cutoff);
 
-    // TODO: decide if should call mix when old_cutoff and cutoff are the same
     this->unlock();
-    this->mix(out, packets, old_cutoff, cutoff);
+    // only mix if there is something to mix
+    if(old_cutoff != this->cutoff)
+        this->mix(out, packets, old_cutoff, cutoff);
 
     this->transform->session->give_sample(request.stream, 
         out.has_value() ? &(*out) : NULL, request.rp);

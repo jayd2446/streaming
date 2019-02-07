@@ -203,9 +203,7 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     HRESULT hr = S_OK;
     const frame_unit frame_count = end - first;
 
-    assert_(frame_count >= 0);
-    if(frame_count == 0)
-        return;
+    assert_(frame_count > 0);
 
     // sort the packets list for correct z order
     std::sort(packets.container.begin(), packets.container.end(),
@@ -261,7 +259,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                 assert_(first <= pos);
                 assert_(end > pos);
 
-                bool clear = false;
                 const size_t index = (size_t)(pos - first);
                 device_context_resources_t frame =
                     std::static_pointer_cast<transform_videomixer::device_context_resources>(
@@ -270,11 +267,7 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                 {
                     frame = this->acquire_buffer();
                     frames->frames[index].buffer = frame;
-                    clear = true;
-                }
 
-                if(clear)
-                {
                     frame->ctx->BeginDraw();
                     frame->ctx->SetTarget(frame->bitmap);
                     frame->ctx->Clear(D2D1::ColorF(D2D1::ColorF::Black));
@@ -282,12 +275,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
                 if(frame_.buffer)
                 {
-                    if(!clear)
-                    {
-                        frame->ctx->BeginDraw();
-                        frame->ctx->SetTarget(frame->bitmap);
-                    }
-
                     CComPtr<ID3D11Texture2D> texture = frame_.buffer->texture;
                     // params is valid only when the frame stores a non silent buffer
                     const stream_videomixer_controller::params_t& params = frame_.params;
@@ -381,15 +368,19 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                         frame->ctx->PopLayer();
                     else
                         frame->ctx->PopAxisAlignedClip();
-
-                    if(!clear)
-                        CHECK_HR(hr = frame->ctx->EndDraw())
                 }
-
-                if(clear)
-                    CHECK_HR(hr = frame->ctx->EndDraw())
             }
         }
+    }
+
+    // call end draw for every frame
+    for(frame_unit i = 0; i < frame_count; i++)
+    {
+        device_context_resources_t frame =
+            std::static_pointer_cast<transform_videomixer::device_context_resources>(
+                frames->frames[i].buffer);
+        if(frame)
+            frame->ctx->EndDraw();
     }
 
     frames->end = end;

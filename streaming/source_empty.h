@@ -50,7 +50,7 @@ class source_empty_video : public source_base<media_component_videomixer_args>
     friend class stream_empty_video;
 public:
     typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_frames_t;
-    static const frame_unit maximum_buffer_size = 30;
+    static const frame_unit maximum_buffer_size = 60;
 private:
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     frame_unit last_frame_end;

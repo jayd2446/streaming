@@ -31,8 +31,7 @@ source_displaycapture::source_displaycapture(
     output_index((UINT)-1),
     same_device(false),
     available_samples(new buffer_pool),
-    available_pointer_samples(new buffer_pool),
-    buffer_pool_video_frames(new buffer_pool_video_frames_t)
+    available_pointer_samples(new buffer_pool)
 {
     this->outdupl_desc.Rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
     this->pointer_position.Visible = FALSE;
@@ -48,10 +47,6 @@ source_displaycapture::~source_displaycapture()
     {
         buffer_pool::scoped_lock lock(this->available_pointer_samples->mutex);
         this->available_pointer_samples->dispose();
-    }
-    {
-        buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
-        this->buffer_pool_video_frames->dispose();
     }
 }
 
@@ -87,15 +82,11 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
 {
     // capture the frame and populate the request
 
-    request.sample.args = std::make_optional<media_component_videomixer_args>();
-    request.sample.pointer_args = std::make_optional<media_component_videomixer_args>();
-
-    media_component_videomixer_args& args = *request.sample.args;
-    media_component_videomixer_args& pointer_args = *request.sample.pointer_args;
-    media_sample_video_mixer_frame frame, pointer_frame;
-
-    auto partially_build_frame = [this](media_sample_video_mixer_frame& frame)
+    auto build_frame = [this, frame_end](media_sample_video_mixer_frame& frame)
     {
+        frame.pos = frame_end - 1;
+        frame.dur = 1;
+
         if(!frame.buffer)
             return;
 
@@ -125,8 +116,11 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
             break;
         }
     };
-    auto partially_build_pointer_frame = [this](media_sample_video_mixer_frame& pointer_frame)
+    auto build_pointer_frame = [this, frame_end](media_sample_video_mixer_frame& pointer_frame)
     {
+        pointer_frame.pos = frame_end - 1;
+        pointer_frame.dur = 1;
+
         if(!pointer_frame.buffer || !this->pointer_position.Visible)
         {
             pointer_frame.buffer = NULL;
@@ -149,46 +143,16 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
         pointer_frame.params.dest_m = D2D1::Matrix3x2F::Identity();
     };
 
-    {
-        buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
-        args.sample = this->buffer_pool_video_frames->acquire_buffer();
-        args.sample->initialize();
+    request.sample.args = std::make_optional<media_component_videomixer_args>();
+    request.sample.pointer_args = std::make_optional<media_component_videomixer_args>();
 
-        pointer_args.sample = this->buffer_pool_video_frames->acquire_buffer();
-        pointer_args.sample->initialize();
-    }
+    media_component_videomixer_args& args = *request.sample.args;
+    media_component_videomixer_args& pointer_args = *request.sample.pointer_args;
+    media_sample_video_mixer_frame frame, pointer_frame;
 
     // frame position and frame_end must be the same for frame and pointer frame
     args.frame_end = frame_end;
-    frame.dur = 1;
-    frame.pos = args.frame_end - frame.dur;
-
     pointer_args.frame_end = frame_end;
-    pointer_frame.dur = 1;
-    pointer_frame.pos = pointer_args.frame_end - pointer_frame.dur;
-
-    // add padding for every skipped frame;
-    // the padded frames will use the same user videomixer parameters as the newest frame that is
-    // being served
-    const frame_unit skipped_frames_dur = (frame.pos - this->last_captured_frame_end);
-    if(skipped_frames_dur > 0)
-    {
-        media_sample_video_mixer_frame duplicate_frame;
-        duplicate_frame.pos = this->last_captured_frame_end;
-        duplicate_frame.dur = skipped_frames_dur;
-        duplicate_frame.buffer = this->newest_buffer;
-        partially_build_frame(duplicate_frame);
-        args.sample->frames.push_back(duplicate_frame);
-
-        media_sample_video_mixer_frame duplicate_pointer_frame;
-        duplicate_pointer_frame.pos = this->last_captured_frame_end;
-        duplicate_pointer_frame.dur = skipped_frames_dur;
-        duplicate_pointer_frame.buffer = this->newest_pointer_buffer;
-        partially_build_pointer_frame(duplicate_pointer_frame);
-        pointer_args.sample->frames.push_back(duplicate_pointer_frame);
-    }
-
-    this->last_captured_frame_end = frame_end;
 
     try
     {
@@ -201,28 +165,16 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
     }
 
     // params in args are ignored if the buffer in sample is null(=silent)
-    partially_build_frame(frame);
-    partially_build_pointer_frame(pointer_frame);
+    build_frame(frame);
+    build_pointer_frame(pointer_frame);
 
-    args.sample->frames.push_back(frame);
-    args.sample->end = args.frame_end;
+    this->source_helper.add_new_sample(frame);
+    this->source_pointer_helper.add_new_sample(pointer_frame);
 
-    pointer_args.sample->frames.push_back(pointer_frame);
-    pointer_args.sample->end = pointer_args.frame_end;
-
-    // keep the frames buffer within the limits
-    assert_(!args.sample->frames.empty());
-    assert_(!pointer_args.sample->frames.empty());
-
-    const bool limit_reached = 
-        args.sample->move_frames_to(NULL, args.sample->end - maximum_buffer_size);
-    const bool limit_reached2 =
-        pointer_args.sample->move_frames_to(NULL, pointer_args.sample->end - maximum_buffer_size);
-
-    if(limit_reached || limit_reached2)
-    {
-        std::cout << "source_displaycapture buffer limit reached, excess frames discarded" << std::endl;
-    }
+    args.frame_end = frame_end;
+    pointer_args.frame_end = frame_end;
+    args.sample = this->source_helper.make_sample(frame_end);
+    pointer_args.sample = this->source_pointer_helper.make_sample(frame_end);
 }
 
 void source_displaycapture::dispatch(request_t& request)
@@ -504,9 +456,12 @@ stream_displaycapture::stream_displaycapture(const source_displaycapture_t& sour
 
 void stream_displaycapture::on_component_start(time_unit t)
 {
-    this->source->last_captured_frame_end = convert_to_frame_unit(t,
+    this->source->source_helper.initialize(convert_to_frame_unit(t,
         transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+        transform_h264_encoder::frame_rate_den));
+    this->source->source_pointer_helper.initialize(convert_to_frame_unit(t,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den));
 }
 
 

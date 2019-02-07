@@ -1,5 +1,6 @@
 #pragma once
 #include "source_base.h"
+#include "video_source_helper.h"
 #include "media_component.h"
 #include "media_stream.h"
 #include "media_sample.h"
@@ -22,29 +23,24 @@
 class source_vidcap : public source_base<media_component_videomixer_args_t>
 {
     friend class stream_vidcap;
+    struct source_reader_callback_t;
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
     typedef async_callback<source_vidcap> async_callback_t;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool_texture_t;
-    typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_frames_t;
-    static const frame_unit maximum_buffer_size = 30;
 private:
     control_class_t ctrl_pipeline;
 
-    std::mutex captured_video_mutex;
+    std::mutex source_helper_mutex;
+    video_source_helper source_helper;
     std::shared_ptr<buffer_pool_texture_t> buffer_pool_texture;
-    std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
-    media_sample_video_mixer_frames_t captured_video;
-    frame_unit last_captured_frame_end;
-    media_buffer_texture_t last_captured_buffer;
-
-    CComPtr<async_callback_t> capture_callback;
+    CComPtr<source_reader_callback_t> source_reader_callback;
 
     UINT32 reset_token;
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<IMFDXGIDeviceManager> devmngr;
 
-    UINT32 frame_width, frame_height;
+    UINT32 frame_width, frame_height, fps_num, fps_den;
     CComPtr<IMFMediaType> output_type;
     CComPtr<IMFMediaSource> device;
     /*
@@ -55,15 +51,12 @@ private:
     CComPtr<IMFAttributes> source_reader_attributes;
     std::wstring symbolic_link;
 
-    bool broken;
-
     stream_source_base_t create_derived_stream();
     bool get_samples_end(const request_t&, frame_unit& end);
     void make_request(request_t&, frame_unit frame_end);
     void dispatch(request_t&);
 
     HRESULT queue_new_capture();
-    void capture_cb(void*);
 public:
     explicit source_vidcap(const media_session_t& session);
     ~source_vidcap();
