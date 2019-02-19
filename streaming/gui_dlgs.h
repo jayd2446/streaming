@@ -102,8 +102,6 @@ class gui_controldlg :
 private:
     control_pipeline2_t ctrl_pipeline;
     CButton btn_start_recording;
-    CHandle stop_recording_event;
-    bool stop_recording;
 public:
     enum {IDD = IDD_CTRLDLG};
 
@@ -113,6 +111,7 @@ public:
         MSG_WM_DESTROY(OnDestroy)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         COMMAND_HANDLER(IDC_START_RECORDING, BN_CLICKED, OnBnClickedStartRecording)
+        MESSAGE_HANDLER(RECORDING_STOPPED_MESSAGE, OnRecordingStopped)
         CHAIN_MSG_MAP(CDialogResize<gui_controldlg>)
     END_MSG_MAP()
 
@@ -123,6 +122,7 @@ public:
     void OnDestroy();
     LRESULT OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+    LRESULT OnRecordingStopped(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
 
     BOOL OnIdle();
 };

@@ -4,6 +4,8 @@
 #include "media_stream.h"
 #include "media_sample.h"
 #include "request_packet.h"
+#include "request_dispatcher.h"
+#include "request_queue_handler.h"
 #include "assert.h"
 #include <utility>
 #include <memory>
@@ -22,8 +24,6 @@
 // if the same parameters are applied to samples which have different timestamps
 
 // TODO: investigate reserve calls
-
-// TODO: mix shouldn't be called if the first and end are the same
 // TODO: derived class shouldn't specify the optional type;
 // it should be internal to mixer
 
@@ -73,12 +73,14 @@ public:
     stream_mixer_t create_stream(presentation_clock_t&& clock);
 };
 
-
 template<class TransformMixer>
-class stream_mixer : public media_stream_clock_sink
+class stream_mixer : 
+    public media_stream_clock_sink, 
+    request_queue_handler<typename TransformMixer::request_t>
 {
     using media_stream::connect_streams;
 public:
+    typedef std::lock_guard<std::mutex> scoped_lock;
     typedef TransformMixer transform_mixer;
     typedef std::shared_ptr<transform_mixer> transform_mixer_t;
     typedef typename transform_mixer::in_arg_t in_arg_t;
@@ -87,20 +89,29 @@ public:
     typedef typename transform_mixer::user_params_t user_params_t;
     typedef typename transform_mixer::packet_t packet_t;
     typedef typename transform_mixer::args_t args_t;
-    typedef typename transform_mixer::request_t request_t;
+    typedef typename request_queue_handler::request_t request_t;
+    typedef typename request_queue_handler::request_queue request_queue;
 
     struct input_stream_props_t
     {
         media_stream* input_stream;
         user_params_controller_t user_params_controller;
     };
+    struct dispatcher_args_t
+    {
+        args_t packets; 
+        frame_unit old_cutoff, cutoff;
+    };
 
-    typedef request_queue<request_t> request_queue;
+    typedef request_dispatcher<typename ::request_queue<dispatcher_args_t>::request_t> 
+        request_dispatcher;
 private:
     transform_mixer_t transform;
     std::atomic<time_unit> drain_point;
     std::vector<input_stream_props_t> input_streams_props;
-    request_queue requests;
+    /*request_queue requests;*/
+    std::shared_ptr<request_dispatcher> dispatcher;
+    std::mutex next_request_mutex;
 
     // frames below cutoff are dismissed
     frame_unit cutoff;
@@ -111,6 +122,11 @@ private:
     void initialize_packet(packet_t&);
     frame_unit find_common_frame_end(const args_t&);
     void process(typename request_queue::request_t&, bool drain);
+    void dispatch(typename request_dispatcher::request_t&);
+
+    // request_queue_handler
+    bool on_serve(typename request_queue::request_t&);
+    typename request_queue::request_t* next_request();
 protected:
     virtual void on_stream_start(time_unit);
     virtual void on_stream_stop(time_unit);
@@ -181,7 +197,8 @@ stream_mixer<T>::stream_mixer(const transform_mixer_t& transform) :
     media_stream_clock_sink(transform.get()),
     transform(transform),
     drain_point(std::numeric_limits<time_unit>::min()),
-    cutoff(std::numeric_limits<time_unit>::min())
+    cutoff(std::numeric_limits<time_unit>::min()),
+    dispatcher(new request_dispatcher)
 {
 }
 
@@ -260,7 +277,7 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
     if(drain)
     {
         const frame_unit drain_cutoff = this->convert_to_frame_unit(request.rp.request_time);
-        // the initialized value of new_cutoff above should be either lower or equal 
+        // the initialized value of new_cutoff(=this->cutoff) above should be either lower or equal 
         // to drain point, since the sources are allowed to serve samples up to the 
         // request point only;
         // for no gaps in the stream, the drain cutoff should be the same as new_cutoff
@@ -328,17 +345,64 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
     }
 
 out:
-    out_arg_t out;
     const frame_unit cutoff = this->cutoff;
     assert_(old_cutoff <= this->cutoff);
 
-    this->unlock();
     // only mix if there is something to mix
-    if(old_cutoff != this->cutoff)
-        this->mix(out, packets, old_cutoff, cutoff);
+    if(old_cutoff != cutoff)
+    {
+        typename request_dispatcher::request_t dispatcher_request;
+        dispatcher_request.stream = request.stream;
+        dispatcher_request.rp = request.rp;
+        dispatcher_request.sample.packets = std::move(packets);
+        dispatcher_request.sample.cutoff = cutoff;
+        dispatcher_request.sample.old_cutoff = old_cutoff;
 
-    this->transform->session->give_sample(request.stream, 
+        this->dispatcher->dispatch_request(std::move(dispatcher_request),
+            std::bind(&stream_mixer::dispatch, this->shared_from_this<stream_mixer>(), 
+                std::placeholders::_1));
+    }
+    else
+    {
+        // pass null args downstream;
+        // currently, it is assumed that none of the downstream components do any processing
+        // on null args
+        this->transform->session->give_sample(request.stream, NULL, request.rp);
+    }
+}
+
+template<class T>
+void stream_mixer<T>::dispatch(typename request_dispatcher::request_t& request)
+{
+    const frame_unit cutoff = request.sample.cutoff,
+        old_cutoff = request.sample.old_cutoff;
+
+    assert_(cutoff != old_cutoff);
+
+    out_arg_t out;
+    this->mix(out, request.sample.packets, old_cutoff, cutoff);
+
+    this->transform->session->give_sample(request.stream,
         out.has_value() ? &(*out) : NULL, request.rp);
+}
+
+template<class T>
+bool stream_mixer<T>::on_serve(typename request_queue::request_t& request)
+{
+    this->process(request, (request.rp.request_time == this->drain_point.load()));
+    return true;
+}
+
+template<class T>
+typename stream_mixer<T>::request_queue::request_t* stream_mixer<T>::next_request()
+{
+    scoped_lock lock(this->next_request_mutex);
+
+    typename request_queue::request_t* request = this->requests.get();
+    if(request && (size_t)request->sample.first == this->input_streams_props.size())
+        return request;
+    else
+        return NULL;
 }
 
 template<class T>
@@ -392,8 +456,6 @@ template<class T>
 typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
     const media_component_args* arg_, const request_packet& rp, const media_stream* prev_stream)
 {
-    this->lock();
-
     typename request_queue::request_t* request = this->requests.get(rp.packet_number);
     assert_(request);
 
@@ -401,33 +463,22 @@ typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
 
     // find the right packet from the list and assign the sample to it
     bool found = false;
-    for(auto&& item : request->sample.second.container)
-        if(item.input_stream == prev_stream && !item.arg)
-        {
-            request->sample.first++;
-            if(arg_)
-                item.arg = std::make_optional(static_cast<const in_arg_t::value_type&>(*arg_));
-            found = true;
-            break;
-        };
+    {
+        scoped_lock lock(this->next_request_mutex);
+        for(auto&& item : request->sample.second.container)
+            if(item.input_stream == prev_stream && !item.arg)
+            {
+                request->sample.first++;
+                if(arg_)
+                    item.arg = std::make_optional(static_cast<const in_arg_t::value_type&>(*arg_));
+                found = true;
+                break;
+            }
+    }
     assert_(found);
 
     // dispatch all requests that are ready
-    for(typename request_queue::request_t* next_request = this->requests.get();
-        next_request && 
-        (size_t)next_request->sample.first == this->input_streams_props.size();
-        next_request = this->requests.get())
-    {
-        assert_(next_request->stream == this);
+    this->serve();
 
-        typename request_queue::request_t request;
-        this->requests.pop(request);
-
-        this->process(request, (request.rp.request_time == this->drain_point.load()));
-
-        this->lock();
-    }
-
-    this->unlock();
     return OK;
 }

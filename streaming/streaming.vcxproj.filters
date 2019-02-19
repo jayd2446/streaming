@@ -87,9 +87,6 @@
     <ClCompile Include="sink_file.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="async_callback.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="media_component.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -270,6 +267,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="video_source_helper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="request_dispatcher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="request_queue_handler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

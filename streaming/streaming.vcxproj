@@ -256,7 +256,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="assert.cpp" />
-    <ClCompile Include="async_callback.cpp" />
     <ClCompile Include="audio_resampler.cpp" />
     <ClCompile Include="control_class.cpp" />
     <ClCompile Include="control_displaycapture5.cpp" />
@@ -278,7 +277,14 @@
     <ClCompile Include="output_file.cpp" />
     <ClCompile Include="request_packet.cpp" />
     <ClCompile Include="sink_audio.cpp" />
-    <ClCompile Include="sink_file.cpp" />
+    <ClCompile Include="sink_file.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDisabled|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='ReleaseDisabled|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="sink_mpeg2.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture.cpp" />
@@ -318,9 +324,11 @@
     <ClInclude Include="gui_dlgs.h" />
     <ClInclude Include="IUnknownImpl.h" />
     <ClInclude Include="media_component.h" />
+    <ClInclude Include="request_queue_handler.h" />
     <ClInclude Include="media_sample.h" />
     <ClInclude Include="media_session.h" />
     <ClInclude Include="media_sink.h" />
+    <ClInclude Include="request_dispatcher.h" />
     <ClInclude Include="source_base.h" />
     <ClInclude Include="media_stream.h" />
     <ClInclude Include="media_topology.h" />

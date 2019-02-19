@@ -224,6 +224,10 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
 {
     assert_(this->unavailable <= 240);
 
+    /*static int drops = 0;
+
+    assert_(drops <= 1000);*/
+
     const int requests = this->requests.load();
     if(requests < this->max_requests || no_drop)
     {
@@ -268,7 +272,13 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
         this->discontinuity = true;
         this->unavailable++;
 
-        std::cout << "--SAMPLE REQUEST DROPPED IN MPEG_SINK--" << std::endl;
+        std::cout << "--SAMPLE REQUEST DROPPED IN MPEG_SINK--";
+        if(this->encoder_stream && 
+            this->encoder_stream->get_transform()->is_encoder_overloading())
+            std::cout << " (encoder overloading)";
+        std::cout << std::endl;
+
+        /*drops++;*/
     }
 }
 

@@ -49,6 +49,8 @@ struct source_vidcap::source_reader_callback_t : public IMFSourceReaderCallback2
     }
     STDMETHODIMP OnStreamError(DWORD /*dwStreamIndex*/, HRESULT hr)
     {
+        streaming::check_for_errors();
+
         source_vidcap_t source = this->source.lock();
         if(!source)
             return S_OK;
@@ -60,12 +62,15 @@ struct source_vidcap::source_reader_callback_t : public IMFSourceReaderCallback2
     }
     STDMETHODIMP OnTransformChange()
     {
+        streaming::check_for_errors();
         return S_OK;
     }
 };
 
 void source_vidcap::source_reader_callback_t::on_error(const source_vidcap_t& source)
 {
+    streaming::check_for_errors();
+
     {
         scoped_lock lock(source->source_helper_mutex);
         source->source_helper.set_broken(true);
@@ -76,6 +81,10 @@ void source_vidcap::source_reader_callback_t::on_error(const source_vidcap_t& so
 HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD /*stream_index*/,
     DWORD flags, LONGLONG timestamp, IMFSample* sample)
 {
+    // TODO: these callbacks should be wrapped to try exception block
+
+    streaming::check_for_errors();
+
     source_vidcap_t source = this->source.lock();
     if(!source)
         return S_OK;

@@ -46,16 +46,13 @@ class stream_color_converter : public media_stream
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef async_callback<stream_color_converter> async_callback_t;
-    struct packet {request_packet rp; media_component_h264_encoder_args_t args;};
 private:
     transform_color_converter_t transform;
     CComPtr<ID3D11VideoProcessor> videoprocessor;
-    packet pending_packet;
 
     void initialize_buffer(const media_buffer_texture_t&);
     media_buffer_texture_t acquire_buffer();
-    void processing_cb(void*);
+    void process(media_component_h264_encoder_args_t& args, const request_packet&);
 public:
     explicit stream_color_converter(const transform_color_converter_t& transform);
 

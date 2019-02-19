@@ -1,4 +1,5 @@
 #include "control_pipeline2.h"
+#include "wtl.h"
 #include <iostream>
 #include <d3d11_4.h>
 #include <d2d1_2.h>
@@ -67,6 +68,11 @@ control_pipeline2::control_pipeline2() :
 
     std::cout << "adapter " << this->d3d11dev_adapter << std::endl;
 
+    // set the gpu thread priority
+    /*INT old_priority;
+    CHECK_HR(hr = this->dxgidev->GetGPUThreadPriority(&old_priority));
+    CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(3));*/
+
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
@@ -103,14 +109,7 @@ void control_pipeline2::activate(const control_set_t& last_set, control_set_t& n
     }
     catch(streaming::exception e)
     {
-        typedef std::lock_guard<std::mutex> scoped_lock;
-        scoped_lock lock(::async_callback_error_mutex);
-        ::async_callback_error = true;
-
-        std::cout << e.what();
-        system("pause");
-
-        abort();
+        streaming::print_error_and_abort(e.what());
     }
 }
 
@@ -158,7 +157,7 @@ void control_pipeline2::activate_components()
             h264_encoder_transform.reset(new transform_h264_encoder(
                 this->session, this->context_mutex));
             h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                this->d3d11dev, false);
+                this->d3d11dev, true);
         }
         catch(std::exception)
         {
@@ -240,15 +239,13 @@ void control_pipeline2::activate_components()
     if(this->recording && (!this->mp4_sink.first ||
         this->mp4_sink.first->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
-        sink_file_t file_sink(new sink_file(this->session));
-        if(!file_output)
-        {
-            file_output.reset(new output_file);
-            file_output->initialize(false, this->stopped_signal,
-                this->h264_encoder_transform->output_type,
-                this->aac_encoder_transform->output_type);
-        }
+        assert_(!file_output);
+        file_output.reset(new output_file);
+        file_output->initialize(false, this->recording_initiator_wnd,
+            this->h264_encoder_transform->output_type,
+            this->aac_encoder_transform->output_type);
 
+        sink_file_video_t file_sink(new sink_file_video(this->session));
         file_sink->initialize(file_output, true);
 
         this->mp4_sink.first = file_sink;
@@ -260,15 +257,10 @@ void control_pipeline2::activate_components()
     if(this->recording && (!this->mp4_sink.second ||
         this->mp4_sink.second->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
-        sink_file_t file_sink(new sink_file(this->audio_session));
         if(!file_output)
-        {
-            file_output.reset(new output_file);
-            file_output->initialize(false, this->stopped_signal,
-                this->h264_encoder_transform->output_type,
-                this->aac_encoder_transform->output_type);
-        }
+            throw HR_EXCEPTION(E_UNEXPECTED);
 
+        sink_file_audio_t file_sink(new sink_file_audio(this->audio_session));
         file_sink->initialize(file_output, false);
 
         this->mp4_sink.second = file_sink;
@@ -402,35 +394,20 @@ void control_pipeline2::build_and_switch_topology()
     }
     catch(streaming::exception e)
     {
-
-    typedef std::lock_guard<std::mutex> scoped_lock;
-    scoped_lock lock(::async_callback_error_mutex);
-    ::async_callback_error = true;
-
-    std::cout << e.what();
-    system("pause");
-
-    abort();
-
+    streaming::print_error_and_abort(e.what());
     }
 }
 
-HANDLE control_pipeline2::start_recording(const std::wstring& /*filename*/)
+void control_pipeline2::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)
 {
     assert_(!this->is_recording());
-    assert_(!this->stopped_signal);
     assert_(!this->is_disabled());
 
-    this->stopped_signal.Attach(CreateEvent(NULL, TRUE, FALSE, NULL));
-    if(!this->stopped_signal)
-        throw HR_EXCEPTION(E_UNEXPECTED);
-
+    this->recording_initiator_wnd = initiator;
     this->recording = true;
     control_class::activate();
 
     std::cout << "recording started" << std::endl;
-
-    return this->stopped_signal.Detach();
 }
 
 void control_pipeline2::stop_recording()

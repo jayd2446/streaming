@@ -3,35 +3,37 @@
 #include "media_component.h"
 #include "media_stream.h"
 #include "async_callback.h"
+#include "request_dispatcher.h"
+#include "request_queue_handler.h"
 #include "control_class.h"
 #include <d3d11.h>
 #include <atlbase.h>
 #include <mfapi.h>
 #include <memory>
 #include <mutex>
-#include <map>
-#include <unordered_map>
-#include <queue>
 #include <atomic>
 
 // h264 encoder
 class stream_h264_encoder;
 typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
 
-// the encoder transform must be recreated to change encoder parameter
-// the encoder currently acts as a sink;
-// the first packet must be 0
+// internal to h264 encoder
+struct h264_encoder_transform_packet {bool drain; media_component_h264_encoder_args_t args;};
 
-class transform_h264_encoder : public media_component
+class transform_h264_encoder : 
+    public media_component,
+    request_queue_handler<h264_encoder_transform_packet>
 {
     friend class stream_h264_encoder;
 public:
     typedef buffer_pool<media_sample_h264_frames_pooled> buffer_pool_h264_frames_t;
     typedef buffer_pool<media_buffer_memory_pooled> buffer_pool_memory_t;
-    struct packet {bool drain; media_component_h264_encoder_args_t args;};
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef h264_encoder_transform_packet packet;
+    typedef std::lock_guard<std::mutex> scoped_lock;
     typedef async_callback<transform_h264_encoder> async_callback_t;
-    typedef request_queue<packet> request_queue;
+    typedef request_dispatcher<::request_queue<media_component_h264_video_args_t>::request_t> 
+        request_dispatcher;
+    typedef request_queue_handler::request_queue request_queue;
     typedef request_queue::request_t request_t;
 
     static const UINT32 frame_width = 1920, frame_height = 1080;
@@ -50,13 +52,13 @@ private:
     CComPtr<IMFTransform> encoder;
     CComPtr<IMFMediaEventGenerator> event_generator;
     CComPtr<IMFDXGIDeviceManager> devmngr;
-    CComPtr<async_callback_t> events_callback, process_input_callback, process_output_callback;
+    CComPtr<async_callback_t> events_callback;
     UINT reset_token;
 
-    std::recursive_mutex process_mutex, process_output_mutex;
+    std::mutex process_output_mutex;
     std::atomic_int32_t encoder_requests;
 
-    request_queue requests;
+    std::shared_ptr<request_dispatcher> dispatcher;
     request_t last_request;
     std::atomic_bool draining;
     bool first_sample;
@@ -88,15 +90,19 @@ private:
     // returns whether the request can be served
     bool extract_frame(media_sample_video_frame&, const request_t&);
 
+    // request_queue_handler
+    bool on_serve(request_queue::request_t&);
+    request_queue::request_t* next_request();
+
     void events_cb(void*);
-    void processing_cb(void*);
     void process_output_cb(void*);
-    void process_input_cb(void*);
 public:
     CComPtr<IMFMediaType> output_type;
 
     explicit transform_h264_encoder(const media_session_t& session, context_mutex_t context_mutex);
     ~transform_h264_encoder();
+
+    bool is_encoder_overloading() const {return this->encoder_requests.load() == 0;}
 
     // passing null d3d device implies that the system memory is used to feed the encoder;
     // software encoder flag overrides d3d device arg
@@ -114,12 +120,14 @@ public:
 private:
     transform_h264_encoder_t transform;
 
-    time_unit drain_point;
+    std::atomic<time_unit> drain_point;
 
     void on_component_start(time_unit);
     void on_component_stop(time_unit);
 public:
     explicit stream_h264_encoder(const transform_h264_encoder_t& transform);
+
+    transform_h264_encoder_t get_transform() const {return this->transform;}
 
     // called by the downstream from media session
     result_t request_sample(const request_packet&, const media_stream*);

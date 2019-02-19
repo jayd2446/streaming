@@ -5,15 +5,10 @@
 #include <mfapi.h>
 #include <atlbase.h>
 #include <memory>
-#include <mutex>
-#include <atomic>
 #include <iostream>
 #include "assert.h"
 
 #pragma comment(lib, "Mfplat.lib")
-
-extern std::atomic_bool async_callback_error;
-extern std::mutex async_callback_error_mutex;
 
 // wrapper for the com async callback
 
@@ -43,12 +38,7 @@ private:
         if(parent)
         {
             // wait until the error is processed
-            if(::async_callback_error)
-            {
-                ::async_callback_error_mutex.lock();
-                ::async_callback_error_mutex.unlock();
-                /*scoped_lock(::async_callback_error_mutex);*/
-            }
+            streaming::check_for_errors();
 
             try
             {
@@ -56,14 +46,7 @@ private:
             }
             catch(streaming::exception e)
             {
-                scoped_lock lock(::async_callback_error_mutex);
-                ::async_callback_error = true;
-
-                std::cout << e.what();
-                system("pause");
-
-                /*::async_callback_error = false;*/
-                abort();
+                streaming::print_error_and_abort(e.what());
             }
         }
         else

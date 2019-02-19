@@ -168,13 +168,14 @@ media_buffer_texture_t stream_color_converter::acquire_buffer()
     return buffer;
 }
 
-void stream_color_converter::processing_cb(void*)
+void stream_color_converter::process(media_component_h264_encoder_args_t& this_args,
+    const request_packet& this_rp)
 {
     HRESULT hr = S_OK;
     media_component_h264_encoder_args_t args;
     media_sample_video_frames_t frames;
 
-    if(!this->pending_packet.args)
+    if(!this_args)
         goto done;
 
     {
@@ -183,10 +184,10 @@ void stream_color_converter::processing_cb(void*)
         frames = this->transform->buffer_pool_video_frames->acquire_buffer();
         frames->initialize();
 
-        frames->end = this->pending_packet.args->sample->end;
+        frames->end = this_args->sample->end;
     }
 
-    for(auto&& item : this->pending_packet.args->sample->frames)
+    for(auto&& item : this_args->sample->frames)
     {
         media_sample_video_frame frame(item.pos);
 
@@ -273,20 +274,15 @@ done:
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     }
 
-    args = this->pending_packet.args;
+    args = this_args;
     if(args)
         args->sample = frames;
 
     // set the args in pending packet to null so that the sample can be reused
-    this->pending_packet.args.reset();
-    request_packet rp = this->pending_packet.rp;
-    // TODO: std move should be used
-    // remove the rps so that there aren't any circular dependencies at shutdown
-    this->pending_packet.rp = request_packet();
+    this_args.reset();
 
     // give the sample to downstream
-    this->unlock();
-    this->transform->session->give_sample(this, args.has_value() ? &(*args) : NULL, rp);
+    this->transform->session->give_sample(this, args.has_value() ? &(*args) : NULL, this_rp);
 }
 
 media_stream::result_t stream_color_converter::request_sample(const request_packet& rp, const media_stream*)
@@ -299,16 +295,14 @@ media_stream::result_t stream_color_converter::request_sample(const request_pack
 media_stream::result_t stream_color_converter::process_sample(
     const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
-    this->lock();
-
-    this->pending_packet.rp = rp;
+    media_component_h264_encoder_args_t args;
     if(args_)
     {
-        this->pending_packet.args = std::make_optional(
+        args = std::make_optional(
             static_cast<const media_component_h264_encoder_args&>(*args_));
-        assert_(this->pending_packet.args->is_valid());
+        assert_(args->is_valid());
     }
 
-    this->processing_cb(NULL);
+    this->process(args, rp);
     return OK;
 }

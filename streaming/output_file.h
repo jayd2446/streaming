@@ -1,12 +1,15 @@
 #pragma once
 
 #include "media_sample.h"
+#include "wtl.h"
 #include <mfidl.h>
 #include <mfapi.h>
 #include <mfreadwrite.h>
 #include <atlbase.h>
 #include <memory>
 #include <mutex>
+
+#define RECORDING_STOPPED_MESSAGE (WM_APP + 1)
 
 class output_file
 {
@@ -16,7 +19,7 @@ private:
     volatile bool stopped;
     std::mutex stop_mutex;
 
-    HANDLE stopped_signal;
+    ATL::CWindow recording_initiator;
     CComPtr<IMFMediaType> video_type;
     CComPtr<IMFMediaType> audio_type;
     CComPtr<IMFMediaSink> mpeg_media_sink;
@@ -29,7 +32,7 @@ public:
 
     void initialize(
         bool null_file,
-        HANDLE stopped_signal,
+        ATL::CWindow recording_initiator,
         const CComPtr<IMFMediaType>& video_type,
         const CComPtr<IMFMediaType>& audio_type);
 

@@ -1,6 +1,9 @@
 #include "sink_audio.h"
 #include <iostream>
 
+#undef min
+#undef max
+
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 sink_audio::sink_audio(const media_session_t& session) : media_sink(session)

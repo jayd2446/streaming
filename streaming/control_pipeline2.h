@@ -16,6 +16,7 @@
 #include "output_file.h"
 #include "enable_shared_from_this.h"
 #include "control_scene2.h"
+#include "wtl.h"
 #include <atlbase.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -28,7 +29,7 @@
 #pragma comment(lib, "DXGI.lib")
 #pragma comment(lib, "D2d1.lib")
 
-typedef std::pair<sink_file_t, sink_file_t> sink_mp4_t;
+typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
 
 class control_pipeline2 : public control_class
 {
@@ -36,7 +37,7 @@ class control_pipeline2 : public control_class
 private:
     bool recording;
     HWND preview_hwnd;
-    CHandle stopped_signal;
+    ATL::CWindow recording_initiator_wnd;
     std::recursive_mutex pipeline_mutex;
 
     presentation_time_source_t time_source;
@@ -84,8 +85,8 @@ public:
     void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
     const sink_preview2_t& get_preview_window() const {return this->preview_sink;}
 
-    // returns an event handle that is signalled when the recording is ended
-    HANDLE start_recording(const std::wstring& filename);
+    // message is sent to the initiator window when the recording has been stopped
+    void start_recording(const std::wstring& filename, ATL::CWindow initiator);
     void stop_recording();
 
     // releases all circular dependencies

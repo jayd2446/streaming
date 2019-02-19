@@ -55,7 +55,13 @@ public:
         const media_stream* this_input_stream, 
         const request_packet&);
     // TODO: give sample must not fail
-    // args can be null
+    // args can be null;
+    // when give_sample has been called, the caller has processed the request and must not
+    // perform any further processing(unless the stream stays locked);
+    // failure to comply causes more requests to be active than the set limit, which will lead
+    // to uncontrolled memory allocations and effectively leaks;
+    // if give_sample is called while holding the stream lock, care must be taken to make sure
+    // that no other locks are being held
     bool give_sample(
         const media_stream* this_output_stream, 
         const media_component_args* args,
@@ -66,7 +72,11 @@ public:
     // begin_request_sample calls the sink_stream request_sample
     bool begin_request_sample(media_stream* sink_stream, const request_packet&);
     // begins the give_sample call chain;
-    // begin_give_sample calls the streams connected to sink_stream
+    // begin_give_sample calls the streams connected to sink_stream;
+    // NOTE: this isn't really part of the pipeline design, but instead just provided
+    // for convenience for sources
+    // TODO: restore old source behaviour where the requests are dispatched by the sources
+    // themselves
     void begin_give_sample(const media_stream* sink_stream, const media_topology_t&);
 };
 

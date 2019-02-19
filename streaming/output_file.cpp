@@ -8,7 +8,7 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-output_file::output_file() : stopped_signal(NULL), stopped(false)
+output_file::output_file() : stopped(false)
 {
 }
 
@@ -20,7 +20,7 @@ output_file::~output_file()
 
 void output_file::initialize(
     bool null_file,
-    HANDLE stopped_signal,
+    ATL::CWindow recording_initiator,
     const CComPtr<IMFMediaType>& video_type,
     const CComPtr<IMFMediaType>& audio_type)
 {
@@ -29,7 +29,7 @@ void output_file::initialize(
         HRESULT hr = S_OK;
         CComPtr<IMFAttributes> sink_writer_attributes;
 
-        this->stopped_signal = stopped_signal;
+        this->recording_initiator = recording_initiator;
         this->video_type = video_type;
         this->audio_type = audio_type;
 
@@ -46,6 +46,9 @@ void output_file::initialize(
         CHECK_HR(hr = MFCreateAttributes(&sink_writer_attributes, 1));
         CHECK_HR(hr = sink_writer_attributes->SetGUID(
             MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4));
+        // disable the throttling so that low fps doesn't cause the audio to throttle
+        CHECK_HR(hr = sink_writer_attributes->SetUINT32(
+            MF_SINK_WRITER_DISABLE_THROTTLING, TRUE));
 
         // create sink writer
         CHECK_HR(hr = MFCreateSinkWriterFromMediaSink(
@@ -91,7 +94,14 @@ done:
     this->writer.Release();
     this->mpeg_media_sink->Shutdown();
     /*Sleep(5000);*/
-    SetEvent(this->stopped_signal);
+    // sendnotifymessage returns immediately when the message pump is in another thread;
+    // the message is dispached in getmessage, and the getmessage doesn't yield control
+    // to the message pump;
+    // postmessage will cause the message pump to run
+    /*
+    A common programming error is to assume that the PostMessage function always posts a message.
+    */
+    this->recording_initiator.SendNotifyMessageW(RECORDING_STOPPED_MESSAGE);
 
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);

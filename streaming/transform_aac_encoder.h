@@ -2,6 +2,8 @@
 
 #include "media_component.h"
 #include "media_stream.h"
+#include "request_dispatcher.h"
+#include "request_queue_handler.h"
 #include <mfapi.h>
 #include <memory>
 #include <mutex>
@@ -9,26 +11,26 @@
 
 #pragma comment(lib, "Mfplat.lib")
 
-// the encoder probably could be separated to an utility class similar to resampler, but
-// there's no use for that
+// internal to aac encoder
+struct aac_encoder_transform_packet
+{
+    media_component_aac_encoder_args_t args;
+    media_sample_aac_frames_t out_sample;
+    bool drain;
+};
 
-// aac encoder only accepts 48khz and 2 channel audio
-
-class transform_aac_encoder : public media_component
+class transform_aac_encoder : 
+    public media_component,
+    request_queue_handler<aac_encoder_transform_packet>
 {
     friend class stream_aac_encoder;
 public:
     typedef buffer_pool<media_buffer_memory_pooled> buffer_pool_memory_t;
-
-    struct packet
-    {
-        media_component_aac_encoder_args_t args;
-        media_sample_aac_frames_t out_sample;
-        bool drain;
-    };
-
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef request_queue<packet> request_queue;
+    typedef aac_encoder_transform_packet packet;
+    typedef std::lock_guard<std::mutex> scoped_lock;
+    typedef request_dispatcher<::request_queue<media_component_aac_audio_args_t>::request_t>
+        request_dispatcher;
+    typedef request_queue_handler::request_queue request_queue;
     typedef request_queue::request_t request_t;
 
     // sample rate must be a predefined value;
@@ -51,9 +53,7 @@ private:
     MFT_INPUT_STREAM_INFO input_stream_info;
     MFT_OUTPUT_STREAM_INFO output_stream_info;
 
-    std::recursive_mutex encoder_mutex;
-    request_queue requests;
-
+    std::shared_ptr<request_dispatcher> dispatcher;
     std::vector<media_buffer_memory_t> memory_hosts;
     std::shared_ptr<buffer_pool_memory_t> buffer_pool_memory;
     media_sample_aac_frames_t encoded_audio;
@@ -68,8 +68,11 @@ private:
     // debug
     frame_unit last_time_stamp;
 
+    // request_queue_handler
+    bool on_serve(request_queue::request_t&);
+    request_queue::request_t* next_request();
+
     bool encode(const media_sample_audio_frames&, media_sample_aac_frames&, bool drain);
-    void processing_cb(void*);
     bool process_output(IMFSample*);
 public:
     CComPtr<IMFMediaType> output_type;

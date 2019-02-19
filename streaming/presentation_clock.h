@@ -199,7 +199,7 @@ bool presentation_clock_sink::schedule_callback(time_unit due_time)
             }
             if(FAILED(hr = this->callback->mf_put_waiting_work_item(
                 static_cast<T*>(this)->shared_from_this<T>(),
-                this->wait_timer, 10, asyncresult, &this->callback_key)))
+                this->wait_timer, 0, asyncresult, &this->callback_key)))
             {
                 if(hr == MF_E_SHUTDOWN)
                     return true;

@@ -3,6 +3,8 @@
 #include <exception>
 #include <string>
 #include <cassert>
+#include <mutex>
+#include <atomic>
 #include <Windows.h>
 
 #ifdef _DEBUG
@@ -15,6 +17,9 @@ void maybe_assert(bool);
 
 namespace streaming {
 
+extern std::atomic_bool async_callback_error;
+extern std::mutex async_callback_error_mutex;
+
 class exception : public std::exception
 {
 private:
@@ -25,6 +30,8 @@ public:
 };
 
 void report_error(std::ostream& stream, HRESULT, int line_number, const char* filename);
+void check_for_errors();
+void print_error_and_abort(const char*);
 
 }
 

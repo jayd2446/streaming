@@ -13,12 +13,15 @@
 #include <stdint.h>
 #include <d3d11.h>
 #include <d2d1_1.h>
+#include <dxgi1_2.h>
 #include <atlbase.h>
 #include <mfidl.h>
 #include <mfapi.h>
 #include "assert.h"
 #include "enable_shared_from_this.h"
 #include "buffer_pool.h"
+
+#pragma comment(lib, "Dxgi.lib")
 
 /*
 
@@ -43,6 +46,8 @@ typedef int64_t frame_unit;
 frame_unit convert_to_frame_unit(time_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 time_unit convert_to_time_unit(frame_unit, frame_unit frame_rate_num, frame_unit frame_rate_den);
 
+// it should be ensured that the buffer isn't released before enddraw has been called on the
+// device context
 class media_buffer_texture : public buffer_poolable
 {
     friend class buffer_pooled<media_buffer_texture>;
@@ -195,6 +200,7 @@ public:
     frame_unit end;
     // element must have valid data
     // TODO: use vector
+    // TODO: make this and the end private
     std::deque<sample_t> frames;
 
     media_sample_video_frames_template() : end(0) {}
@@ -252,6 +258,7 @@ public:
     time_unit ts, dur;
     CComPtr<IMFMediaBuffer> buffer;
     media_buffer_memory_t memory_host;
+    CComPtr<IMFSample> sample;
 };
 
 class media_sample_aac_frames : public buffer_poolable

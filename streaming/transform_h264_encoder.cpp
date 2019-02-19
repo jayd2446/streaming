@@ -33,7 +33,7 @@ public:
         const CComPtr<IMF2DBuffer>& buffer2d) :
         buffer(buffer)
     {
-        transform_h264_encoder::scoped_lock lock(*context_mutex);
+        std::lock_guard<std::recursive_mutex> lock(*context_mutex);
 
         this->buffer->texture->GetDesc(&this->desc);
         assert_(this->desc.Format == DXGI_FORMAT_NV12);
@@ -172,13 +172,10 @@ transform_h264_encoder::transform_h264_encoder(const media_session_t& session,
     first_sample(true),
     time_shift(-1),
     buffer_pool_h264_frames(new buffer_pool_h264_frames_t),
-    buffer_pool_memory(new buffer_pool_memory_t)
+    buffer_pool_memory(new buffer_pool_memory_t),
+    dispatcher(new request_dispatcher)
 {
     this->events_callback.Attach(new async_callback_t(&transform_h264_encoder::events_cb));
-    this->process_output_callback.Attach(
-        new async_callback_t(&transform_h264_encoder::process_output_cb));
-    this->process_input_callback.Attach(
-        new async_callback_t(&transform_h264_encoder::process_input_cb));
 }
 
 transform_h264_encoder::~transform_h264_encoder()
@@ -360,21 +357,11 @@ void transform_h264_encoder::events_cb(void* unk)
     if(type == METransformNeedInput)
     {
         this->encoder_requests++;
-        const HRESULT hr = this->process_input_callback->mf_put_work_item(
-            this->shared_from_this<transform_h264_encoder>());
-        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw HR_EXCEPTION(hr);
-        else if(hr == MF_E_SHUTDOWN)
-            return;
+        this->serve();
     }
     else if(type == METransformHaveOutput)
     {
-        const HRESULT hr = this->process_output_callback->mf_put_work_item(
-            this->shared_from_this<transform_h264_encoder>());
-        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-            throw HR_EXCEPTION(hr);
-        else if(hr == MF_E_SHUTDOWN)
-            return;
+        this->process_output_cb(NULL);
     }
     else if(type == METransformDrainComplete)
     {
@@ -391,7 +378,7 @@ void transform_h264_encoder::events_cb(void* unk)
     else if(type == MEError)
     {
         // status has the error code
-        throw HR_EXCEPTION(hr);
+        throw HR_EXCEPTION(status);
     }
     else
         assert_(false);
@@ -420,114 +407,103 @@ bool transform_h264_encoder::extract_frame(media_sample_video_frame& frame, cons
     return request.sample.args->sample->frames.empty();
 }
 
-void transform_h264_encoder::processing_cb(void*)
+bool transform_h264_encoder::on_serve(request_queue::request_t& request)
 {
     // TODO: software encoder drain
-    // encoder needs to be locked so that the samples are submitted in right order
-    std::unique_lock<std::recursive_mutex> lock(this->process_mutex);
-
-    HRESULT hr = S_OK;
-
-    // this same problem is present in aac encoder aswell
 
     // output is only attached to requests that contain valid input data;
     // this really doesn't pose a problem, because the encoder itself outputs frames
     // only when it has been given enough input frames
 
-    request_t* request;
-    while((this->encoder_requests || this->software) && (request = this->requests.get()))
+    HRESULT hr = S_OK;
+
+    const bool non_null_request = request.sample.drain ||
+        (request.sample.args && request.sample.args->has_frames);
+    media_sample_video_frame video_frame;
+    const bool pop_request = this->extract_frame(video_frame, request);
+
+    // there must be a valid texture if the buffer is present
+    assert_(!video_frame.buffer || video_frame.buffer->texture);
+
+    // feed the encoder
+    if(video_frame.buffer)
     {
-        const bool non_null_request = request->sample.drain ||
-            (request->sample.args && request->sample.args->has_frames);
-        media_sample_video_frame video_frame;
-        const bool serve_request = this->extract_frame(video_frame, *request);
-
-        // there must be a valid texture if the buffer is present
-        assert_(!video_frame.buffer || video_frame.buffer->texture);
-
-        // feed the encoder
-        if(video_frame.buffer)
+        const time_unit timestamp = convert_to_time_unit(video_frame.pos,
+            transform_h264_encoder::frame_rate_num,
+            transform_h264_encoder::frame_rate_den);
+        if(timestamp <= this->last_time_stamp && timestamp >= 0)
         {
-            const time_unit timestamp = convert_to_time_unit(
-                video_frame.pos,
-                transform_h264_encoder::frame_rate_num,
-                transform_h264_encoder::frame_rate_den);
-            if(timestamp <= this->last_time_stamp && timestamp >= 0)
-            {
-                std::cout << "timestamp error in transform_h264_encoder::processing_cb" << std::endl;
-                assert_(false);
-            }
+            std::cout << "timestamp error in transform_h264_encoder::processing_cb" << std::endl;
+            assert_(false);
+        }
 
-        back:
-            hr = this->feed_encoder(video_frame);
+    back:
+        hr = this->feed_encoder(video_frame);
 
-            if(timestamp >= 0)
-                this->last_time_stamp = timestamp;
+        if(timestamp >= 0)
+            this->last_time_stamp = timestamp;
 
-            if(!this->software)
-                this->encoder_requests--;
-            else if(hr == MF_E_NOTACCEPTING)
-            {
+        if(!this->software)
+            this->encoder_requests--;
+        else if(hr == MF_E_NOTACCEPTING)
+        {
+            this->process_output_cb(NULL);
+            goto back;
+        }
+        else if(SUCCEEDED(hr))
+        {
+            DWORD status;
+            CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
+            if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
                 this->process_output_cb(NULL);
-                goto back;
-            }
-            else if(SUCCEEDED(hr))
-            {
-                DWORD status;
-                CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
-                if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
-                    this->process_output_cb(NULL);
-            }
-            CHECK_HR(hr);
-            assert_(this->encoder_requests >= 0);
         }
+        CHECK_HR(hr);
+        assert_(this->encoder_requests >= 0);
+    }
 
-        if(serve_request)
+    // null requests were passed already
+    if(pop_request && non_null_request)
+    {
+        // event callback will dispatch the last request
+        if(!request.sample.drain || this->software)
         {
-            request_t request;
-            this->requests.pop(request);
-
-            // h264 stream has already served all null requests
-            if(non_null_request)
+            media_sample_h264_frames_t out_sample;
             {
-                // event callback will dispatch the last request
-                if(!request.sample.drain || this->software)
-                {
-                    media_sample_h264_frames_t out_sample;
-                    {
-                        scoped_lock lock(this->process_output_mutex);
-                        out_sample = std::move(this->out_sample);
-                    }
-
-                    lock.unlock();
-                    this->process_request(out_sample, request);
-                    lock.lock();
-                }
-                else
-                {
-                    std::cout << "drain on h264 encoder" << std::endl;
-                    this->last_request = request;
-                    this->draining = true;
-                    CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
-                }
+                scoped_lock lock(this->process_output_mutex);
+                out_sample = std::move(this->out_sample);
             }
-        }
-}
 
+            this->process_request(out_sample, request);
+        }
+        else
+        {
+            std::cout << "drain on h264 encoder" << std::endl;
+            this->last_request = request;
+            this->draining = true;
+            CHECK_HR(hr = this->encoder->ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0));
+        }
+    }
 
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
+
+    return pop_request;
+}
+
+transform_h264_encoder::request_queue::request_t* transform_h264_encoder::next_request()
+{
+    request_queue::request_t* request = this->requests.get();
+    if(request && (this->encoder_requests || this->software))
+        return request;
+    else
+        return NULL;
 }
 
 void transform_h264_encoder::process_request(
     const media_sample_h264_frames_t& sample, request_t& request)
 {
-    HRESULT hr = S_OK;
     media_component_h264_video_args_t args;
-    request_packet rp = request.rp;
-    const media_stream* stream = request.stream;
-    LONGLONG duration = -1;
 
     assert_(!sample || !sample->frames.empty());
 
@@ -538,17 +514,24 @@ void transform_h264_encoder::process_request(
         args->software = this->software;
     }
 
-    this->last_packet = rp.packet_number;
+    this->last_packet = request.rp.packet_number;
 
     // reset the sample so that the contained buffer can be reused
     // (optional)
     request.sample.args.reset();
 
-    this->session->give_sample(stream, args.has_value() ? &(*args) : NULL, rp);
+    request_dispatcher::request_t dispatcher_request;
+    dispatcher_request.stream = request.stream;
+    dispatcher_request.rp = request.rp;
+    dispatcher_request.sample = args;
 
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
+    this->dispatcher->dispatch_request(std::move(dispatcher_request),
+        [this_ = this->shared_from_this<transform_h264_encoder>()](
+            request_dispatcher::request_t& request)
+    {
+        this_->session->give_sample(request.stream,
+            request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
+    });
 }
 
 bool transform_h264_encoder::process_output(CComPtr<IMFSample>& sample)
@@ -613,7 +596,7 @@ done:
 
 void transform_h264_encoder::process_output_cb(void*)
 {
-    std::unique_lock<std::recursive_mutex> lock(this->process_output_mutex);
+    std::unique_lock<std::mutex> lock(this->process_output_mutex);
 
     HRESULT hr = S_OK;
     CComPtr<IMFSample> sample;
@@ -655,11 +638,6 @@ done:
         // TODO: psample is leaked on audio pipeline
         throw HR_EXCEPTION(hr);
     }
-}
-
-void transform_h264_encoder::process_input_cb(void*)
-{
-    this->processing_cb(NULL);
 }
 
 void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
@@ -822,10 +800,7 @@ void stream_h264_encoder::on_component_start(time_unit t)
 
 void stream_h264_encoder::on_component_stop(time_unit t)
 {
-    // TODO: these locks should be reconsidered here
-    this->lock();
     this->drain_point = t;
-    this->unlock();
 }
 
 media_stream::result_t stream_h264_encoder::request_sample(const request_packet& rp, const media_stream*)
@@ -840,40 +815,30 @@ media_stream::result_t stream_h264_encoder::request_sample(const request_packet&
 media_stream::result_t stream_h264_encoder::process_sample(
     const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
-    // TODO: lock probably not needed here
-
-    this->lock();
-
     transform_h264_encoder::request_t request;
     request.stream = this;
-    request.sample.drain = (rp.request_time == this->drain_point);
+    request.sample.drain = (rp.request_time == this->drain_point.load());
     if(args_)
     {
-        request.sample.args = 
-        std::make_optional(static_cast<const media_component_h264_encoder_args&>(*args_));
+        request.sample.args =
+            std::make_optional(static_cast<const media_component_h264_encoder_args&>(*args_));
         assert_(request.sample.args->is_valid());
     }
     request.rp = rp;
-
     this->transform->requests.push(request);
 
     // pass null requests downstream
     if(!request.sample.drain && (!request.sample.args || !request.sample.args->has_frames))
-    {
-        this->unlock();
         this->transform->session->give_sample(this, NULL, request.rp);
-        this->lock();
-    }
 
     /*std::cout << rp.packet_number << std::endl;*/
-
     // reinitialization seems to work only if the same encoder is reused
     /*static int count = 0;
     if(count == 100)
         this->transform->request_reinitialization(this->transform->ctrl_pipeline);
     count++;*/
 
-    this->unlock();
-    this->transform->processing_cb(NULL);
+    this->transform->serve();
+
     return OK;
 }

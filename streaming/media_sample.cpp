@@ -8,6 +8,7 @@
 #include <atomic>
 #include <limits>
 #include <algorithm>
+#include <iostream>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
@@ -71,6 +72,8 @@ void media_buffer_memory::initialize(DWORD len)
 {
     static constexpr DWORD alignment = 16;
 
+    this->buffer_poolable::initialize();
+
     HRESULT hr = S_OK;
     // allocate a new buffer
     if(!this->buffer)
@@ -94,8 +97,6 @@ void media_buffer_memory::initialize(DWORD len)
             CHECK_HR(hr = this->buffer->SetCurrentLength(0));
     }
 
-    this->buffer_poolable::initialize();
-
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
@@ -112,11 +113,15 @@ void media_buffer_texture::uninitialize()
     this->buffer_poolable::uninitialize();
 
     HRESULT hr = S_OK;
-    CComPtr<IDXGIResource> resource;
     if(this->texture && this->managed_by_this)
     {
+        CComPtr<IDXGIResource> resource;
+        CComPtr<IDXGIDevice2> device;
+
+        // discard the resource
         CHECK_HR(hr = this->texture->QueryInterface(&resource));
-        CHECK_HR(hr = resource->SetEvictionPriority(DXGI_RESOURCE_PRIORITY_MINIMUM));
+        CHECK_HR(hr = resource->GetDevice(__uuidof(IDXGIDevice2), (void**)&device));
+        CHECK_HR(hr = device->OfferResources(1, &resource.p, DXGI_OFFER_RESOURCE_PRIORITY_LOW));
     }
     else
         this->texture = NULL;
@@ -141,27 +146,31 @@ void media_buffer_texture::initialize(const CComPtr<ID3D11Device>& dev,
     if(this->texture)
     {
         CComPtr<IDXGIResource> resource;
-        // TODO: if the settings do not match, a new texture should be created
-        // and the mismatch should be printed
+        CComPtr<IDXGIDevice2> device;
 
-        // restore the default eviction priority
+        // reclaim the resource;
+        // the texture cannot be used before it is reclaimed again
+        BOOL was_discarded;
         CHECK_HR(hr = this->texture->QueryInterface(&resource));
-        CHECK_HR(hr = resource->SetEvictionPriority(DXGI_RESOURCE_PRIORITY_NORMAL));
+        CHECK_HR(hr = resource->GetDevice(__uuidof(IDXGIDevice2), (void**)&device));
+        CHECK_HR(hr = device->ReclaimResources(1, &resource.p, &was_discarded));
 
-#ifdef _DEBUG
         CComPtr<ID3D11Device> old_dev;
         D3D11_TEXTURE2D_DESC old_desc;
 
         this->texture->GetDesc(&old_desc);
         this->texture->GetDevice(&old_dev);
 
-        assert_(old_dev.IsEqualObject(dev));
-        assert_(desc.Width == old_desc.Width);
-        assert_(desc.Height == old_desc.Height);
-        assert_(desc.Format == old_desc.Format);
-        assert_(desc.Usage == old_desc.Usage);
-        assert_(desc.BindFlags == old_desc.BindFlags);
-#endif
+        // create a new texture if the settings do not match
+        if(!(old_dev.IsEqualObject(dev) && (desc.Width == old_desc.Width) &&
+            (desc.Height == old_desc.Height) &&
+            (desc.Format == old_desc.Format) &&
+            (desc.Usage == old_desc.Usage) &&
+            (desc.BindFlags == old_desc.BindFlags)))
+        {
+            std::cout << "texture desc mismatch, reinitializing" << std::endl;
+            this->initialize(dev, desc, subrsrc, true);
+        }
     }
     else
         CHECK_HR(hr = dev->CreateTexture2D(&desc, subrsrc, &this->texture))

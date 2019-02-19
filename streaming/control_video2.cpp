@@ -5,6 +5,9 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 
+#undef min
+#undef max
+
 // clamp boundary is in client coordinates
 #define CLAMP_BOUNDARY 8
 

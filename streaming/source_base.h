@@ -4,6 +4,7 @@
 #include "media_sample.h"
 #include "async_callback.h"
 #include "request_packet.h"
+#include "request_dispatcher.h"
 #include <atlbase.h>
 #include <limits>
 #include <iostream>
@@ -20,23 +21,27 @@ template<class Sample>
 class source_base : public media_component
 {
     friend class stream_source_base<source_base<Sample>>;
-    struct state_object;
 public:
     typedef async_callback<source_base> async_callback_t;
     typedef stream_source_base<source_base> stream_source_base;
     typedef std::shared_ptr<stream_source_base> stream_source_base_t;
     struct sample_t : Sample {bool drain;};
     typedef request_queue<sample_t> request_queue;
+    // TODO: this should not be a typedef
     typedef typename request_queue::request_t request_t;
+    typedef request_dispatcher<request_t> request_dispatcher;
 private:
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
     request_queue requests;
+    std::shared_ptr<request_dispatcher> dispatcher;
 
     CHandle serve_callback_event;
-    CComPtr<async_callback_t> serve_callback, dispatch_callback;
+    CComPtr<async_callback_t> serve_callback;
     CComPtr<IMFAsyncResult> serve_callback_result;
     MFWORKITEM_KEY serve_callback_key;
     bool serve_in_wait_queue;
+
+    void serve_cb(void*);
 protected:
     // derived class must call this
     void initialize(frame_unit frame_rate_num, frame_unit frame_rate_den);
@@ -52,18 +57,9 @@ protected:
     // the sample collection in the request must not be empty;
     // singlethreaded
     virtual void make_request(request_t&, frame_unit frame_end) = 0;
-    // adds padding frames to fill gaps in the stream
-    /*virtual void add_padding_frames(request_t&) = 0;*/
-    /*virtual void constrain_frames(request_t) = 0;*/
     // the request_t might contain null args;
     // multithreaded
     virtual void dispatch(request_t&) = 0;
-
-    // constrain frames and add padding frames are part of the capturing mechanism,
-    // and cannot really be generalized, unless source base implements part of capturing
-
-    void serve_cb(void*);
-    void dispatch_cb(void*);
 public:
     explicit source_base(const media_session_t& session);
     virtual ~source_base();
@@ -100,34 +96,11 @@ public:
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 template<typename T>
-struct source_base<T>::state_object : IUnknown, IUnknownImpl
-{
-    request_t request;
-
-    ULONG STDMETHODCALLTYPE AddRef() {return IUnknownImpl::AddRef();}
-    ULONG STDMETHODCALLTYPE Release() {return IUnknownImpl::Release();}
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
-    {
-        if(!ppv)
-            return E_POINTER;
-        if(riid == __uuidof(IUnknown))
-            *ppv = static_cast<IUnknown*>(this);
-        else
-        {
-            *ppv = NULL;
-            return E_NOINTERFACE;
-        }
-
-        this->AddRef();
-        return S_OK;
-    }
-};
-
-template<typename T>
 source_base<T>::source_base(const media_session_t& session) : 
     media_component(session),
     serve_in_wait_queue(false),
-    serve_callback_event(CreateEvent(NULL, TRUE, FALSE, NULL))
+    serve_callback_event(CreateEvent(NULL, TRUE, FALSE, NULL)),
+    dispatcher(new request_dispatcher)
 {
     HRESULT hr = S_OK;
 
@@ -135,7 +108,6 @@ source_base<T>::source_base(const media_session_t& session) :
         CHECK_HR(hr = E_UNEXPECTED);
 
     this->serve_callback.Attach(new async_callback_t(&source_base::serve_cb));
-    this->dispatch_callback.Attach(new async_callback_t(&source_base::dispatch_cb));
     CHECK_HR(hr = MFCreateAsyncResult(NULL, &this->serve_callback->native,
         NULL, &this->serve_callback_result));
 
@@ -198,20 +170,20 @@ void source_base<T>::serve_cb(void*)
 
         readonly_request = NULL;
 
-        CComPtr<state_object> params;
-        params.Attach(new state_object);
-        this->requests.pop(params->request);
+        request_t request;
+        this->requests.pop(request);
         if(valid_end || drain)
         {
             // there must be a valid end on drain
             assert_(!drain || (drain && valid_end));
             const frame_unit end = drain ? frame_end : std::min(frame_end, samples_end);
-            this->make_request(params->request, end);
+            this->make_request(request, end);
         }
 
         // dispatch to work queue with the request param
-        CHECK_HR(hr = this->dispatch_callback->mf_put_work_item(
-            this->shared_from_this<source_base>(), params.p));
+        this->dispatcher->dispatch_request(std::move(request), 
+            std::bind(&source_base::dispatch, this->shared_from_this<source_base>(), 
+                std::placeholders::_1));
     }
 
     ResetEvent(this->serve_callback_event);
@@ -222,23 +194,6 @@ void source_base<T>::serve_cb(void*)
 
 done:
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        throw HR_EXCEPTION(hr);
-}
-
-template<typename T>
-void source_base<T>::dispatch_cb(void* res_)
-{
-    assert_(res_);
-    IMFAsyncResult* res = static_cast<IMFAsyncResult*>(res_);
-    CComPtr<state_object> params;
-
-    HRESULT hr = S_OK;
-    CHECK_HR(hr = res->GetState((IUnknown**)&params));
-
-    this->dispatch(params->request);
-
-done:
-    if(FAILED(hr))
         throw HR_EXCEPTION(hr);
 }
 

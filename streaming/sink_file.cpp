@@ -1,37 +1,27 @@
 #include "sink_file.h"
 #include <iostream>
 
+#undef min
+#undef max
+
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 sink_file::sink_file(const media_session_t& session) :
     media_sink(session),
-    /*work_queue_id(0),*/
     video(false),
     requests(0),
     last_timestamp(std::numeric_limits<LONGLONG>::min())
 {
-    /*this->write_callback.Attach(new async_callback_t(&sink_file::write_cb));*/
 }
 
 sink_file::~sink_file()
 {
-    /*HRESULT hr = MFUnlockWorkQueue(this->work_queue_id);
-    hr;*/
 }
 
 void sink_file::initialize(const output_file_t& file_output, bool video)
 {
     this->file_output = file_output;
     this->video = video;
-
-    /*HRESULT hr = S_OK;
-    CHECK_HR(hr = MFAllocateSerialWorkQueue(
-        MFASYNC_CALLBACK_QUEUE_MULTITHREADED, &this->work_queue_id));
-    this->write_callback->native.work_queue = this->work_queue_id;
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);*/
 }
 
 media_stream_t sink_file::create_stream(presentation_clock_t&& clock)
@@ -44,8 +34,10 @@ media_stream_t sink_file::create_stream(presentation_clock_t&& clock)
 
 void sink_file::process()
 {
-    std::unique_lock<std::mutex> lock(this->process_mutex);
+    scoped_lock lock(this->process_mutex);
     HRESULT hr = S_OK;
+
+    // TODO: dispatch to work queue here instead of just calling the give_sample
 
     if(this->video)
     {
@@ -56,7 +48,6 @@ void sink_file::process()
             {
                 for(auto&& frame : request.sample->sample->frames)
                 {
-                    CComPtr<IMFSample> sample;
                     const LONGLONG timestamp = (LONGLONG)frame.ts;
                     const LONGLONG dur = (LONGLONG)frame.dur;
                     // (software encoder returns frames slightly in wrong order,
@@ -71,10 +62,8 @@ void sink_file::process()
                     this->file_output->write_sample(true, frame.sample);
                 }
 
-                lock.unlock();
                 this->session->give_sample(request.stream,
                     request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
-                lock.lock();
             }
         }
     }
@@ -87,7 +76,6 @@ void sink_file::process()
             {
                 for(auto&& frame : request.sample->sample->frames)
                 {
-                    CComPtr<IMFSample> sample;
                     const LONGLONG timestamp = (LONGLONG)frame.ts;
                     const LONGLONG dur = (LONGLONG)frame.dur;
                     if(timestamp <= this->last_timestamp)
@@ -97,19 +85,12 @@ void sink_file::process()
                     }
                     this->last_timestamp = timestamp;
 
-                    CHECK_HR(hr = MFCreateSample(&sample));
-                    CHECK_HR(hr = sample->SetSampleTime(timestamp));
-                    CHECK_HR(hr = sample->SetSampleDuration(dur));
-                    CHECK_HR(hr = sample->AddBuffer(frame.buffer));
-
                     //sink writer buffers samples
-                    this->file_output->write_sample(false, sample);
+                    this->file_output->write_sample(false, frame.sample);
                 }
 
-                lock.unlock();
                 this->session->give_sample(request.stream,
                     request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
-                lock.lock();
             }
         }
     }
@@ -170,11 +151,7 @@ media_stream::result_t stream_file::process_sample(
 
         // pass null requests downstream
         if(!args_)
-        {
-            this->unlock();
             this->sink->session->give_sample(this, NULL, request.rp);
-            this->lock();
-        }
     }
     else
     {
@@ -195,15 +172,11 @@ media_stream::result_t stream_file::process_sample(
 
         // pass null requests downstream
         if(!args_)
-        {
-            this->unlock();
             this->sink->session->give_sample(this, NULL, request.rp);
-            this->lock();
-        }
     }
 
-    this->unlock();
     this->sink->process();
+    this->unlock();
 
     return OK;
 }

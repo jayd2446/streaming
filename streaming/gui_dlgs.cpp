@@ -374,8 +374,7 @@ LRESULT gui_sourcedlg::OnSetFocus(int /*idCtrl*/, LPNMHDR /*pNMHDR*/, BOOL& /*bH
 
 
 gui_controldlg::gui_controldlg(const control_pipeline2_t& ctrl_pipeline) :
-    ctrl_pipeline(ctrl_pipeline),
-    stop_recording(false)
+    ctrl_pipeline(ctrl_pipeline)
 {
 }
 
@@ -401,79 +400,41 @@ LRESULT gui_controldlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*
 
 LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    if(this->stop_recording)
+    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    if(!this->ctrl_pipeline->root_scene.get_active_scene())
+    {
+        this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
         return 0;
-
-    {
-        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-
-        if(!this->ctrl_pipeline->root_scene.get_active_scene())
-        {
-            this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
-            return 0;
-        }
-
-        if(!this->ctrl_pipeline->is_recording())
-        {
-            this->stop_recording_event.Close();
-            this->stop_recording_event.Attach(this->ctrl_pipeline->start_recording(L"test.mp4"));
-            this->btn_start_recording.SetWindowTextW(L"Stop Recording");
-        }
-        else
-        {
-            this->ctrl_pipeline->stop_recording();
-            this->stop_recording = true;
-
-            /*DWORD ret;
-            do
-            {
-                ret = MsgWaitForMultipleObjectsEx(1, &this->stop_recording_event.m_h, INFINITE,
-                    QS_ALLINPUT, 0);
-                if(ret == (WAIT_OBJECT_0 + 1))
-                {
-                    MSG msg;
-                    if(PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-                    {
-                        TranslateMessage(&msg);
-                        DispatchMessage(&msg);
-                    }
-                }
-            }
-            while(ret != WAIT_OBJECT_0);*/
-
-            /*this->btn_start_recording.EnableWindow(FALSE);
-            this->btn_start_recording.SetWindowTextW(L"Stopping...");*/
-        }
     }
 
-    //// all locks should be unlocked before calling a blocking function
-    if(this->stop_recording)
+    if(!this->ctrl_pipeline->is_recording())
     {
-        WaitForSingleObject(this->stop_recording_event, INFINITE);
-        this->btn_start_recording.SetWindowTextW(L"Start Recording");
-        this->stop_recording = false;
+        this->ctrl_pipeline->start_recording(L"test.mp4", *this);
+        this->btn_start_recording.SetWindowTextW(L"Stop Recording");
     }
+    else
+    {
+        this->ctrl_pipeline->stop_recording();
+
+        this->btn_start_recording.EnableWindow(FALSE);
+        this->btn_start_recording.SetWindowTextW(L"Stopping...");
+    }
+
+    return 0;
+}
+
+LRESULT gui_controldlg::OnRecordingStopped(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled)
+{
+    bHandled = TRUE;
+
+    this->btn_start_recording.SetWindowTextW(L"Start Recording");
+    this->btn_start_recording.EnableWindow(TRUE);
 
     return 0;
 }
 
 BOOL gui_controldlg::OnIdle()
 {
-    /*if(!this->stop_recording)
-        return FALSE;
-
-    const DWORD ret = MsgWaitForMultipleObjectsEx(1, &this->stop_recording_event.m_h, INFINITE,
-        QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-
-    if(ret == WAIT_OBJECT_0)
-    {
-        this->stop_recording = false;
-        this->btn_start_recording.SetWindowTextW(L"Start Recording");
-        this->btn_start_recording.EnableWindow();
-    }
-
-    if(ret == WAIT_FAILED)
-        throw HR_EXCEPTION(E_UNEXPECTED);*/
-
     return FALSE;
 }

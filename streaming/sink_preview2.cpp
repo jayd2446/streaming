@@ -141,24 +141,13 @@ void sink_preview2::draw_sample(const media_component_args* args_)
     if(!this->render)
         return;
 
+    // NOTE: this portion is multithreaded
+
     // videomixer outputs h264 encoder args;
     // sink preview just previews the last frame that is send to encoder;
     // it is assumed that there is at least one frame if the args isn't empty
     const media_component_h264_encoder_args* args = 
         static_cast<const media_component_h264_encoder_args*>(args_);
-
-    if(args)
-    {
-        // find the first available bitmap
-        for(auto&& item : args->sample->frames)
-        {
-            if(item.buffer && item.buffer->bitmap)
-            {
-                this->last_buffer = item.buffer;
-                break;
-            }
-        }
-    }
 
     HRESULT hr = S_OK;
     bool has_video_control = false;
@@ -186,6 +175,19 @@ void sink_preview2::draw_sample(const media_component_args* args_)
 out:
     using namespace D2D1;
     scoped_lock lock(this->d2d1_context_mutex);
+
+    if(args)
+    {
+        // find the first available bitmap
+        for(auto&& item : args->sample->frames)
+        {
+            if(item.buffer && item.buffer->bitmap)
+            {
+                this->last_buffer = item.buffer;
+                break;
+            }
+        }
+    }
 
     D2D1_RECT_F preview_rect = this->get_preview_rect();
     bool invert;

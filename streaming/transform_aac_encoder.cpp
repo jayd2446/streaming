@@ -11,7 +11,8 @@ transform_aac_encoder::transform_aac_encoder(const media_session_t& session) :
     last_time_stamp(std::numeric_limits<frame_unit>::min()),
     time_shift(-1),
     buffer_pool_memory(new buffer_pool_memory_t),
-    encoded_audio(new media_sample_aac_frames)
+    encoded_audio(new media_sample_aac_frames),
+    dispatcher(new request_dispatcher)
 {
 }
 
@@ -93,6 +94,7 @@ bool transform_aac_encoder::encode(const media_sample_audio_frames& in_frames,
         frame.ts = (time_unit)ts;
         frame.dur = (time_unit)dur;
         frame.buffer = mf_buffer;
+        frame.sample = out_sample;
 
         out_frames.frames.push_back(std::move(frame));
 
@@ -171,42 +173,43 @@ done:
     return !out_frames.frames.empty();
 }
 
-void transform_aac_encoder::processing_cb(void*)
+bool transform_aac_encoder::on_serve(request_queue::request_t& request)
 {
-    HRESULT hr = S_OK;
+    const bool non_null_request = request.sample.drain ||
+        (request.sample.args && request.sample.args->has_frames);
+    media_component_aac_encoder_args_t& args = request.sample.args;
+    media_component_aac_audio_args_t out_args;
 
-    // this is similar to the serve_cb in source_wasapi
-
-    std::unique_lock<std::recursive_mutex> lock(this->encoder_mutex);
-    request_t request;
-
-    while(this->requests.pop(request))
+    // null requests were passed already
+    if(non_null_request)
     {
-        const bool non_null_request = request.sample.drain ||
-            (request.sample.args && request.sample.args->has_frames);
-        media_component_aac_encoder_args_t& args = request.sample.args;
-        media_component_aac_audio_args_t out_args;
-
-        // null requests were passed already
-        if(non_null_request)
+        assert_(args->is_valid());
+        if(this->encode(*args->sample, *request.sample.out_sample, request.sample.drain))
         {
-            assert_(args->is_valid());
-            if(this->encode(*args->sample, *request.sample.out_sample, request.sample.drain))
-            {
-                out_args = std::make_optional<media_component_aac_audio_args>();
-                out_args->sample = std::move(request.sample.out_sample);
-            }
-
-            lock.unlock();
-            this->session->give_sample(
-                request.stream, out_args.has_value() ? &(*out_args) : NULL, request.rp);
-            lock.lock();
+            out_args = std::make_optional<media_component_aac_audio_args>();
+            out_args->sample = std::move(request.sample.out_sample);
         }
+
+        request_dispatcher::request_t dispatcher_request;
+        dispatcher_request.stream = request.stream;
+        dispatcher_request.rp = request.rp;
+        dispatcher_request.sample = out_args;
+
+        this->dispatcher->dispatch_request(std::move(dispatcher_request),
+            [this_ = this->shared_from_this<transform_aac_encoder>()](
+                request_dispatcher::request_t& request)
+        {
+            this_->session->give_sample(request.stream,
+                request.sample.has_value() ? &(*request.sample) : NULL, request.rp);
+        });
     }
 
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
+    return true;
+}
+
+transform_aac_encoder::request_queue::request_t* transform_aac_encoder::next_request()
+{
+    return this->requests.get();
 }
 
 bool transform_aac_encoder::process_output(IMFSample* sample)
@@ -404,7 +407,7 @@ media_stream::result_t stream_aac_encoder::process_sample(
     if(!request.sample.drain && (!request.sample.args || !request.sample.args->has_frames))
         this->transform->session->give_sample(this, NULL, request.rp);
 
-    this->transform->processing_cb(NULL);
+    this->transform->serve();
 
     return OK;
 }
