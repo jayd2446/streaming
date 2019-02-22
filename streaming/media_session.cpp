@@ -78,8 +78,15 @@ bool media_session::request_sample(const media_stream* stream, const request_pac
     assert_(it != rp.topology->topology_reverse.end());
 
     for(auto jt = it->second.next.begin(); jt != it->second.next.end(); jt++)
+    {
+        // request sample calls for sources are made after all component calls for making sure that
+        // no process_sample calls begin before request_sample calls
+        if((*jt)->is_source_stream())
+            continue;
+
         if((*jt)->request_sample(rp, stream) == media_stream::FATAL_ERROR)
             return false;
+    }
 
     return true;
 }
@@ -106,6 +113,8 @@ bool media_session::give_sample(
 
 bool media_session::begin_request_sample(media_stream* stream, const request_packet& incomplete_rp)
 {
+    assert_(!stream->is_source_stream());
+
     request_packet rp = incomplete_rp;
 
     assert_(!rp.topology);
@@ -132,7 +141,16 @@ bool media_session::begin_request_sample(media_stream* stream, const request_pac
         std::cout << "topology switched" << std::endl;
     }
 
-    const bool ret = (stream->request_sample(rp, NULL) != media_stream::FATAL_ERROR);
+    bool ret = (stream->request_sample(rp, NULL) != media_stream::FATAL_ERROR);
+
+    // call request_sample for sources
+    for(auto&& item : rp.topology->source_streams)
+        if(!ret || (item->request_sample(rp, NULL) == media_stream::FATAL_ERROR))
+        {
+            ret = false;
+            break;
+        }
+
     this->request_chain_lock.unlock();
 
     return ret;

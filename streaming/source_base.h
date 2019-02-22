@@ -214,7 +214,7 @@ source_base<T>::create_stream(presentation_clock_t&& clock)
 
 template<typename T>
 stream_source_base<T>::stream_source_base(const source_base_t& source) :
-    media_stream_clock_sink(source.get()),
+    media_stream_clock_sink(source.get(), SOURCE),
     source(source),
     drain_point(std::numeric_limits<time_unit>::min())
 {
@@ -230,6 +230,15 @@ template<typename T>
 media_stream::result_t stream_source_base<T>::request_sample(
     const request_packet& rp, const media_stream*)
 {
+    // TODO: there exists a chance where when changing a topology while preserving
+    // old sources and replacing other components, a request might be dispatched
+    // to a component before its request_sample function has been called
+
+    // TODO: remove begin_give_sample and ensure in the request call chain that every request_sample
+    // has been called before calling source's request_sample;
+    // separate source components from other components and call source components'
+    // request sample after completing the request chain for other components
+
     this->source->requests.initialize_queue(rp);
 
     request_t request;

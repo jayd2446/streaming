@@ -28,6 +28,7 @@ public:
     struct topology_node {std::vector<media_stream_t> next;};
     typedef std::unordered_map<const media_stream*, topology_node> topology_t;
 private:
+    std::vector<media_stream_t> source_streams;
     topology_t topology, topology_reverse;
     presentation_clock_t clock;
     volatile int packet_number, first_packet_number;

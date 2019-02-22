@@ -3,7 +3,7 @@
 #include "presentation_clock.h"
 #include "assert.h"
 
-media_stream::media_stream() : locked(false)
+media_stream::media_stream(stream_t stream_type) : locked(false), stream_type(stream_type)
 {
 }
 
@@ -34,8 +34,9 @@ void media_stream::unlock()
 /////////////////////////////////////////////////////////////////
 
 
-media_stream_clock_sink::media_stream_clock_sink(const media_component* component) : 
-    component(component), unregistered(true)
+media_stream_clock_sink::media_stream_clock_sink(
+    const media_component* component, stream_t stream_type) :
+    media_stream(stream_type), component(component), unregistered(true)
 {
 }
 

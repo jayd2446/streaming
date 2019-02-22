@@ -157,7 +157,7 @@ void control_pipeline2::activate_components()
             h264_encoder_transform.reset(new transform_h264_encoder(
                 this->session, this->context_mutex));
             h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                this->d3d11dev, true);
+                this->d3d11dev, false);
         }
         catch(std::exception)
         {

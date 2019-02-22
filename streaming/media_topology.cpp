@@ -11,6 +11,9 @@ void media_topology::connect_streams(const media_stream_t& stream, const media_s
 {
     assert_(stream && stream2);
 
+    // to make sure that request_sample calls are finished before process_sample calls for a request,
+    // source streams are separated from the topology by listing them in an additional container
+
     // make sure that all streams in the reverse topology are unique so that
     // the single request assumption is satisfied
     const bool request_stream = 
@@ -22,6 +25,13 @@ void media_topology::connect_streams(const media_stream_t& stream, const media_s
     }) != this->topology_reverse.end();
 
     this->topology[stream.get()].next.push_back(stream2);
+
     if(!request_stream)
+    {
         this->topology_reverse[stream2.get()].next.push_back(stream);
+
+        // source streams are unique in the vector
+        if(stream->is_source_stream())
+            this->source_streams.push_back(stream);
+    }
 }

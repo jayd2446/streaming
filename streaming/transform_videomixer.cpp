@@ -388,7 +388,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     assert_(end > 0);
     out_arg = std::make_optional<out_arg_t::value_type>();
     out_arg->sample = std::move(frames);
-    out_arg->frame_end = end;
     out_arg->has_frames = has_frames;
 
     // TODO: test this

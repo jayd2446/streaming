@@ -33,7 +33,7 @@ public:
         const CComPtr<IMF2DBuffer>& buffer2d) :
         buffer(buffer)
     {
-        std::lock_guard<std::recursive_mutex> lock(*context_mutex);
+        /*std::lock_guard<std::recursive_mutex> lock(*context_mutex);*/
 
         this->buffer->texture->GetDesc(&this->desc);
         assert_(this->desc.Format == DXGI_FORMAT_NV12);

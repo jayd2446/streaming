@@ -12,7 +12,7 @@
 class video_source_helper
 {
 public:
-    static const size_t maximum_frame_count = 5;
+    static const size_t maximum_frame_count = 10;
     static const frame_unit maximum_buffer_size = 60;
     typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_frames_t;
 private:

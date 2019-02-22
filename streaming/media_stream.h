@@ -23,7 +23,14 @@ public:
         // the topology encountered an unrecoverable error
         FATAL_ERROR
     };
+    // streams from source components must be of source type
+    enum stream_t
+    {
+        COMPONENT,
+        SOURCE
+    };
 private:
+    const stream_t stream_type;
     volatile bool locked;
     std::mutex mutex;
     std::condition_variable cv;
@@ -34,11 +41,15 @@ protected:
     void unlock();
     bool is_locked() const {return this->locked;}
 public:
-    media_stream();
+    explicit media_stream(stream_t = COMPONENT);
     virtual ~media_stream() {}
+
+    bool is_source_stream() const {return (this->stream_type == SOURCE);}
 
     // throws on error
     virtual void connect_streams(const media_stream_t& from, const media_topology_t&);
+
+    // TODO: remove previous_stream for request_sample
 
     // requests samples from media session or processes
     // samples if there are any;
@@ -71,7 +82,7 @@ protected:
     virtual void on_stream_start(time_unit) {}
     virtual void on_stream_stop(time_unit) {}
 public:
-    explicit media_stream_clock_sink(const media_component*);
+    media_stream_clock_sink(const media_component*, stream_t = COMPONENT);
     virtual ~media_stream_clock_sink() {}
 
     // adds this sink to the list of sinks in the presentation clock

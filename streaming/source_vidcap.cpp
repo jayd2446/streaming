@@ -283,9 +283,10 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     CHECK_HR(hr = MFCreateMediaType(&output_type));
     CHECK_HR(hr = output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
     CHECK_HR(hr = output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
-    /*CHECK_HR(hr = MFSetAttributeRatio(output_type, MF_MT_FRAME_RATE,
+    // set the frame rate converter
+    CHECK_HR(hr = MFSetAttributeRatio(output_type, MF_MT_FRAME_RATE,
         transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den));*/
+        transform_h264_encoder::frame_rate_den));
     // TODO: decide if should set frame size
     CHECK_HR(hr = output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     CHECK_HR(hr = MFSetAttributeRatio(output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));

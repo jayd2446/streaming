@@ -120,8 +120,9 @@ void media_buffer_texture::uninitialize()
 
         // discard the resource
         CHECK_HR(hr = this->texture->QueryInterface(&resource));
-        CHECK_HR(hr = resource->GetDevice(__uuidof(IDXGIDevice2), (void**)&device));
-        CHECK_HR(hr = device->OfferResources(1, &resource.p, DXGI_OFFER_RESOURCE_PRIORITY_LOW));
+        CHECK_HR(hr = resource->SetEvictionPriority(DXGI_RESOURCE_PRIORITY_MINIMUM));
+        /*CHECK_HR(hr = resource->GetDevice(__uuidof(IDXGIDevice2), (void**)&device));
+        CHECK_HR(hr = device->OfferResources(1, &resource.p, DXGI_OFFER_RESOURCE_PRIORITY_LOW));*/
     }
     else
         this->texture = NULL;
@@ -152,8 +153,9 @@ void media_buffer_texture::initialize(const CComPtr<ID3D11Device>& dev,
         // the texture cannot be used before it is reclaimed again
         BOOL was_discarded;
         CHECK_HR(hr = this->texture->QueryInterface(&resource));
-        CHECK_HR(hr = resource->GetDevice(__uuidof(IDXGIDevice2), (void**)&device));
-        CHECK_HR(hr = device->ReclaimResources(1, &resource.p, &was_discarded));
+        CHECK_HR(hr = resource->SetEvictionPriority(DXGI_RESOURCE_PRIORITY_NORMAL));
+        /*CHECK_HR(hr = resource->GetDevice(__uuidof(IDXGIDevice2), (void**)&device));
+        CHECK_HR(hr = device->ReclaimResources(1, &resource.p, &was_discarded));*/
 
         CComPtr<ID3D11Device> old_dev;
         D3D11_TEXTURE2D_DESC old_desc;

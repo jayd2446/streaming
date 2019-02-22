@@ -314,7 +314,7 @@ public:
 
 typedef std::optional<media_component_video_args> media_component_video_args_t;
 
-class media_component_h264_encoder_args : public media_component_frame_args
+class media_component_h264_encoder_args : public media_component_args
 {
 public:
     // must not be null;
@@ -322,7 +322,7 @@ public:
     // null buffer frames are simply discarded
     media_sample_video_frames_t sample;
     bool has_frames;
-    bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
+    bool is_valid() const {return !!this->sample;}
 };
 
 typedef std::optional<media_component_h264_encoder_args> media_component_h264_encoder_args_t;
@@ -349,15 +349,14 @@ public:
 
 typedef std::optional<media_component_audio_args> media_component_audio_args_t;
 
-// aac encoder expects that the frame end equals to the sample end
-class media_component_aac_encoder_args : public media_component_frame_args
+class media_component_aac_encoder_args : public media_component_args
 {
 public:
     // must not be null;
     // frames must be ordered
     media_sample_audio_frames_t sample;
     bool has_frames;
-    bool is_valid() const {return (this->sample && this->sample->end == this->frame_end);}
+    bool is_valid() const {return !!this->sample;}
 };
 
 typedef std::optional<media_component_aac_encoder_args> media_component_aac_encoder_args_t;
