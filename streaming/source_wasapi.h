@@ -13,7 +13,7 @@
 
 struct IMMDevice;
 
-class source_wasapi : public source_base<media_component_audiomixer_args_t>
+class source_wasapi : public source_base<media_component_audiomixer_args>
 {
     friend class stream_wasapi;
 public:
@@ -83,7 +83,7 @@ public:
 
 typedef std::shared_ptr<source_wasapi> source_wasapi_t;
 
-class stream_wasapi : public stream_source_base<source_base<media_component_audiomixer_args_t>>
+class stream_wasapi : public stream_source_base<source_base<media_component_audiomixer_args>>
 {
 private:
     source_wasapi_t source;

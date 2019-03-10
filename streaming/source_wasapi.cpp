@@ -79,34 +79,36 @@ bool source_wasapi::get_samples_end(const request_t& request, frame_unit& end)
 
 void source_wasapi::make_request(request_t& request, frame_unit frame_end)
 {
+    media_component_audiomixer_args& args = request.sample->args;
+
     media_sample_audio_mixer_frames_t captured_audio;
+    if(!args.sample)
     {
         buffer_pool_audio_frames_t::scoped_lock lock(this->buffer_pool_audio_frames->mutex);
         captured_audio = this->buffer_pool_audio_frames->acquire_buffer();
         captured_audio->initialize();
     }
+    else
+        captured_audio = args.sample;
 
     scoped_lock lock(this->captured_audio_mutex);
     const bool moved = this->captured_audio->move_frames_to(captured_audio.get(), frame_end,
         this->resampled_block_align);
 
-    media_component_audiomixer_args_t& args = request.sample;
-    args = std::make_optional<media_component_audiomixer_args>();
-
-    args->frame_end = frame_end;
+    args.frame_end = frame_end;
     // frames are simply skipped if there is no sample for the args
     if(moved)
     {
-        args->sample = std::move(captured_audio);
+        args.sample = std::move(captured_audio);
         // the sample must not be empty
-        assert_(!args->sample->frames.empty());
+        assert_(!args.sample->frames.empty());
     }
 }
 
 void source_wasapi::dispatch(request_t& request)
 {
     this->session->give_sample(request.stream, request.sample.has_value() ?
-        &(*request.sample) : NULL, request.rp);
+        &request.sample->args : NULL, request.rp);
 }
 
 HRESULT source_wasapi::queue_new_capture()

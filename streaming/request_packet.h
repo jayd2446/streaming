@@ -40,7 +40,7 @@ public:
         // prev_stream really cannot be used because it excludes multi-input streams
         /*const media_stream* prev_stream;*/
         request_packet rp;
-        // TODO: rename to args and args_t
+        // TODO: rename to args and args_t(or payload)
         sample_t sample;
 
         request_t() = default;

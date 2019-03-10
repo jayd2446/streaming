@@ -26,7 +26,7 @@ public:
     // streams from source components must be of source type
     enum stream_t
     {
-        COMPONENT,
+        OTHER,
         SOURCE
     };
 private:
@@ -41,7 +41,7 @@ protected:
     void unlock();
     bool is_locked() const {return this->locked;}
 public:
-    explicit media_stream(stream_t = COMPONENT);
+    explicit media_stream(stream_t = OTHER);
     virtual ~media_stream() {}
 
     bool is_source_stream() const {return (this->stream_type == SOURCE);}
@@ -82,7 +82,7 @@ protected:
     virtual void on_stream_start(time_unit) {}
     virtual void on_stream_stop(time_unit) {}
 public:
-    media_stream_clock_sink(const media_component*, stream_t = COMPONENT);
+    media_stream_clock_sink(const media_component*, stream_t = OTHER);
     virtual ~media_stream_clock_sink() {}
 
     // adds this sink to the list of sinks in the presentation clock

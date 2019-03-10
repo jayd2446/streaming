@@ -84,9 +84,6 @@
     <ClCompile Include="assert.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sink_file.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="media_component.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

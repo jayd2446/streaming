@@ -147,14 +147,11 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
             frame.buffer->initialize(texture);
         }
 
-        if(frame.buffer)
-        {
-            frame.params.source_rect.top = frame.params.source_rect.left = 0.f;
-            frame.params.source_rect.right = (FLOAT)source->frame_width;
-            frame.params.source_rect.bottom = (FLOAT)source->frame_height;
-            frame.params.dest_rect = frame.params.source_rect;
-            frame.params.source_m = frame.params.dest_m = D2D1::Matrix3x2F::Identity();
-        }
+        frame.params.source_rect.top = frame.params.source_rect.left = 0.f;
+        frame.params.source_rect.right = (FLOAT)source->frame_width;
+        frame.params.source_rect.bottom = (FLOAT)source->frame_height;
+        frame.params.dest_rect = frame.params.source_rect;
+        frame.params.source_m = frame.params.dest_m = D2D1::Matrix3x2F::Identity();
 
         // add the frame
         {
@@ -201,19 +198,24 @@ void source_vidcap::make_request(request_t& request, frame_unit frame_end)
 {
     scoped_lock lock(this->source_helper_mutex);
 
-    media_component_videomixer_args_t& args = request.sample;
-    args = std::make_optional<media_component_videomixer_args>();
-    args->frame_end = frame_end;
-    args->sample = this->source_helper.make_sample(frame_end);
+    media_component_videomixer_args& args = request.sample->args;
+
+    args.frame_end = frame_end;
+
+    media_sample_video_mixer_frames_t sample = this->source_helper.make_sample(frame_end);
+    if(args.sample)
+        sample->move_frames_to(args.sample.get(), frame_end);
+    else
+        args.sample = sample;
 
     // the sample must not be empty
-    assert_(!args->sample->frames.empty());
+    assert_(!args.sample->frames.empty());
 }
 
 void source_vidcap::dispatch(request_t& request)
 {
     this->session->give_sample(request.stream, request.sample.has_value() ?
-        &(*request.sample) : NULL, request.rp);
+        &request.sample->args : NULL, request.rp);
 }
 
 HRESULT source_vidcap::queue_new_capture()

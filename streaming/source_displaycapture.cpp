@@ -143,16 +143,9 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
         pointer_frame.params.dest_m = D2D1::Matrix3x2F::Identity();
     };
 
-    request.sample.args = std::make_optional<media_component_videomixer_args>();
-    request.sample.pointer_args = std::make_optional<media_component_videomixer_args>();
-
-    media_component_videomixer_args& args = *request.sample.args;
-    media_component_videomixer_args& pointer_args = *request.sample.pointer_args;
+    media_component_videomixer_args& args = request.sample->args.args;
+    media_component_videomixer_args& pointer_args = request.sample->args.pointer_args;
     media_sample_video_mixer_frame frame, pointer_frame;
-
-    // frame position and frame_end must be the same for frame and pointer frame
-    args.frame_end = frame_end;
-    pointer_args.frame_end = frame_end;
 
     try
     {
@@ -164,30 +157,39 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
         this->request_reinitialization(this->ctrl_pipeline);
     }
 
-    // params in args are ignored if the buffer in sample is null(=silent)
+    // params are ignored if the buffer in sample is null(=silent)
     build_frame(frame);
     build_pointer_frame(pointer_frame);
 
     this->source_helper.add_new_sample(frame);
     this->source_pointer_helper.add_new_sample(pointer_frame);
 
+    // frame position and frame_end must be the same for frame and pointer frame
     args.frame_end = frame_end;
     pointer_args.frame_end = frame_end;
-    args.sample = this->source_helper.make_sample(frame_end);
-    pointer_args.sample = this->source_pointer_helper.make_sample(frame_end);
+
+    media_sample_video_mixer_frames_t sample = this->source_helper.make_sample(frame_end),
+        pointer_sample = this->source_pointer_helper.make_sample(frame_end);
+
+    if(args.sample)
+        sample->move_frames_to(args.sample.get(), frame_end);
+    else
+        args.sample = sample;
+
+    if(pointer_args.sample)
+        pointer_sample->move_frames_to(pointer_args.sample.get(), frame_end);
+    else
+        pointer_args.sample = pointer_sample;
 }
 
 void source_displaycapture::dispatch(request_t& request)
 {
     stream_displaycapture* stream = static_cast<stream_displaycapture*>(request.stream);
 
-    assert_(request.sample.args.has_value());
-    assert_(request.sample.pointer_args.has_value());
-
-    this->session->give_sample(stream, request.sample.args.has_value() ?
-        &(*request.sample.args) : NULL, request.rp);
-    this->session->give_sample(stream->pointer_stream.get(), request.sample.pointer_args.has_value() ?
-        &(*request.sample.pointer_args) : NULL, request.rp);
+    this->session->give_sample(stream, request.sample.has_value() ?
+        &request.sample->args.args : NULL, request.rp);
+    this->session->give_sample(stream->pointer_stream.get(), request.sample.has_value() ?
+        &request.sample->args.pointer_args : NULL, request.rp);
 }
 
 HRESULT source_displaycapture::initialize_pointer_texture(media_buffer_texture_t& pointer)

@@ -99,8 +99,8 @@ out:
     this->component = component;
 
     // update the transformations
-    this->control_video2::apply_transformation(false);
-    this->control_video2::apply_transformation(true);
+    /*this->control_video2::apply_transformation(false);
+    this->control_video2::apply_transformation(true);*/
 }
 
 void control_vidcap::list_available_vidcap_params(
@@ -147,7 +147,7 @@ done:
 
 D2D1_RECT_F control_vidcap::get_rectangle(bool dest_params) const
 {
-    const source_vidcap_t& component = this->reference ?
+    /*const source_vidcap_t& component = this->reference ?
         this->reference->component : this->component;
 
     if(component)
@@ -158,7 +158,8 @@ D2D1_RECT_F control_vidcap::get_rectangle(bool dest_params) const
         return D2D1::RectF(0.f, 0.f, (FLOAT)width, (FLOAT)height);
     }
     else
-        return D2D1::RectF();
+        return D2D1::RectF();*/
+    return D2D1::RectF(0.f, 0.f, 640.f, 480.f);
 }
 
 void control_vidcap::apply_transformation(

@@ -157,7 +157,8 @@ public:
     // std::numeric_limits::max can be used for moving all frames;
     // block align is assumed to be the same for both samples
     bool move_frames_to(media_sample_audio_frames_template* to, frame_unit end, UINT32 block_align);
-    // TODO: add_consecutive_frames which takes a sample_t
+
+    sample_t& add_consecutive_frames(const sample_t&);
 
     // buffer pool methods
     void initialize()
@@ -378,6 +379,18 @@ typedef std::optional<media_component_aac_audio_args> media_component_aac_audio_
 
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
+
+template<typename T>
+typename media_sample_audio_frames_template<T>::sample_t&
+media_sample_audio_frames_template<T>::add_consecutive_frames(const sample_t& new_frame)
+{
+    assert_(new_frame.dur > 0);
+
+    this->frames.push_back(new_frame);
+    this->end = std::max(new_frame.pos + new_frame.dur, this->end);
+
+    return this->frames.back();
+}
 
 template<typename T>
 bool media_sample_audio_frames_template<T>::move_frames_to(

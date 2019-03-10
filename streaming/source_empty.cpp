@@ -33,9 +33,10 @@ bool source_empty_audio::get_samples_end(const request_t& request, frame_unit& e
 
 void source_empty_audio::make_request(request_t& request, frame_unit frame_end)
 {
-    media_component_audiomixer_args& args = request.sample;
+    media_component_audiomixer_args& args = request.sample->args;
     media_sample_audio_mixer_frame frame;
 
+    if(!args.sample)
     {
         buffer_pool_audio_frames_t::scoped_lock lock(this->buffer_pool_audio_frames->mutex);
         args.sample = this->buffer_pool_audio_frames->acquire_buffer();
@@ -46,9 +47,7 @@ void source_empty_audio::make_request(request_t& request, frame_unit frame_end)
 
     frame.pos = this->last_frame_end;
     frame.dur = frame_end - this->last_frame_end;
-
-    args.sample->frames.push_back(frame);
-    args.sample->end = frame_end;
+    args.sample->add_consecutive_frames(frame);
 
     const bool limit_reached =
         args.sample->move_frames_to(NULL, args.sample->end - maximum_buffer_size,
@@ -63,7 +62,8 @@ void source_empty_audio::make_request(request_t& request, frame_unit frame_end)
 
 void source_empty_audio::dispatch(request_t& request)
 {
-    this->session->give_sample(request.stream, &request.sample, request.rp);
+    this->session->give_sample(request.stream, request.sample.has_value() ?
+        &request.sample->args : NULL, request.rp);
 }
 
 
@@ -123,9 +123,10 @@ bool source_empty_video::get_samples_end(const request_t& request, frame_unit& e
 
 void source_empty_video::make_request(request_t& request, frame_unit frame_end)
 {
-    media_component_videomixer_args& args = request.sample;
+    media_component_videomixer_args& args = request.sample->args;
     media_sample_video_mixer_frame frame;
 
+    if(!args.sample)
     {
         buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
         args.sample = this->buffer_pool_video_frames->acquire_buffer();
@@ -136,9 +137,7 @@ void source_empty_video::make_request(request_t& request, frame_unit frame_end)
 
     frame.pos = this->last_frame_end;
     frame.dur = frame_end - this->last_frame_end;
-
-    args.sample->frames.push_back(frame);
-    args.sample->end = frame_end;
+    args.sample->add_consecutive_frames(frame);
 
     const bool limit_reached =
         args.sample->move_frames_to(NULL, args.sample->end - maximum_buffer_size);
@@ -152,7 +151,8 @@ void source_empty_video::make_request(request_t& request, frame_unit frame_end)
 
 void source_empty_video::dispatch(request_t& request)
 {
-    this->session->give_sample(request.stream, &request.sample, request.rp);
+    this->session->give_sample(request.stream, request.sample.has_value() ?
+        &request.sample->args : NULL, request.rp);
 }
 
 

@@ -48,8 +48,8 @@ public:
     template<typename FrameType>
     frame_unit resample(
         frame_unit frame_start_pos,
-        const FrameType&,
-        media_sample_audio_frames_template<FrameType>& container,
+        const FrameType& in,
+        media_sample_audio_frames_template<FrameType>& out,
         bool drain);
 };
 
@@ -124,7 +124,7 @@ frame_unit audio_resampler::resample(
         CComPtr<IMFMediaBuffer> mf_buffer;
         DWORD buflen;
         HRESULT hr = S_OK;
-        sample_t consec_frames;
+        sample_t consec_frames = in;
 
         CHECK_HR(hr = out_sample->GetBufferByIndex(0, &mf_buffer));
         CHECK_HR(hr = mf_buffer->GetCurrentLength(&buflen));

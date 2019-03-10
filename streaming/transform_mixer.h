@@ -109,7 +109,6 @@ private:
     transform_mixer_t transform;
     std::atomic<time_unit> drain_point;
     std::vector<input_stream_props_t> input_streams_props;
-    /*request_queue requests;*/
     std::shared_ptr<request_dispatcher> dispatcher;
     std::mutex next_request_mutex;
 
@@ -118,9 +117,9 @@ private:
     std::unique_ptr<args_t[]> leftover;
 
     // converts by using the frame rate in component
-    frame_unit convert_to_frame_unit(time_unit);
-    void initialize_packet(packet_t&);
-    frame_unit find_common_frame_end(const args_t&);
+    frame_unit convert_to_frame_unit(time_unit) const;
+    void initialize_packet(packet_t&) const;
+    frame_unit find_common_frame_end(const args_t&) const;
     void process(typename request_queue::request_t&, bool drain);
     void dispatch(typename request_dispatcher::request_t&);
 
@@ -220,7 +219,7 @@ void stream_mixer<T>::on_stream_stop(time_unit t)
 }
 
 template<class T>
-frame_unit stream_mixer<T>::convert_to_frame_unit(time_unit t)
+frame_unit stream_mixer<T>::convert_to_frame_unit(time_unit t) const
 {
     assert_(this->transform->initialized);
 
@@ -229,7 +228,7 @@ frame_unit stream_mixer<T>::convert_to_frame_unit(time_unit t)
 }
 
 template<class T>
-void stream_mixer<T>::initialize_packet(packet_t& packet)
+void stream_mixer<T>::initialize_packet(packet_t& packet) const
 {
     packet.input_stream = this->input_streams_props[packet.stream_index].input_stream;
     packet.valid_user_params = !!this->input_streams_props[packet.stream_index].user_params_controller;
@@ -239,7 +238,7 @@ void stream_mixer<T>::initialize_packet(packet_t& packet)
 }
 
 template<class T>
-frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args)
+frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args) const
 {
     assert_(args.container.size() == this->input_streams_props.size());
 
@@ -274,6 +273,9 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
     args_t& packets = request.sample.second;
     const frame_unit old_cutoff = this->cutoff;
     this->cutoff = std::max(this->find_common_frame_end(packets), old_cutoff);
+    // component is allowed serve samples from zero up to the request point only
+    assert_(this->cutoff <= this->convert_to_frame_unit(request.rp.request_time));
+    
     if(drain)
     {
         const frame_unit drain_cutoff = this->convert_to_frame_unit(request.rp.request_time);

@@ -20,7 +20,7 @@
 // (control class will handle the creation of the dialog and the preview pipeline);
 // that preview dialog can be generalized to a properties window
 
-class source_vidcap : public source_base<media_component_videomixer_args_t>
+class source_vidcap : public source_base<media_component_videomixer_args>
 {
     friend class stream_vidcap;
     struct source_reader_callback_t;
@@ -71,7 +71,7 @@ public:
 
 typedef std::shared_ptr<source_vidcap> source_vidcap_t;
 
-class stream_vidcap : public stream_source_base<source_base<media_component_videomixer_args_t>>
+class stream_vidcap : public stream_source_base<source_base<media_component_videomixer_args>>
 {
 private:
     source_vidcap_t source;

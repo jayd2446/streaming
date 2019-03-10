@@ -8,31 +8,38 @@
 #include <atlbase.h>
 #include <limits>
 #include <iostream>
+#include <queue>
+#include <optional>
 
 #undef min
 #undef max
 
-// source specialization base class for components
+// source specialization base class for components;
+// derived classes should only access the payload(sample) field of the request_queue::request_t type
+// TODO: enforce this^
+// the payload type is wrapped into an optional type to enable null args
 
 template<class SourceBase>
 class stream_source_base;
 
-template<class Sample>
+template<class Args>
 class source_base : public media_component
 {
-    friend class stream_source_base<source_base<Sample>>;
+    friend class stream_source_base<source_base<Args>>;
 public:
     typedef async_callback<source_base> async_callback_t;
     typedef stream_source_base<source_base> stream_source_base;
     typedef std::shared_ptr<stream_source_base> stream_source_base_t;
-    struct sample_t : Sample {bool drain;};
-    typedef request_queue<sample_t> request_queue;
+    typedef Args args_t;
+    struct payload_t {bool drain; args_t args;};
+    typedef request_queue<std::optional<payload_t>> request_queue;
     // TODO: this should not be a typedef
     typedef typename request_queue::request_t request_t;
     typedef request_dispatcher<request_t> request_dispatcher;
 private:
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
     request_queue requests;
+    std::queue<request_t> drain_requests;
     std::shared_ptr<request_dispatcher> dispatcher;
 
     CHandle serve_callback_event;
@@ -41,6 +48,7 @@ private:
     MFWORKITEM_KEY serve_callback_key;
     bool serve_in_wait_queue;
 
+    bool process_request(request_t&);
     void serve_cb(void*);
 protected:
     // derived class must call this
@@ -53,9 +61,10 @@ protected:
     virtual bool get_samples_end(const request_t&, frame_unit& end) = 0;
     // populates the sample field of the request;
     // fetched samples must include padding frames;
-    // make_request should only add frames up to the frame_end point;
+    // make_request must add frames up to the frame_end point only;
     // the sample collection in the request must not be empty;
-    // singlethreaded
+    // singlethreaded;
+    // on drain event, the make_request might be called multiple times with the same request arg
     virtual void make_request(request_t&, frame_unit frame_end) = 0;
     // the request_t might contain null args;
     // multithreaded
@@ -74,6 +83,7 @@ public:
     typedef SourceBase source_base;
     typedef std::shared_ptr<source_base> source_base_t;
     typedef typename source_base::request_t request_t;
+    typedef typename source_base::payload_t payload_t;
 private:
     source_base_t source;
     time_unit drain_point;
@@ -146,44 +156,97 @@ done:
 }
 
 template<typename T>
+bool source_base<T>::process_request(request_t& request)
+{
+    const frame_unit request_end = convert_to_frame_unit(
+        request.rp.request_time,
+        this->framerate.first, this->framerate.second);
+    const bool drain = request.sample->drain;
+
+    frame_unit samples_end;
+    const bool valid_end = this->get_samples_end(request, samples_end);
+    const bool serve_drain_request = (drain && valid_end && samples_end >= request_end);
+    const bool serve_request = serve_drain_request || !drain;
+
+    if(serve_drain_request)
+        std::cout << "drain on source_base finished" << std::endl;
+
+    if(valid_end)
+    {
+        const frame_unit end = std::min(request_end, samples_end);
+        this->make_request(request, end);
+    }
+    else if(serve_request)
+        // reset the arg to null if the request is served without data
+        request.sample.reset();
+
+    return serve_request;
+}
+
+template<typename T>
 void source_base<T>::serve_cb(void*)
 {
+    // singlethreaded
+
     HRESULT hr = S_OK;
 
-    const request_t* readonly_request;
-    while(readonly_request = this->requests.get())
+    bool run_once = true;
+    request_t* request_ptr;
+    while((request_ptr = this->requests.get()) || (!this->drain_requests.empty() && run_once))
     {
-        const frame_unit frame_end = convert_to_frame_unit(
-            readonly_request->rp.request_time,
-            this->framerate.first, this->framerate.second);
-
-        const bool drain = readonly_request->sample.drain;
-
-        // do not serve the request if there's not enough data
-        frame_unit samples_end;
-        const bool valid_end = this->get_samples_end(*readonly_request, samples_end);
-        if(drain && (!valid_end || samples_end < frame_end))
-            break;
-
-        if(drain)
-            std::cout << "drain on source_base" << std::endl;
-
-        readonly_request = NULL;
-
-        request_t request;
-        this->requests.pop(request);
-        if(valid_end || drain)
+        if(request_ptr && request_ptr->sample->drain)
         {
-            // there must be a valid end on drain
-            assert_(!drain || (drain && valid_end));
-            const frame_unit end = drain ? frame_end : std::min(frame_end, samples_end);
-            this->make_request(request, end);
+            this->drain_requests.push(std::move(*request_ptr));
+            this->requests.pop();
+            request_ptr = NULL;
         }
 
-        // dispatch to work queue with the request param
-        this->dispatcher->dispatch_request(std::move(request), 
-            std::bind(&source_base::dispatch, this->shared_from_this<source_base>(), 
-                std::placeholders::_1));
+        if(this->drain_requests.empty())
+        {
+            // normal processing
+
+            if(this->process_request(*request_ptr))
+            {
+                request_t request;
+                this->requests.pop(request);
+
+                // dispatch to work queue with the request param
+                this->dispatcher->dispatch_request(std::move(request),
+                    std::bind(&source_base::dispatch, this->shared_from_this<source_base>(),
+                        std::placeholders::_1));
+            }
+        }
+        else
+        {
+            // drain processing
+
+            if(request_ptr)
+            {
+                // serve all non drain requests with null args;
+                // currently it is assumed that none of the downstream components do any
+                // processing on null args
+                request_ptr->sample.reset();
+                this->dispatch(*request_ptr);
+                this->requests.pop();
+            }
+
+            request_ptr = &this->drain_requests.front();
+            if(this->process_request(*request_ptr))
+            {
+                request_t request = std::move(*request_ptr);
+                this->drain_requests.pop();
+
+                // dispatch to work queue with the request param
+                this->dispatcher->dispatch_request(std::move(request),
+                    std::bind(&source_base::dispatch, this->shared_from_this<source_base>(),
+                        std::placeholders::_1));
+            }
+            else
+                run_once = false;
+        }
+
+        // request_ptr is a dangling pointer at this point
+        request_ptr = NULL;
     }
 
     ResetEvent(this->serve_callback_event);
@@ -230,21 +293,13 @@ template<typename T>
 media_stream::result_t stream_source_base<T>::request_sample(
     const request_packet& rp, const media_stream*)
 {
-    // TODO: there exists a chance where when changing a topology while preserving
-    // old sources and replacing other components, a request might be dispatched
-    // to a component before its request_sample function has been called
-
-    // TODO: remove begin_give_sample and ensure in the request call chain that every request_sample
-    // has been called before calling source's request_sample;
-    // separate source components from other components and call source components'
-    // request sample after completing the request chain for other components
-
     this->source->requests.initialize_queue(rp);
 
     request_t request;
     request.rp = rp;
     request.stream = this;
-    request.sample.drain = (this->drain_point == rp.request_time);
+    request.sample = std::make_optional<payload_t>();
+    request.sample->drain = (this->drain_point == rp.request_time);
     this->source->requests.push(request);
 
     return OK;

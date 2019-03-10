@@ -24,7 +24,7 @@ typedef std::shared_ptr<stream_displaycapture_pointer> stream_displaycapture_poi
 // this struct is internal to displaycapture
 struct displaycapture_args
 {
-    media_component_videomixer_args_t args, pointer_args;
+    media_component_videomixer_args args, pointer_args;
 };
 
 class source_displaycapture : public source_base<displaycapture_args>

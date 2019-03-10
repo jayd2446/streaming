@@ -162,6 +162,7 @@ bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t
 
         // *from->sample = *reference->sample
         // could be used, but currently the fields are assigned individually
+        // (assignment operation would assign the contents of the parent class aswell)
         from->sample->frames = reference->sample->frames;
         from->sample->end = reference->sample->end;
 

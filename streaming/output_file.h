@@ -36,7 +36,6 @@ public:
         const CComPtr<IMFMediaType>& video_type,
         const CComPtr<IMFMediaType>& audio_type);
 
-    // write_sample modifies the sample's timestamp
     void write_sample(bool video, const CComPtr<IMFSample>& sample);
     void force_stop();
 };
