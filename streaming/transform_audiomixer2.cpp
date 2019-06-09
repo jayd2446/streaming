@@ -161,9 +161,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     memset(out_data_base, 0, out_buffer_len);
     for(auto&& item : packets.container)
     {
-        // null arg happens only if a source passed null args on drain;
-        // arg with empty sample indicates a frame skip;
-        // frame with empty buffer indicates a silent frame
+        // stream_mixer::process might create empty args and samples
         if(!item.arg || !item.arg->sample)
             continue;
 

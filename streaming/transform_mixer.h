@@ -14,11 +14,13 @@
 #include <algorithm>
 #include <mutex>
 #include <iostream>
-#include <atomic>
 
 // on stream stop the component should serve requests to the request point, so that
 // a component that might stop receives enough samples;
 // at other times, a component is allowed serve samples from zero up to the request point
+
+// arg with empty sample indicates a frame skip;
+// frame with empty buffer indicates a silent frame
 
 // the user params apply to a request only, which means that they might lag behind
 // if the same parameters are applied to samples which have different timestamps
@@ -70,12 +72,12 @@ public:
     explicit transform_mixer(const media_session_t& session);
     virtual ~transform_mixer() {}
 
-    stream_mixer_t create_stream(presentation_clock_t&& clock);
+    stream_mixer_t create_stream(media_message_generator_t&& message_generator);
 };
 
 template<class TransformMixer>
 class stream_mixer : 
-    public media_stream_clock_sink, 
+    public media_stream_message_listener, 
     request_queue_handler<typename TransformMixer::request_t>
 {
     using media_stream::connect_streams;
@@ -107,7 +109,7 @@ public:
         request_dispatcher;
 private:
     transform_mixer_t transform;
-    std::atomic<time_unit> drain_point;
+    time_unit drain_point;
     std::vector<input_stream_props_t> input_streams_props;
     std::shared_ptr<request_dispatcher> dispatcher;
     std::mutex next_request_mutex;
@@ -120,7 +122,7 @@ private:
     frame_unit convert_to_frame_unit(time_unit) const;
     void initialize_packet(packet_t&) const;
     frame_unit find_common_frame_end(const args_t&) const;
-    void process(typename request_queue::request_t&, bool drain);
+    void process(typename request_queue::request_t&);
     void dispatch(typename request_dispatcher::request_t&);
 
     // request_queue_handler
@@ -178,10 +180,10 @@ void transform_mixer<T, U, V>::initialize(frame_unit frame_rate_num, frame_unit 
 
 template<class T, class U, class V>
 typename transform_mixer<T, U, V>::stream_mixer_t transform_mixer<T, U, V>::create_stream(
-    presentation_clock_t&& clock)
+    media_message_generator_t&& message_generator)
 {
     stream_mixer_t stream = this->create_derived_stream();
-    stream->register_sink(clock);
+    stream->register_listener(message_generator);
     return stream;
 }
 
@@ -193,7 +195,7 @@ typename transform_mixer<T, U, V>::stream_mixer_t transform_mixer<T, U, V>::crea
 
 template<class T>
 stream_mixer<T>::stream_mixer(const transform_mixer_t& transform) :
-    media_stream_clock_sink(transform.get()),
+    media_stream_message_listener(transform.get()),
     transform(transform),
     drain_point(std::numeric_limits<time_unit>::min()),
     cutoff(std::numeric_limits<time_unit>::min()),
@@ -266,7 +268,7 @@ frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args) const
 }
 
 template<class T>
-void stream_mixer<T>::process(typename request_queue::request_t& request, bool drain)
+void stream_mixer<T>::process(typename request_queue::request_t& request)
 {
     assert_(request.sample.second.container.size() == this->input_streams_props.size());
 
@@ -275,8 +277,8 @@ void stream_mixer<T>::process(typename request_queue::request_t& request, bool d
     this->cutoff = std::max(this->find_common_frame_end(packets), old_cutoff);
     // component is allowed serve samples from zero up to the request point only
     assert_(this->cutoff <= this->convert_to_frame_unit(request.rp.request_time));
-    
-    if(drain)
+
+    if(request.rp.flags & FLAG_LAST_PACKET)
     {
         const frame_unit drain_cutoff = this->convert_to_frame_unit(request.rp.request_time);
         // the initialized value of new_cutoff(=this->cutoff) above should be either lower or equal 
@@ -391,7 +393,7 @@ void stream_mixer<T>::dispatch(typename request_dispatcher::request_t& request)
 template<class T>
 bool stream_mixer<T>::on_serve(typename request_queue::request_t& request)
 {
-    this->process(request, (request.rp.request_time == this->drain_point.load()));
+    this->process(request);
     return true;
 }
 

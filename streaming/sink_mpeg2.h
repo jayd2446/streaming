@@ -46,60 +46,57 @@ public:
         const media_topology_t& video_topology,
         const media_topology_t& audio_topology);
 
-    stream_mpeg2_t create_stream(presentation_clock_t&&, const stream_audio_t&);
+    stream_mpeg2_t create_stream(media_message_generator_t&&, const stream_audio_t&);
 
     bool is_started() const {return this->started;}
 };
 
-class stream_mpeg2 : public media_stream_clock_sink, public presentation_clock_sink
+class stream_mpeg2 : public media_stream_message_listener, public media_clock_sink
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    struct empty {};
-    typedef request_queue<empty> request_queue;
-    /*typedef presentation_time_source::time_unit_t time_unit_t;*/
+    /*struct empty {};
+    typedef request_queue<empty> request_queue;*/
 private:
     sink_mpeg2_t sink;
-    volatile bool requesting, processing;
-    /*bool running;*/
+    bool requesting;
     bool discontinuity;
 
     media_topology_t topology;
+    bool stopping;
     time_unit stop_point;
 
     stream_audio_t audio_sink_stream;
-    time_unit last_due_time;
 
     // TODO: this probably should be moved to sink_mpeg, so that topology switching doesn't
     // reset the request limit
     std::atomic_int requests;
     int max_requests;
-    request_queue requests_queue;
+    /*request_queue requests_queue;*/
 
     // for debug
     int unavailable;
 
     /*DWORD work_queue_id;*/
 
-    // media_stream_clock_sink
+    // media_stream_message_listener
     void on_component_start(time_unit);
     void on_component_stop(time_unit);
     void on_stream_start(time_unit);
     void on_stream_stop(time_unit);
-    // presentation_clock_sink
+    // media_clock_sink
     void scheduled_callback(time_unit due_time);
 
     void schedule_new(time_unit due_time);
     void dispatch_request(const request_packet&, bool no_drop = false);
-    void dispatch_process();
 public:
     stream_h264_encoder_t encoder_stream;
 
     stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&);
     ~stream_mpeg2();
 
-    // presentation_clock_sink
-    bool get_clock(presentation_clock_t&);
+    // media_clock_sink
+    bool get_clock(media_clock_t&);
     // media_stream
     result_t request_sample(const request_packet&, const media_stream*);
     result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);

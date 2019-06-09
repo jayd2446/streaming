@@ -33,9 +33,6 @@
     <ClCompile Include="media_session.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="presentation_clock.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="media_sample.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -49,9 +46,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="transform_aac_encoder.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="request_packet.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="sink_audio.cpp">
@@ -129,6 +123,12 @@
     <ClCompile Include="video_source_helper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="media_clock.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="media_message_generator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -150,9 +150,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="media_sink.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="presentation_clock.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="async_callback.h">
@@ -254,9 +251,6 @@
     <ClInclude Include="control_vidcap.h">
       <Filter>control</Filter>
     </ClInclude>
-    <ClInclude Include="source_base.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="source_displaycapture.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -270,6 +264,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="request_queue_handler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_buffering.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="media_clock.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="media_message_generator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="source_base.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -14,10 +14,10 @@ void sink_audio::initialize()
 {
 }
 
-stream_audio_t sink_audio::create_stream(presentation_clock_t&& clock)
+stream_audio_t sink_audio::create_stream(media_message_generator_t&& message_generator)
 {
     stream_audio_t stream(new stream_audio(this->shared_from_this<sink_audio>()));
-    stream->register_sink(clock);
+    stream->register_listener(message_generator);
 
     return stream;
 }
@@ -29,23 +29,24 @@ stream_audio_t sink_audio::create_stream(presentation_clock_t&& clock)
 
 
 stream_audio::stream_audio(const sink_audio_t& sink) : 
-    sink(sink), unavailable(0), /*running(false),*/ 
-    media_stream_clock_sink(sink.get()), 
+    sink(sink), unavailable(0), 
+    media_stream_message_listener(sink.get()), 
+    stopping(false),
     stop_point(std::numeric_limits<time_unit>::min()),
-    requesting(false), processing(false),
+    requesting(false),
     requests(0), max_requests(DEFAULT_MAX_REQUESTS)
 {
 }
 
 void stream_audio::on_stream_start(time_unit)
 {
-    this->requesting = this->processing = true;
+    this->requesting = true;
     this->topology = this->sink->session->get_current_topology();
 }
 
 void stream_audio::on_stream_stop(time_unit t)
 {
-    this->requesting = false;
+    this->stopping = true;
     this->stop_point = t;
 }
 
@@ -59,8 +60,8 @@ void stream_audio::dispatch_request(const request_packet& incomplete_rp, bool no
         this->requests++;
         this->unavailable = 0;
 
-        this->sink->session->begin_request_sample(this, incomplete_rp);
         assert_(this->topology);
+        this->sink->session->begin_request_sample(this, incomplete_rp, this->topology);
     }
     else
     {
@@ -94,14 +95,15 @@ void stream_audio::dispatch_request(const request_packet& incomplete_rp, bool no
     this->unavailable++;*/
 }
 
-void stream_audio::dispatch_process()
-{
-    this->sink->session->begin_give_sample(this, this->topology);
-}
-
 media_stream::result_t stream_audio::request_sample(const request_packet& rp, const media_stream*)
 {
-    this->requests_queue.initialize_queue(rp);
+    if(rp.flags & FLAG_LAST_PACKET)
+    {
+        assert_(this->stopping);
+        this->requesting = false;
+    }
+    /*if(this->stopping && this->sink->session->is_drainable(this->stop_point, rp.topology))
+        this->requesting = false;*/
 
     if(!this->sink->session->request_sample(this, rp))
         return FATAL_ERROR;
@@ -112,19 +114,5 @@ media_stream::result_t stream_audio::process_sample(
     const media_component_args*, const request_packet& rp, const media_stream*)
 {
     this->requests--;
-
-    request_queue::request_t request;
-    request.stream = this;
-    request.rp = rp;
-    this->requests_queue.push(request);
-
-    // check if the last request has been processed and stop further processing in that case
-    while(this->requests_queue.pop(request))
-        if(request.rp.request_time == this->stop_point)
-        {
-            assert_(!this->requests_queue.get());
-            this->processing = false;
-        }
-
     return OK;
 }

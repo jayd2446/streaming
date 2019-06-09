@@ -31,7 +31,7 @@ public:
     explicit sink_file(const media_session_t& session);
 
     void initialize(const output_file_t& file_output, bool video);
-    media_stream_t create_stream(presentation_clock_t&&);
+    media_stream_t create_stream(media_message_generator_t&&);
 };
 
 typedef sink_file<media_component_h264_video_args_t> sink_file_video;
@@ -41,7 +41,7 @@ typedef sink_file<media_component_aac_audio_args_t> sink_file_audio;
 typedef std::shared_ptr<sink_file_audio> sink_file_audio_t;
 
 template<class SinkFile>
-class stream_file : public media_stream_clock_sink
+class stream_file : public media_stream_message_listener
 {
     friend typename SinkFile;
 public:
@@ -89,13 +89,13 @@ void sink_file<T>::initialize(const output_file_t& file_output, bool video)
 }
 
 template<typename T>
-media_stream_t sink_file<T>::create_stream(presentation_clock_t&& clock)
+media_stream_t sink_file<T>::create_stream(media_message_generator_t&& message_generator)
 {
     typedef stream_file<sink_file> stream_file;
     typedef std::shared_ptr<stream_file> stream_file_t;
 
     stream_file_t stream(new stream_file(this->shared_from_this<sink_file>()));
-    stream->register_sink(clock);
+    stream->register_listener(message_generator);
 
     return stream;
 }
@@ -138,7 +138,7 @@ typename sink_file<T>::request_queue::request_t* sink_file<T>::next_request()
 template<typename T>
 stream_file<T>::stream_file(const sink_file_t& sink) : 
     sink(sink),
-    media_stream_clock_sink(sink.get())
+    media_stream_message_listener(sink.get())
 {
 }
 

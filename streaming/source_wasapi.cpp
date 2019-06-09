@@ -67,11 +67,14 @@ source_wasapi::stream_source_base_t source_wasapi::create_derived_stream()
     return stream_wasapi_t(new stream_wasapi(this->shared_from_this<source_wasapi>()));
 }
 
-bool source_wasapi::get_samples_end(const request_t& request, frame_unit& end)
+bool source_wasapi::get_samples_end(time_unit /*request_time*/, frame_unit& end)
 {
     scoped_lock lock(this->captured_audio_mutex);
     if(this->captured_audio->frames.empty())
         return false;
+
+    // TODO: if source wasapi becomes broken, get_samples_end should always return true
+    // and have samples up to request_time
 
     end = this->captured_audio->end;
     return true;
@@ -191,8 +194,8 @@ void source_wasapi::capture_cb(void*)
             std::cout << "DATA DISCONTINUITY, " << devposition << ", "
                 << devposition + frames << std::endl;
 
-            presentation_time_source_t time_source = this->session->get_time_source();
-            if(!time_source)
+            media_clock_t clock = this->session->get_clock();
+            if(!clock)
             {
                 std::cout << "time source was not initialized" << std::endl;
                 this->set_new_frame_base = true;
@@ -204,7 +207,7 @@ void source_wasapi::capture_cb(void*)
 
             // calculate the new sample base from the timestamp
             this->native_frame_base = convert_to_frame_unit(
-                time_source->system_time_to_time_source((time_unit)first_sample_timestamp),
+                clock->system_time_to_clock_time((LONGLONG)first_sample_timestamp),
                 this->samples_per_second, 1);
 
             // set new base

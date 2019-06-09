@@ -770,11 +770,11 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-media_stream_t transform_h264_encoder::create_stream(presentation_clock_t&& clock)
+media_stream_t transform_h264_encoder::create_stream(media_message_generator_t&& event_generator)
 {
-    media_stream_clock_sink_t stream(
+    media_stream_message_listener_t stream(
         new stream_h264_encoder(this->shared_from_this<transform_h264_encoder>()));
-    stream->register_sink(clock);
+    stream->register_listener(event_generator);
 
     return stream;
 }
@@ -786,9 +786,9 @@ media_stream_t transform_h264_encoder::create_stream(presentation_clock_t&& cloc
 
 
 stream_h264_encoder::stream_h264_encoder(const transform_h264_encoder_t& transform) :
-    media_stream_clock_sink(transform.get()),
+    media_stream_message_listener(transform.get()),
     transform(transform),
-    drain_point(std::numeric_limits<time_unit>::min())
+    stopping(false)
 {
 }
 
@@ -800,7 +800,7 @@ void stream_h264_encoder::on_component_start(time_unit t)
 
 void stream_h264_encoder::on_component_stop(time_unit t)
 {
-    this->drain_point = t;
+    this->stopping = true;
 }
 
 media_stream::result_t stream_h264_encoder::request_sample(const request_packet& rp, const media_stream*)
@@ -817,7 +817,7 @@ media_stream::result_t stream_h264_encoder::process_sample(
 {
     transform_h264_encoder::request_t request;
     request.stream = this;
-    request.sample.drain = (rp.request_time == this->drain_point.load());
+    request.sample.drain = (rp.flags & FLAG_LAST_PACKET) && this->stopping;
     if(args_)
     {
         request.sample.args =

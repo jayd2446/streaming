@@ -119,7 +119,7 @@ void control_pipeline2::activate_components()
 
     if(!this->time_source)
     {
-        this->time_source.reset(new presentation_time_source);
+        this->time_source.reset(new media_clock);
         this->time_source->set_current_time(0);
         // time source must be started early because the audio processor might use the time source
         // before the topology is started
@@ -285,6 +285,28 @@ void control_pipeline2::activate_components()
 
         this->audio_sink = audio_sink;
     }
+
+    // create video buffering source
+    if(!this->video_buffering_source || 
+        this->video_buffering_source->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
+    {
+        source_buffering_video_t video_buffering_source(new source_buffering_video(this->session));
+        video_buffering_source->initialize(transform_h264_encoder::frame_rate_num,
+            transform_h264_encoder::frame_rate_den, BUFFERING_DEFAULT_VIDEO_LATENCY);
+
+        this->video_buffering_source = video_buffering_source;
+    }
+
+    // create audio buffering source
+    if(!this->audio_buffering_source ||
+        this->audio_buffering_source->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
+    {
+        source_buffering_audio_t audio_buffering_source(new source_buffering_audio(this->audio_session));
+        audio_buffering_source->initialize(transform_aac_encoder::sample_rate, 1,
+            BUFFERING_DEFAULT_AUDIO_LATENCY);
+
+        this->audio_buffering_source = audio_buffering_source;
+    }
 }
 
 void control_pipeline2::deactivate_components()
@@ -295,8 +317,8 @@ void control_pipeline2::deactivate_components()
     // stop the playback by switching to empty topologies
     if(this->mpeg_sink)
     {
-        this->video_topology.reset(new media_topology(this->time_source));
-        this->audio_topology.reset(new media_topology(this->time_source));
+        this->video_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
+        this->audio_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
         this->mpeg_sink->switch_topologies(this->video_topology, this->audio_topology);
     }
 
@@ -309,6 +331,8 @@ void control_pipeline2::deactivate_components()
     this->aac_encoder_transform = NULL;
     this->audiomixer_transform = NULL;
     this->audio_sink = NULL;
+    this->video_buffering_source = NULL;
+    this->audio_buffering_source = NULL;
 
     this->session = NULL;
     this->audio_session = NULL;
@@ -326,12 +350,12 @@ void control_pipeline2::build_and_switch_topology()
     if(this->disabled)
         return;
 
-    this->video_topology.reset(new media_topology(this->time_source));
-    this->audio_topology.reset(new media_topology(this->time_source));
+    this->video_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
+    this->audio_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
 
-    stream_audio_t audio_stream = this->audio_sink->create_stream(this->audio_topology->get_clock());
+    stream_audio_t audio_stream = this->audio_sink->create_stream(this->audio_topology->get_message_generator());
     stream_mpeg2_t mpeg_stream = this->mpeg_sink->create_stream(
-        this->video_topology->get_clock(), audio_stream);
+        this->video_topology->get_message_generator(), audio_stream);
 
     mpeg_stream->set_pull_rate(
         transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
@@ -339,15 +363,29 @@ void control_pipeline2::build_and_switch_topology()
     // set the topology
     media_stream_t preview_stream = this->preview_sink->create_stream();
     stream_audiomixer2_base_t audiomixer_stream =
-        this->audiomixer_transform->create_stream(this->audio_topology->get_clock());
+        this->audiomixer_transform->create_stream(this->audio_topology->get_message_generator());
     stream_videomixer_base_t videomixer_stream = 
-        this->videomixer_transform->create_stream(this->video_topology->get_clock());
+        this->videomixer_transform->create_stream(this->video_topology->get_message_generator());
 
+    // connect the sources to mixers
     this->root_scene.build_video_topology(
         mpeg_stream, videomixer_stream, this->video_topology);
     this->root_scene.build_audio_topology(
         audio_stream, audiomixer_stream, this->audio_topology);
 
+    // connect the buffering sources to mixers
+    media_stream_t video_buffering_stream = this->video_buffering_source->create_stream(
+        this->video_topology->get_message_generator());
+    media_stream_t audio_buffering_stream = this->audio_buffering_source->create_stream(
+        this->audio_topology->get_message_generator());
+
+    video_buffering_stream->connect_streams(mpeg_stream, this->video_topology);
+    audio_buffering_stream->connect_streams(audio_stream, this->audio_topology);
+
+    videomixer_stream->connect_streams(video_buffering_stream, NULL, this->video_topology);
+    audiomixer_stream->connect_streams(audio_buffering_stream, NULL, this->audio_topology);
+
+    // connect the video mixer stream to preview stream
     preview_stream->connect_streams(videomixer_stream, this->video_topology);
 
     if(!this->recording)
@@ -358,14 +396,14 @@ void control_pipeline2::build_and_switch_topology()
     else
     {
         media_stream_t encoder_stream_video =
-            this->h264_encoder_transform->create_stream(this->video_topology->get_clock());
+            this->h264_encoder_transform->create_stream(this->video_topology->get_message_generator());
         media_stream_t color_converter_stream = this->color_converter_transform->create_stream();
         media_stream_t mp4_stream_video = 
-            this->mp4_sink.first->create_stream(this->video_topology->get_clock());
+            this->mp4_sink.first->create_stream(this->video_topology->get_message_generator());
         media_stream_t encoder_stream_audio =
-            this->aac_encoder_transform->create_stream(this->audio_topology->get_clock());
+            this->aac_encoder_transform->create_stream(this->audio_topology->get_message_generator());
         media_stream_t mp4_stream_audio = 
-            this->mp4_sink.second->create_stream(this->audio_topology->get_clock());
+            this->mp4_sink.second->create_stream(this->audio_topology->get_message_generator());
 
         // TODO: encoder stream is redundant
         mpeg_stream->encoder_stream = 

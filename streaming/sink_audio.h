@@ -26,38 +26,34 @@ public:
 
     void initialize();
 
-    stream_audio_t create_stream(presentation_clock_t&&);
+    stream_audio_t create_stream(media_message_generator_t&&);
 };
 
-class stream_audio : public media_stream_clock_sink
+class stream_audio : public media_stream_message_listener
 {
     friend class stream_mpeg2;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    struct empty {};
-    typedef request_queue<empty> request_queue;
 private:
     sink_audio_t sink;
-    volatile bool requesting, processing;
-    /*bool running;*/
+    bool requesting;
 
     media_topology_t topology;
+    bool stopping;
     time_unit stop_point;
 
     std::atomic_int requests;
     int max_requests;
-    request_queue requests_queue;
 
     // for debug
     int unavailable;
     /*bool ran_once, stopped;*/
 
-    // media_stream_clock_sink
+    // media_stream_message_listener
     void on_stream_start(time_unit);
     void on_stream_stop(time_unit);
 
     void dispatch_request(const request_packet&, bool no_drop = false);
-    void dispatch_process();
 public:
     explicit stream_audio(const sink_audio_t& sink);
 

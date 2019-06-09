@@ -81,12 +81,12 @@ public:
     ~transform_aac_encoder();
 
     void initialize(bitrate_t bitrate = rate_128);
-    media_stream_t create_stream(presentation_clock_t&&);
+    media_stream_t create_stream(media_message_generator_t&&);
 };
 
 typedef std::shared_ptr<transform_aac_encoder> transform_aac_encoder_t;
 
-class stream_aac_encoder : public media_stream_clock_sink
+class stream_aac_encoder : public media_stream_message_listener
 {
 public:
     typedef buffer_pool<media_sample_aac_frames_pooled> buffer_pool_aac_frames_t;
@@ -95,7 +95,7 @@ private:
 
     std::shared_ptr<buffer_pool_aac_frames_t> buffer_pool_aac_frames;
 
-    std::atomic<time_unit> drain_point;
+    std::atomic<bool> stopping;
 
     void on_component_start(time_unit);
     void on_component_stop(time_unit);

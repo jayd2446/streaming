@@ -53,11 +53,11 @@ void sink_mpeg2::start_topologies(
 }
 
 stream_mpeg2_t sink_mpeg2::create_stream(
-    presentation_clock_t&& clock, const stream_audio_t& audio_stream)
+    media_message_generator_t&& message_generator, const stream_audio_t& audio_stream)
 {
     stream_mpeg2_t stream(
         new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream));
-    stream->register_sink(clock);
+    stream->register_listener(message_generator);
 
     return stream;
 }
@@ -73,12 +73,12 @@ extern DWORD capture_work_queue_id;
 stream_mpeg2::stream_mpeg2(
     const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream) : 
     sink(sink), unavailable(0), /*running(false),*/
-    media_stream_clock_sink(sink.get()),
+    media_stream_message_listener(sink.get()),
     audio_sink_stream(audio_sink_stream),
-    last_due_time(std::numeric_limits<time_unit>::min()),
     stop_point(std::numeric_limits<time_unit>::min()),
+    stopping(false),
     discontinuity(false),
-    requesting(false), processing(false),
+    requesting(false),
     requests(0), max_requests(DEFAULT_MAX_REQUESTS)
 {
 }
@@ -101,21 +101,18 @@ void stream_mpeg2::on_stream_start(time_unit t)
     // lower priority work queue
     /*this->set_schedule_cb_work_queue(capture_work_queue_id);*/
 
-    this->requesting = this->processing = true;
+    this->requesting = true;
 
     this->topology = this->sink->session->get_current_topology();
 
     /*this->running = true;*/
-    this->last_due_time = t;
     this->schedule_new(t);
 }
 
 void stream_mpeg2::on_stream_stop(time_unit t)
 {
-    // on stream stop event the rp that has the same time point
-    // will be passed upstream and not dropped
-
-    this->requesting = false;
+    /*this->requesting = false;*/
+    this->stopping = true;
     this->stop_point = t;
 
     /*this->running = false;
@@ -125,14 +122,6 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     assert_(this->sink->pending_audio_topology);
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
     this->sink->pending_audio_topology = NULL;
-
-    // dispatch the last request
-    request_packet incomplete_rp;
-    incomplete_rp.request_time = t;
-    incomplete_rp.timestamp = t;
-    incomplete_rp.flags = 0;
-
-    this->audio_sink_stream->dispatch_request(incomplete_rp, true);
 }
 
 void stream_mpeg2::scheduled_callback(time_unit due_time)
@@ -141,7 +130,14 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     scoped_lock lock(this->sink->topology_switch_mutex);
 
     request_packet incomplete_rp;
-    incomplete_rp.request_time = due_time;
+    if(!this->stopping)
+        incomplete_rp.request_time = due_time;
+    else
+    {
+        assert_(this->stop_point != std::numeric_limits<time_unit>::min());
+        incomplete_rp.request_time = this->stop_point;
+    }
+    // TODO: make sure that timestamp is properly used in the pipeline
     incomplete_rp.timestamp = due_time;
     incomplete_rp.flags = this->discontinuity ? FLAG_DISCONTINUITY : 0;
 
@@ -158,10 +154,10 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
     // TODO: restore the audio pipeline periodicity
     if(this->audio_sink_stream->requesting)
         this->audio_sink_stream->dispatch_request(incomplete_rp);
-    if(this->processing)
+    /*if(this->processing)
         this->dispatch_process();
     if(this->audio_sink_stream->processing)
-        this->audio_sink_stream->dispatch_process();
+        this->audio_sink_stream->dispatch_process();*/
 
     /*if(this->requesting)
     {
@@ -177,32 +173,32 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
         }
     }*/
 
-    // schedule new until both pipelines have stopped processing
-    if(this->processing || this->audio_sink_stream->processing)
+    // schedule new until both pipelines have stopped requesting
+    if(this->requesting || this->audio_sink_stream->requesting)
         this->schedule_new(due_time);
 
     // TODO: video and audio pipeline should be independently destroyed
     // TODO: this design oddity should be fixed
     // because this stream controls the audio sink, this topology must be destroyed after
     // the audio topology is destroyed
-    if(!this->processing && !this->audio_sink_stream->processing)
+    if(!this->requesting && !this->audio_sink_stream->requesting)
         // the topology must be explicitly set to null so that the circular dependency
         // between the topology and this stream is broken
         this->topology = NULL;
-    if(!this->audio_sink_stream->processing)
+    if(!this->audio_sink_stream->requesting)
         this->audio_sink_stream->topology = NULL;
 }
 
-bool stream_mpeg2::get_clock(presentation_clock_t& clock)
+bool stream_mpeg2::get_clock(media_clock_t& clock)
 {
-    assert_(this->topology);
-    clock = this->topology->get_clock();
+    /*assert_(this->topology);*/
+    clock = this->sink->session->get_clock();
     return !!clock;
 }
 
 void stream_mpeg2::schedule_new(time_unit due_time)
 {
-    presentation_clock_t t;
+    media_clock_t t;
     const bool ret = this->get_clock(t);
     assert_(ret);
 
@@ -234,47 +230,16 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
         this->requests++;
         this->unavailable = 0;
 
-        this->sink->session->begin_request_sample(this, incomplete_rp);
         assert_(this->topology);
-
-        /*const result_t res = this->worker_stream->request_sample(rp, this);
-        if(res == FATAL_ERROR)
-            std::cout << "couldn't dispatch request on stream mpeg" << std::endl;
-        else
-        {
-            assert_(rp.topology);
-            if(!this->topology)
-                this->topology = rp.topology;
-        }*/
+        this->sink->session->begin_request_sample(this, incomplete_rp, this->topology);
     }
     else
     {
-        /*for(auto it = this->worker_streams.begin(); it != this->worker_streams.end(); it++)
-        {
-            if((*it)->is_available())
-            {
-                this->unavailable = 0;
-
-                result_t res = (*it)->request_sample(rp, this);
-                if(res == FATAL_ERROR)
-                    std::cout << "couldn't dispatch request on stream mpeg" << std::endl;
-                else
-                {
-                    assert_(rp.topology);
-                    if(!this->topology)
-                        this->topology = rp.topology;
-                }
-
-                return;
-            }
-        }*/
-
         this->discontinuity = true;
         this->unavailable++;
 
         std::cout << "--SAMPLE REQUEST DROPPED IN MPEG_SINK--";
-        if(this->encoder_stream && 
-            this->encoder_stream->get_transform()->is_encoder_overloading())
+        if(this->encoder_stream && this->encoder_stream->get_transform()->is_encoder_overloading())
             std::cout << " (encoder overloading)";
         std::cout << std::endl;
 
@@ -282,14 +247,15 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
     }
 }
 
-void stream_mpeg2::dispatch_process()
-{
-    this->sink->session->begin_give_sample(this, this->topology);
-}
-
 media_stream::result_t stream_mpeg2::request_sample(const request_packet& rp, const media_stream*)
 {
-    this->requests_queue.initialize_queue(rp);
+    if(rp.flags & FLAG_LAST_PACKET)
+    {
+        assert_(this->stopping);
+        this->requesting = false;
+    }
+    /*if(this->stopping && this->sink->session->is_drainable(this->stop_point, rp.topology))
+        this->requesting = false;*/
 
     if(!this->sink->session->request_sample(this, rp))
         return FATAL_ERROR;
@@ -301,20 +267,9 @@ media_stream::result_t stream_mpeg2::process_sample(
 {
     // TODO: request count should be dropped only after the request packet has been destroyed
 
+    // multithreaded
+
     this->requests--;
-
-    request_queue::request_t request;
-    request.stream = this;
-    request.rp = rp;
-    this->requests_queue.push(request);
-
-    // check if the last request has been processed and stop further processing in that case
-    while(this->requests_queue.pop(request))
-        if(request.rp.request_time == this->stop_point)
-        {
-            assert_(!this->requests_queue.get());
-            this->processing = false;
-        }
 
     return OK;
 }

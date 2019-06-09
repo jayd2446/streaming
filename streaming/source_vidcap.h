@@ -52,7 +52,7 @@ private:
     std::wstring symbolic_link;
 
     stream_source_base_t create_derived_stream();
-    bool get_samples_end(const request_t&, frame_unit& end);
+    bool get_samples_end(time_unit request_time, frame_unit& end);
     void make_request(request_t&, frame_unit frame_end);
     void dispatch(request_t&);
 

@@ -329,11 +329,11 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-media_stream_t transform_aac_encoder::create_stream(presentation_clock_t&& clock)
+media_stream_t transform_aac_encoder::create_stream(media_message_generator_t&& message_generator)
 {
-    media_stream_clock_sink_t stream(
+    media_stream_message_listener_t stream(
         new stream_aac_encoder(this->shared_from_this<transform_aac_encoder>()));
-    stream->register_sink(clock);
+    stream->register_listener(message_generator);
 
     return stream;
 }
@@ -345,10 +345,10 @@ media_stream_t transform_aac_encoder::create_stream(presentation_clock_t&& clock
 
 
 stream_aac_encoder::stream_aac_encoder(const transform_aac_encoder_t& transform) : 
-    media_stream_clock_sink(transform.get()),
+    media_stream_message_listener(transform.get()),
     transform(transform),
-    drain_point(std::numeric_limits<time_unit>::min()),
-    buffer_pool_aac_frames(new buffer_pool_aac_frames_t)
+    buffer_pool_aac_frames(new buffer_pool_aac_frames_t),
+    stopping(false)
 {
 }
 
@@ -366,7 +366,8 @@ void stream_aac_encoder::on_component_start(time_unit t)
 
 void stream_aac_encoder::on_component_stop(time_unit t)
 {
-    this->drain_point = t;
+    this->stopping = true;
+    /*this->drain_point = t;*/
 }
 
 media_stream::result_t stream_aac_encoder::request_sample(const request_packet& rp, const media_stream*)
@@ -397,7 +398,7 @@ media_stream::result_t stream_aac_encoder::process_sample(
     }
 
     request.rp = rp;
-    request.sample.drain = (this->drain_point.load() == rp.request_time);
+    request.sample.drain = (rp.flags & FLAG_LAST_PACKET) && this->stopping;
     request.stream = this;
     request.sample.out_sample = out_sample;
 

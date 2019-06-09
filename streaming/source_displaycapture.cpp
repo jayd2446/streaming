@@ -66,12 +66,12 @@ media_stream_t source_displaycapture::create_pointer_stream(
     return pointer_stream;
 }
 
-bool source_displaycapture::get_samples_end(const request_t& request, frame_unit& end)
+bool source_displaycapture::get_samples_end(time_unit request_time, frame_unit& end)
 {
     // note: time shifting isn't possible here, unless the drain is properly handled aswell
 
     // displaycapture just pretends that it has samples up to the request point
-    end = convert_to_frame_unit(request.rp.request_time,
+    end = convert_to_frame_unit(request_time,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
 

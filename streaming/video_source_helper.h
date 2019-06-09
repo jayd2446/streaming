@@ -1,5 +1,4 @@
 #pragma once
-#include "source_base.h"
 #include "transform_h264_encoder.h"
 #include "transform_videomixer.h"
 #include <queue>

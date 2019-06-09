@@ -25,9 +25,9 @@ source_empty_audio::stream_source_base_t source_empty_audio::create_derived_stre
     return stream_empty_audio_t(new stream_empty_audio(this->shared_from_this<source_empty_audio>()));
 }
 
-bool source_empty_audio::get_samples_end(const request_t& request, frame_unit& end)
+bool source_empty_audio::get_samples_end(time_unit request_time, frame_unit& end)
 {
-    end = convert_to_frame_unit(request.rp.request_time, transform_aac_encoder::sample_rate, 1);
+    end = convert_to_frame_unit(request_time, transform_aac_encoder::sample_rate, 1);
     return true;
 }
 
@@ -113,9 +113,9 @@ source_empty_video::stream_source_base_t source_empty_video::create_derived_stre
     return stream_empty_video_t(new stream_empty_video(this->shared_from_this<source_empty_video>()));
 }
 
-bool source_empty_video::get_samples_end(const request_t& request, frame_unit& end)
+bool source_empty_video::get_samples_end(time_unit request_time, frame_unit& end)
 {
-    end = convert_to_frame_unit(request.rp.request_time,
+    end = convert_to_frame_unit(request_time,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
     return true;

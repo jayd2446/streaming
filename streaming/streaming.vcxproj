@@ -29,47 +29,47 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{C1C35477-E5D3-424B-8669-FB3ED8367688}</ProjectGuid>
     <RootNamespace>streaming</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <WindowsAppContainer>false</WindowsAppContainer>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDisabled|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDisabled|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -270,12 +270,12 @@
     <ClCompile Include="gui_dlgs.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="media_component.cpp" />
+    <ClCompile Include="media_message_generator.cpp" />
     <ClCompile Include="media_sample.cpp" />
     <ClCompile Include="media_session.cpp" />
     <ClCompile Include="media_stream.cpp" />
     <ClCompile Include="media_topology.cpp" />
     <ClCompile Include="output_file.cpp" />
-    <ClCompile Include="request_packet.cpp" />
     <ClCompile Include="sink_audio.cpp" />
     <ClCompile Include="sink_mpeg2.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
@@ -294,7 +294,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="transform_videomixer.cpp" />
-    <ClCompile Include="presentation_clock.cpp" />
+    <ClCompile Include="media_clock.cpp" />
     <ClCompile Include="video_source_helper.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -316,12 +316,12 @@
     <ClInclude Include="gui_dlgs.h" />
     <ClInclude Include="IUnknownImpl.h" />
     <ClInclude Include="media_component.h" />
+    <ClInclude Include="media_message_generator.h" />
     <ClInclude Include="request_queue_handler.h" />
     <ClInclude Include="media_sample.h" />
     <ClInclude Include="media_session.h" />
     <ClInclude Include="media_sink.h" />
     <ClInclude Include="request_dispatcher.h" />
-    <ClInclude Include="source_base.h" />
     <ClInclude Include="media_stream.h" />
     <ClInclude Include="media_topology.h" />
     <ClInclude Include="enable_shared_from_this.h" />
@@ -332,6 +332,8 @@
     <ClInclude Include="sink_file.h" />
     <ClInclude Include="sink_mpeg2.h" />
     <ClInclude Include="sink_preview2.h" />
+    <ClInclude Include="source_base.h" />
+    <ClInclude Include="source_buffering.h" />
     <ClInclude Include="video_source_helper.h" />
     <ClInclude Include="source_displaycapture.h" />
     <ClInclude Include="source_vidcap.h" />
@@ -349,7 +351,7 @@
     </ClInclude>
     <ClInclude Include="transform_mixer.h" />
     <ClInclude Include="transform_videomixer.h" />
-    <ClInclude Include="presentation_clock.h" />
+    <ClInclude Include="media_clock.h" />
     <ClInclude Include="wtl.h" />
   </ItemGroup>
   <ItemGroup>

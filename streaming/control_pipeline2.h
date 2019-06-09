@@ -1,7 +1,7 @@
 #pragma once
 #include "control_class.h"
 #include "control_scene2.h"
-#include "presentation_clock.h"
+#include "media_clock.h"
 #include "media_session.h"
 #include "media_topology.h"
 #include "transform_aac_encoder.h"
@@ -13,6 +13,7 @@
 #include "sink_audio.h"
 #include "sink_preview2.h"
 #include "sink_file.h"
+#include "source_buffering.h"
 #include "output_file.h"
 #include "enable_shared_from_this.h"
 #include "control_scene2.h"
@@ -24,6 +25,9 @@
 #include <mutex>
 #include <memory>
 #include <vector>
+
+#define BUFFERING_DEFAULT_VIDEO_LATENCY (SECOND_IN_TIME_UNIT / 5) // 200ms default buffering
+#define BUFFERING_DEFAULT_AUDIO_LATENCY (SECOND_IN_TIME_UNIT / 5)
 
 #pragma comment(lib, "D3D11.lib")
 #pragma comment(lib, "DXGI.lib")
@@ -40,7 +44,7 @@ private:
     ATL::CWindow recording_initiator_wnd;
     std::recursive_mutex pipeline_mutex;
 
-    presentation_time_source_t time_source;
+    media_clock_t time_source;
     media_topology_t video_topology, audio_topology;
     // these components are present in every scene
     transform_videomixer_t videomixer_transform;
@@ -52,6 +56,8 @@ private:
     sink_mp4_t mp4_sink;
     sink_mpeg2_t mpeg_sink;
     sink_audio_t audio_sink;
+    source_buffering_video_t video_buffering_source;
+    source_buffering_audio_t audio_buffering_source;
 
     // active controls must not have duplicate elements
     control_set_t controls;

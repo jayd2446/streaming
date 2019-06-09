@@ -2,8 +2,8 @@
 #include "media_stream.h"
 #include <algorithm>
 
-media_topology::media_topology(const presentation_time_source_t& time_source) : 
-    clock(new presentation_clock(time_source)), packet_number(0), first_packet_number(0)
+media_topology::media_topology(const media_message_generator_t& message_generator) :
+    message_generator(message_generator), next_packet_number(0), topology_number(0)
 {
 }
 

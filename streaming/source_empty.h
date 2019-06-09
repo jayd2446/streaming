@@ -2,7 +2,6 @@
 #include "source_base.h"
 #include "media_component.h"
 #include "media_stream.h"
-#include "async_callback.h"
 #include "transform_videomixer.h"
 #include "transform_audiomixer2.h"
 #include "transform_aac_encoder.h"
@@ -22,7 +21,7 @@ private:
     frame_unit last_frame_end;
 
     stream_source_base_t create_derived_stream();
-    bool get_samples_end(const request_t&, frame_unit& end);
+    bool get_samples_end(time_unit request_time, frame_unit& end);
     void make_request(request_t&, frame_unit frame_end);
     void dispatch(request_t&);
 public:
@@ -56,7 +55,7 @@ private:
     frame_unit last_frame_end;
 
     stream_source_base_t create_derived_stream();
-    bool get_samples_end(const request_t&, frame_unit& end);
+    bool get_samples_end(time_unit request_time, frame_unit& end);
     void make_request(request_t&, frame_unit frame_end);
     void dispatch(request_t&);
 public:

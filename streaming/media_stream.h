@@ -7,10 +7,10 @@
 class media_topology;
 class media_stream;
 class media_component;
-class presentation_clock;
+class media_message_generator;
 typedef std::shared_ptr<media_stream> media_stream_t;
 typedef std::shared_ptr<media_topology> media_topology_t;
-typedef std::shared_ptr<presentation_clock> presentation_clock_t;
+typedef std::shared_ptr<media_message_generator> media_message_generator_t;
 struct request_packet;
 
 class media_stream : public enable_shared_from_this
@@ -67,10 +67,10 @@ public:
         const media_component_args*, const request_packet&, const media_stream* previous_stream) = 0;
 };
 
-// implements event firing
-class media_stream_clock_sink : public media_stream
+// declares overridables for topology messages
+class media_stream_message_listener : public media_stream
 {
-    friend class presentation_clock;
+    friend class media_message_generator;
 private:
     const media_component* component;
     bool unregistered;
@@ -81,12 +81,15 @@ protected:
     // called when the stream is started/stopped
     virtual void on_stream_start(time_unit) {}
     virtual void on_stream_stop(time_unit) {}
+    // TODO: this message could be moved to media_source_stream only
+    // called by media session to resolve the status of topology draining after on_stream_stop event
+    virtual bool is_drainable_or_drained(time_unit) {return true;}
 public:
-    media_stream_clock_sink(const media_component*, stream_t = OTHER);
-    virtual ~media_stream_clock_sink() {}
+    media_stream_message_listener(const media_component*, stream_t = OTHER);
+    virtual ~media_stream_message_listener() {}
 
-    // adds this sink to the list of sinks in the presentation clock
-    void register_sink(presentation_clock_t&);
+    // adds this listener to the list of listeners in the media event generator
+    void register_listener(const media_message_generator_t&);
 };
 
-typedef std::shared_ptr<media_stream_clock_sink> media_stream_clock_sink_t;
+typedef std::shared_ptr<media_stream_message_listener> media_stream_message_listener_t;

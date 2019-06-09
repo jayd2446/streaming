@@ -28,7 +28,7 @@ void control_wasapi::build_audio_topology(const media_stream_t& from,
 
     if(!this->reference)
     {
-        media_stream_t wasapi_stream = this->component->create_stream(topology->get_clock());
+        media_stream_t wasapi_stream = this->component->create_stream(topology->get_message_generator());
 
         wasapi_stream->connect_streams(from, topology);
         audiomixer_stream->connect_streams(wasapi_stream, this->audiomixer_params, topology);

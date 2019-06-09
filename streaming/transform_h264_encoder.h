@@ -13,6 +13,11 @@
 #include <mutex>
 #include <atomic>
 
+// TODO: maintaining a separate queue instead of holding request packets could help
+// keeping the vram allocations of sources at minimum;
+// it trades increased frame processing to lowered vram usage, which actually might result into
+// lowered computation in the end
+
 // h264 encoder
 class stream_h264_encoder;
 typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
@@ -108,19 +113,19 @@ public:
     // software encoder flag overrides d3d device arg
     void initialize(const control_class_t&,
         const CComPtr<ID3D11Device>&, bool software = false);
-    media_stream_t create_stream(presentation_clock_t&&);
+    media_stream_t create_stream(media_message_generator_t&&);
 };
 
 typedef std::shared_ptr<transform_h264_encoder> transform_h264_encoder_t;
 
-class stream_h264_encoder : public media_stream_clock_sink
+class stream_h264_encoder : public media_stream_message_listener
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
     transform_h264_encoder_t transform;
 
-    std::atomic<time_unit> drain_point;
+    std::atomic<bool> stopping;
 
     void on_component_start(time_unit);
     void on_component_stop(time_unit);

@@ -120,12 +120,12 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         CComPtr<IMFMediaBuffer> buffer;
         CComPtr<IMFDXGIBuffer> dxgi_buffer;
         CComPtr<ID3D11Texture2D> texture;
-        presentation_time_source_t time_source = source->session->get_time_source();
+        media_clock_t clock = source->session->get_clock();
         media_sample_video_mixer_frame frame;
 
-        if(!time_source)
+        if(!clock)
         {
-            std::cout << "time source was not initialized" << std::endl;
+            std::cout << "clock was not initialized" << std::endl;
             goto done;
         }
 
@@ -137,7 +137,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
         // make frame
         frame.pos = convert_to_frame_unit(
-            time_source->system_time_to_time_source((time_unit)timestamp),
+            clock->system_time_to_clock_time(timestamp),
             transform_h264_encoder::frame_rate_num,
             transform_h264_encoder::frame_rate_den);
         frame.dur = 1;
@@ -145,6 +145,8 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
             buffer_pool_texture_t::scoped_lock lock(source->buffer_pool_texture->mutex);
             frame.buffer = source->buffer_pool_texture->acquire_buffer();
             frame.buffer->initialize(texture);
+            // store the reference of the sample so that mf won't reuse it too soon
+            frame.buffer->mf_sample = sample;
         }
 
         frame.params.source_rect.top = frame.params.source_rect.left = 0.f;
@@ -188,10 +190,10 @@ source_vidcap::stream_source_base_t source_vidcap::create_derived_stream()
     return stream_vidcap_t(new stream_vidcap(this->shared_from_this<source_vidcap>()));
 }
 
-bool source_vidcap::get_samples_end(const request_t& request, frame_unit& end)
+bool source_vidcap::get_samples_end(time_unit request_time, frame_unit& end)
 {
     scoped_lock lock(this->source_helper_mutex);
-    return this->source_helper.get_samples_end(request.rp.request_time, end);
+    return this->source_helper.get_samples_end(request_time, end);
 }
 
 void source_vidcap::make_request(request_t& request, frame_unit frame_end)

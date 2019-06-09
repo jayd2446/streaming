@@ -10,6 +10,10 @@
 
 // indicates a gap in the stream
 #define FLAG_DISCONTINUITY 0x1
+// indicates a last request packet in the topology
+#define FLAG_LAST_PACKET 0x2
+
+// TODO: request_packet should probably have the media_ prefix
 
 // request packet has a reference to the topology it belongs to;
 // request packets allow for seamless topology switching;
@@ -23,8 +27,6 @@ struct request_packet
     time_unit timestamp;
     // cant be a negative number
     int packet_number;
-
-    bool get_clock(presentation_clock_t&) const;
 };
 
 class media_stream;
@@ -56,15 +58,25 @@ public:
         request_t(request_t&&) = default;
         request_t& operator=(request_t&&) = default;
     };
-    typedef std::lock_guard<std::mutex> scoped_lock;
+    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:
-    mutable std::mutex requests_mutex;
-    std::deque<request_t> requests;
-    int first_packet_number, last_packet_number;
+    struct single_request_queue
+    {
+        std::deque<request_t> requests;
+        int first_packet_number, last_packet_number;
+    };
+private:
+    mutable std::recursive_mutex requests_mutex;
+    std::deque<single_request_queue> requests;
+    int first_topology_number, last_topology_number;
     std::atomic_bool initialized;
 
-    int get_index(int packet_number) const;
+    int get_topology_index(int topology_number) const;
+    int get_index(int topology_index, int packet_number) const;
     bool can_pop() const;
+    // moves to next queue;
+    // current queue must be empty before moving
+    void next_topology();
 public:
     request_queue();
 
@@ -77,7 +89,8 @@ public:
     // if a request with the same packet number already exists, the old request is replaced;
     // NOTE: push is slow for non trivial arg types
     void push(const request_t&);
-    // pop will use move semantics
+    // pop will use move semantics;
+    // pop will advance the queue if the popped request was tagged with flag_last_packet
     bool pop(request_t&);
     bool pop();
     // NOTE: get is slow for non trivial sample types
@@ -94,26 +107,55 @@ public:
 
 template<class T>
 request_queue<T>::request_queue() : 
-    first_packet_number(INVALID_PACKET_NUMBER), last_packet_number(INVALID_PACKET_NUMBER),
+    first_topology_number(-1), last_topology_number(-1),
     initialized(false)
 {
 }
 
 template<class T>
-int request_queue<T>::get_index(int packet_number) const
+int request_queue<T>::get_topology_index(int topology_number) const
 {
-    return packet_number - this->first_packet_number;
+    return topology_number - this->first_topology_number;
+}
+
+template<class T>
+int request_queue<T>::get_index(int topology_index, int packet_number) const
+{
+    return packet_number - this->requests[topology_index].first_packet_number;
 }
 
 template<class T>
 bool request_queue<T>::can_pop() const
 {
     // lock is assumed
-    if(!this->requests.empty())
-        if(this->first_packet_number == this->requests.front().rp.packet_number)
+    if(!this->requests.empty() &&
+        !this->requests[this->get_topology_index(this->first_topology_number)].requests.empty())
+    {
+        const single_request_queue& queue =
+            this->requests[this->get_topology_index(this->first_topology_number)];
+        if(queue.first_packet_number == queue.requests.front().rp.packet_number)
             return true;
+    }
 
     return false;
+}
+
+template<class T>
+void request_queue<T>::next_topology()
+{
+    // lock is assumed
+
+    // there must be a valid topology
+    assert_(!this->requests.empty());
+
+    single_request_queue& queue =
+        this->requests[this->get_topology_index(this->first_topology_number)];
+
+    // the current topology queue must be empty
+    assert_(queue.requests.empty());
+
+    this->requests.pop_front();
+    this->first_topology_number++;
 }
 
 template<class T>
@@ -126,12 +168,19 @@ void request_queue<T>::initialize_queue(const request_packet& rp)
     {
         scoped_lock lock(this->requests_mutex);
 
-        this->first_packet_number =
-            this->last_packet_number = rp.topology->get_first_packet_number();
+        // add the first request to the first queue
+        single_request_queue queue;
+        queue.first_packet_number = queue.last_packet_number = 0;
 
-        request_t request;
-        request.rp.packet_number = INVALID_PACKET_NUMBER;
-        this->requests.push_back(std::move(request));
+        request_t placeholder_request;
+        placeholder_request.rp.packet_number = INVALID_PACKET_NUMBER;
+        queue.requests.push_back(std::move(placeholder_request));
+
+        // add the first queue to this
+        this->first_topology_number =
+            this->last_topology_number = rp.topology->get_topology_number();
+
+        this->requests.push_back(std::move(queue));
     }
 }
 
@@ -141,19 +190,51 @@ void request_queue<T>::push(const request_t& request)
     scoped_lock lock(this->requests_mutex);
 
     // the queue must have been initialized in the request sample function
-    assert_(this->first_packet_number != INVALID_PACKET_NUMBER);
+    assert_(this->first_topology_number != -1);
 
-    // queue won't work properly if the first packet number is greater than
+    const int diff = request.rp.topology->get_topology_number() - this->last_topology_number;
+    // queue won't work properly if the first topology number is greater than
     // the one in the submitted request
-    assert_(request.rp.packet_number >= this->first_packet_number);
-    if(request.rp.packet_number > this->last_packet_number)
+    assert_(request.rp.topology->get_topology_number() >= this->first_topology_number);
+
+    if(diff > 0)
     {
-        const int diff = request.rp.packet_number - this->last_packet_number;
-        this->requests.insert(this->requests.end(), diff, request);
-        this->last_packet_number = request.rp.packet_number;
+        this->last_topology_number = request.rp.topology->get_topology_number();
+
+        // add new queue(s)
+        single_request_queue queue;
+        queue.first_packet_number = queue.last_packet_number = 0;
+
+        request_t placeholder_request;
+        placeholder_request.rp.packet_number = INVALID_PACKET_NUMBER;
+        queue.requests.push_back(std::move(placeholder_request));
+
+        this->requests.insert(this->requests.end(), diff, queue);
+
+        // add the new request
+        this->push(request);
     }
     else
-        this->requests[this->get_index(request.rp.packet_number)] = request;
+    {
+        const int topology_index = this->get_topology_index(request.rp.topology->get_topology_number());
+        single_request_queue& queue = this->requests[topology_index];
+
+        // the queue must be valid
+        assert_(queue.first_packet_number != INVALID_PACKET_NUMBER);
+
+        const int diff2 = request.rp.packet_number - queue.last_packet_number;
+        // queue won't work properly if the first packet number is greater than
+        // the one in the submitted request
+        assert_(request.rp.packet_number >= queue.first_packet_number);
+
+        if(diff2 > 0)
+        {
+            queue.last_packet_number = request.rp.packet_number;
+            queue.requests.insert(queue.requests.end(), diff2, request);
+        }
+        else
+            queue.requests[this->get_index(topology_index, request.rp.packet_number)] = request;
+    }
 }
 
 template<class T>
@@ -162,9 +243,18 @@ bool request_queue<T>::pop(request_t& request)
     scoped_lock lock(this->requests_mutex);
     if(this->can_pop())
     {
-        request = std::move(this->requests.front());
-        this->requests.pop_front();
-        this->first_packet_number++;
+        single_request_queue& queue =
+            this->requests[this->get_topology_index(this->first_topology_number)];
+
+        const bool next = (queue.requests.front().rp.flags & FLAG_LAST_PACKET);
+
+        request = std::move(queue.requests.front());
+        queue.requests.pop_front();
+        queue.first_packet_number++;
+
+        if(next)
+            this->next_topology();
+
         return true;
     }
 
@@ -177,8 +267,17 @@ bool request_queue<T>::pop()
     scoped_lock lock(this->requests_mutex);
     if(this->can_pop())
     {
-        this->requests.pop_front();
-        this->first_packet_number++;
+        single_request_queue& queue =
+            this->requests[this->get_topology_index(this->first_topology_number)];
+
+        const bool next = (queue.requests.front().rp.flags & FLAG_LAST_PACKET);
+
+        queue.requests.pop_front();
+        queue.first_packet_number++;
+
+        if(next)
+            this->next_topology();
+
         return true;
     }
 
@@ -191,7 +290,11 @@ bool request_queue<T>::get(request_t& request) const
     scoped_lock lock(this->requests_mutex);
     if(this->can_pop())
     {
-        request = this->requests.front();
+        single_request_queue& queue =
+            this->requests[this->get_topology_index(this->first_topology_number)];
+
+        request = queue.requests.front();
+
         return true;
     }
 
@@ -203,8 +306,13 @@ typename request_queue<T>::request_t* request_queue<T>::get()
 {
     scoped_lock lock(this->requests_mutex);
     if(this->can_pop())
+    {
+        single_request_queue& queue =
+            this->requests[this->get_topology_index(this->first_topology_number)];
+
         // references to deque elements will stay valid
-        return &this->requests[0];
+        return &queue.requests[0];
+    }
 
     return NULL;
 }
@@ -213,11 +321,20 @@ template<class T>
 typename request_queue<T>::request_t* request_queue<T>::get(int packet_number)
 {
     scoped_lock lock(this->requests_mutex);
-    const int index = this->get_index(packet_number);
-    assert_(index >= 0);
 
-    if(index < this->requests.size())
-        return &this->requests[index];
+    const int topology_index = this->get_topology_index(this->first_topology_number);
+    assert_(topology_index >= 0);
+
+    if(topology_index < this->requests.size())
+    {
+        single_request_queue& queue = this->requests[topology_index];
+
+        const int index = this->get_index(topology_index, packet_number);
+        assert_(index >= 0);
+
+        if(index < queue.requests.size())
+            return &queue.requests[index];
+    }
 
     return NULL;
 }

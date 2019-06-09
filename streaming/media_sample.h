@@ -64,6 +64,7 @@ public:
     DWORD texture_buffer_length;
     std::unique_ptr<BYTE[]> texture_buffer;
 
+    CComPtr<IMFSample> mf_sample;
     // TODO: this bitmap should be set in displaycapture aswell so that videomixer
     // doesn't need to create it for every input texture
     CComPtr<ID2D1Bitmap1> bitmap;
@@ -106,7 +107,7 @@ public:
     virtual ~media_buffer_memory() {}
 
     // methods for poolable samples;
-    // alignment isn't passed; it should be the lowest common dividor
+    // alignment isn't passed; it should be the lowest common divisor
     void initialize(DWORD len);
 };
 

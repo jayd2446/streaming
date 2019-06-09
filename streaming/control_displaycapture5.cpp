@@ -29,7 +29,7 @@ void control_displaycapture::build_video_topology(const media_stream_t& from,
     if(!this->reference)
     {
         source_displaycapture::stream_source_base_t displaycapture_stream =
-            this->component->create_stream(topology->get_clock());
+            this->component->create_stream(topology->get_message_generator());
         media_stream_t displaycapture_pointer_stream =
             this->component->create_pointer_stream(
                 std::static_pointer_cast<stream_displaycapture>(displaycapture_stream));
