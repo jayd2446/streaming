@@ -91,8 +91,11 @@ public:
     typedef typename transform_mixer::user_params_t user_params_t;
     typedef typename transform_mixer::packet_t packet_t;
     typedef typename transform_mixer::args_t args_t;
-    typedef typename request_queue_handler::request_t request_t;
-    typedef typename request_queue_handler::request_queue request_queue;
+    typedef typename request_queue_handler<typename TransformMixer::request_t>::request_t 
+        request_t;
+    typedef typename request_queue_handler<typename TransformMixer::request_t>::request_queue 
+        request_queue;
+    typedef media_stream::result_t result_t;
 
     struct input_stream_props_t
     {

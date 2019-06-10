@@ -75,7 +75,9 @@ public:
     typedef SourceBase source_base;
     typedef std::shared_ptr<source_base> source_base_t;
     typedef request_dispatcher<typename source_base::request_t> request_dispatcher;
-    typedef typename request_queue_handler::request_queue request_queue;
+    typedef typename 
+        request_queue_handler<std::optional<typename SourceBase::payload_t>>::request_queue 
+        request_queue;
 private:
     source_base_t source;
     std::weak_ptr<media_topology> this_topology;

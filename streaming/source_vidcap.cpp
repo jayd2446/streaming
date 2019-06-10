@@ -144,6 +144,8 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         {
             buffer_pool_texture_t::scoped_lock lock(source->buffer_pool_texture->mutex);
             frame.buffer = source->buffer_pool_texture->acquire_buffer();
+            lock.unlock();
+
             frame.buffer->initialize(texture);
             // store the reference of the sample so that mf won't reuse it too soon
             frame.buffer->mf_sample = sample;

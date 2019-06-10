@@ -11,8 +11,10 @@
 class video_source_helper
 {
 public:
+    // video devices might send samples in bursts, so
+    // maximum_frame_count should be carefully chosen
     static const size_t maximum_frame_count = 10;
-    static const frame_unit maximum_buffer_size = 60;
+    static const frame_unit maximum_buffer_size = 6000/*60*/;
     typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_frames_t;
 private:
     std::queue<media_sample_video_mixer_frame> captured_frames;

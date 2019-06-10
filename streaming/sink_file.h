@@ -17,8 +17,8 @@ class sink_file : public media_component, request_queue_handler<Request>
     friend class stream_file<sink_file>;
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
-    typedef request_queue_handler::request_t request_t;
-    typedef request_queue_handler::request_queue request_queue;
+    typedef typename request_queue_handler<Request>::request_t request_t;
+    typedef typename request_queue_handler<Request>::request_queue request_queue;
 private:
     output_file_t file_output;
     LONGLONG last_timestamp;
@@ -47,6 +47,7 @@ class stream_file : public media_stream_message_listener
 public:
     typedef SinkFile sink_file;
     typedef std::shared_ptr<sink_file> sink_file_t;
+    typedef media_stream::result_t result_t;
 private:
     sink_file_t sink;
 public:

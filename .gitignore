@@ -269,3 +269,7 @@ __pycache__/
 /streaming/source_displaycapture_legacy.h
 /streaming/source_wasapi_legacy.cpp
 /streaming/source_wasapi_legacy.h
+/LlvmDebug
+/LlvmReleaseDisabled
+/streaming/LlvmDebug
+/streaming/LlvmReleaseDisabled

@@ -163,8 +163,9 @@ media_buffer_texture_t stream_color_converter::acquire_buffer()
 {
     transform_color_converter::buffer_pool::scoped_lock lock(this->transform->texture_pool->mutex);
     media_buffer_texture_t buffer = this->transform->texture_pool->acquire_buffer();
-    this->initialize_buffer(buffer);
+    lock.unlock();
 
+    this->initialize_buffer(buffer);
     return buffer;
 }
 

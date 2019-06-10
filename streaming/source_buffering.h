@@ -22,6 +22,7 @@ public:
     typedef OutArgs out_args_t;
     typedef stream_buffering<out_args_t> stream_buffering;
     typedef std::shared_ptr<stream_buffering> stream_buffering_t;
+    typedef typename source_base<OutArgs>::stream_source_base_t stream_source_base_t;
 private:
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
     time_unit latency;
@@ -66,7 +67,7 @@ typedef std::shared_ptr<stream_buffering_video> stream_buffering_video_t;
 
 
 template<class T>
-source_buffering<T>::source_buffering(const media_session_t& session) : source_base(session)
+source_buffering<T>::source_buffering(const media_session_t& session) : source_base<T>(session)
 {
 }
 
@@ -74,7 +75,7 @@ template<class T>
 void source_buffering<T>::initialize(frame_unit frame_rate_num, frame_unit frame_rate_den,
     time_unit latency)
 {
-    this->source_base::initialize(frame_rate_num, frame_rate_den);
+    this->source_base<T>::initialize(frame_rate_num, frame_rate_den);
 
     this->framerate.first = frame_rate_num;
     this->framerate.second = frame_rate_den;
@@ -118,7 +119,7 @@ void source_buffering<T>::dispatch(request_t& request)
 
 template<class T>
 stream_buffering<T>::stream_buffering(const source_buffering_t& source) :
-    stream_source_base(source),
+    stream_source_base<::source_base<T>>(source),
     source(source)
 {
 }

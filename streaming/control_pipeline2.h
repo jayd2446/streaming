@@ -26,8 +26,8 @@
 #include <memory>
 #include <vector>
 
-#define BUFFERING_DEFAULT_VIDEO_LATENCY (SECOND_IN_TIME_UNIT / 5) // 200ms default buffering
-#define BUFFERING_DEFAULT_AUDIO_LATENCY (SECOND_IN_TIME_UNIT / 5)
+#define BUFFERING_DEFAULT_VIDEO_LATENCY (SECOND_IN_TIME_UNIT / 10) // 100ms default buffering
+#define BUFFERING_DEFAULT_AUDIO_LATENCY (SECOND_IN_TIME_UNIT / 10)
 
 #pragma comment(lib, "D3D11.lib")
 #pragma comment(lib, "DXGI.lib")

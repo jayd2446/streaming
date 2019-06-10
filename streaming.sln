@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.28010.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29001.49
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "streaming", "streaming\streaming.vcxproj", "{C1C35477-E5D3-424B-8669-FB3ED8367688}"
 EndProject
@@ -9,6 +9,10 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
 		Debug|x64 = Debug|x64
+		LlvmDebug|Win32 = LlvmDebug|Win32
+		LlvmDebug|x64 = LlvmDebug|x64
+		LlvmReleaseDisabled|Win32 = LlvmReleaseDisabled|Win32
+		LlvmReleaseDisabled|x64 = LlvmReleaseDisabled|x64
 		Release|Win32 = Release|Win32
 		Release|x64 = Release|x64
 		ReleaseDisabled|Win32 = ReleaseDisabled|Win32
@@ -19,6 +23,14 @@ Global
 		{C1C35477-E5D3-424B-8669-FB3ED8367688}.Debug|Win32.Build.0 = Debug|Win32
 		{C1C35477-E5D3-424B-8669-FB3ED8367688}.Debug|x64.ActiveCfg = Debug|x64
 		{C1C35477-E5D3-424B-8669-FB3ED8367688}.Debug|x64.Build.0 = Debug|x64
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmDebug|Win32.ActiveCfg = LlvmDebug|Win32
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmDebug|Win32.Build.0 = LlvmDebug|Win32
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmDebug|x64.ActiveCfg = LlvmDebug|x64
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmDebug|x64.Build.0 = LlvmDebug|x64
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmReleaseDisabled|Win32.ActiveCfg = LlvmReleaseDisabled|Win32
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmReleaseDisabled|Win32.Build.0 = LlvmReleaseDisabled|Win32
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmReleaseDisabled|x64.ActiveCfg = LlvmReleaseDisabled|x64
+		{C1C35477-E5D3-424B-8669-FB3ED8367688}.LlvmReleaseDisabled|x64.Build.0 = LlvmReleaseDisabled|x64
 		{C1C35477-E5D3-424B-8669-FB3ED8367688}.Release|Win32.ActiveCfg = Release|Win32
 		{C1C35477-E5D3-424B-8669-FB3ED8367688}.Release|Win32.Build.0 = Release|Win32
 		{C1C35477-E5D3-424B-8669-FB3ED8367688}.Release|x64.ActiveCfg = Release|x64

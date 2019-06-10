@@ -71,7 +71,7 @@ public:
             control_block_ptr(NULL), control_block_len(0), allocated(false) {}
     };
 
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef std::unique_lock<std::recursive_mutex> scoped_lock;
     typedef PooledBuffer pooled_buffer_t;
     typedef std::stack<std::shared_ptr<pooled_buffer_t>> buffer_pool_t;
 private:

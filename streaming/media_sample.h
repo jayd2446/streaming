@@ -35,7 +35,7 @@ violation of the assumption makes the pipeline not work
 
 #define SECOND_IN_TIME_UNIT 10000000
 
-extern const GUID media_sample_lifetime_tracker_guid;
+//extern const GUID media_sample_lifetime_tracker_guid;
 
 // 100 nanosecond = 1 time_unit
 typedef int64_t time_unit;

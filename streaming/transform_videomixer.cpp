@@ -127,12 +127,16 @@ stream_videomixer::device_context_resources_t stream_videomixer::acquire_buffer(
     if(this->transform->texture_pool->is_empty())
     {
         device_context_resources_t resources = this->transform->texture_pool->acquire_buffer();
+        lock.unlock();
+
         this->initialize_resources(resources);
         return resources;
     }
     else
     {
         device_context_resources_t resources = this->transform->texture_pool->acquire_buffer();
+        lock.unlock();
+
         // common buffer pool objects must be initialized every time
         this->initialize_texture(resources);
 
@@ -203,8 +207,14 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
     HRESULT hr = S_OK;
     const frame_unit frame_count = end - first;
-
     assert_(frame_count > 0);
+
+    // limit the processing videomixer does in a single take;
+    // this greatly reduces the amount of vram being allocated when the pipeline is overloaded
+    constexpr size_t maximum_frame_count = 2;
+    frame_unit allowed_frames[maximum_frame_count];
+    for(size_t i = 0; i < maximum_frame_count; i++)
+        allowed_frames[i] = -1;
 
     // sort the packets list for correct z order
     std::sort(packets.container.begin(), packets.container.end(),
@@ -257,6 +267,23 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
             {
                 assert_(first <= pos);
                 assert_(end > pos);
+
+                // limit the amount of processing videomixer does in a single take;
+                // this greatly reduces the amount of vram being allocated 
+                // when the pipeline is overloaded
+                bool allowed = false;
+                for(size_t i = 0; i < maximum_frame_count; i++)
+                {
+                    if(allowed_frames[i] == -1)
+                        allowed_frames[i] = pos;
+                    if(allowed_frames[i] == pos)
+                    {
+                        allowed = true;
+                        break;
+                    }
+                }
+                if(!allowed)
+                    continue;
 
                 const size_t index = (size_t)(pos - first);
                 device_context_resources_t frame =

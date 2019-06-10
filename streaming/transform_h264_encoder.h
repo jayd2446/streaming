@@ -13,11 +13,6 @@
 #include <mutex>
 #include <atomic>
 
-// TODO: maintaining a separate queue instead of holding request packets could help
-// keeping the vram allocations of sources at minimum;
-// it trades increased frame processing to lowered vram usage, which actually might result into
-// lowered computation in the end
-
 // h264 encoder
 class stream_h264_encoder;
 typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
