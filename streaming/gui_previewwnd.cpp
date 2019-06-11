@@ -4,6 +4,9 @@
 #include <math.h>
 #include <iostream>
 
+#pragma warning(push)
+#pragma warning(disable: 4706) // assignment within conditional expression
+
 #define DRAG_RADIUS_OFFSET 2.f
 
 gui_previewwnd::gui_previewwnd(gui_sourcedlg& dlg_sources, const control_pipeline2_t& ctrl_pipeline) :
@@ -185,7 +188,7 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
         this->select_item(point, first_selection, true);
 }
 
-void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint point)
+void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint /*point*/)
 {
     if(this->dragging)
         ReleaseCapture();
@@ -378,3 +381,5 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         }
     }
 }
+
+#pragma warning(pop)

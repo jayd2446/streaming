@@ -29,7 +29,7 @@ source_displaycapture::source_displaycapture(
     source_base(session),
     context_mutex(context_mutex),
     output_index((UINT)-1),
-    same_device(false),
+    same_adapter(false),
     available_samples(new buffer_pool),
     available_pointer_samples(new buffer_pool)
 {
@@ -314,11 +314,11 @@ capture:
     // newest pointer shape on the other hand seems to be true on the first call
     if(frame_info.LastPresentTime.QuadPart != 0 || !this->newest_buffer)
     {
-        if(this->same_device)
+        if(this->same_adapter)
             this->d3d11devctx->CopyResource(output_frame->texture, screen_frame);
         else
-            // TODO: copy_between_adapters
-            assert_(false);
+            CHECK_HR(hr = this->copy_between_adapters(
+                this->d3d11dev2, output_frame->texture, this->d3d11dev, screen_frame));
 
         this->newest_buffer = output_frame;
     }
@@ -433,7 +433,7 @@ void source_displaycapture::initialize(
     this->d3d11dev2 = this->d3d11dev = d3d11dev;
     this->d3d11devctx2 = this->d3d11devctx = devctx;
     this->output_index = output_index;
-    this->same_device = true;
+    this->same_adapter = true;
 
     CHECK_HR(hr = this->reinitialize(output_index));
 
@@ -442,6 +442,114 @@ done:
     {
         std::cerr << "maximum number of desktop duplication api applications running" << std::endl;
     }
+}
+
+void source_displaycapture::initialize(
+    const control_class_t& ctrl_pipeline,
+    UINT adapter_index,
+    UINT output_index,
+    const CComPtr<IDXGIFactory1>& factory,
+    const CComPtr<ID3D11Device>& d3d11dev,
+    const CComPtr<ID3D11DeviceContext>& devctx)
+{
+    HRESULT hr = S_OK;
+
+    this->source_base::initialize(
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
+
+    CComPtr<IDXGIAdapter1> dxgiadapter;
+    D3D_FEATURE_LEVEL feature_level;
+    D3D_FEATURE_LEVEL feature_levels[] =
+    {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+        D3D_FEATURE_LEVEL_9_3,
+        D3D_FEATURE_LEVEL_9_2,
+        D3D_FEATURE_LEVEL_9_1,
+    };
+
+    CHECK_HR(hr = factory->EnumAdapters1(adapter_index, &dxgiadapter));
+    CHECK_HR(hr = D3D11CreateDevice(
+        dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
+        feature_levels, ARRAYSIZE(feature_levels),
+        D3D11_SDK_VERSION, &this->d3d11dev, &feature_level, &this->d3d11devctx));
+
+    // currently initialization never fails
+    this->initialize(ctrl_pipeline, output_index, this->d3d11dev, this->d3d11devctx);
+
+    this->d3d11dev2 = d3d11dev;
+    this->d3d11devctx2 = devctx;
+    this->same_adapter = false;
+
+done:
+    if(hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
+    {
+        std::cerr << "maximum number of desktop duplication api applications running" << std::endl;
+    }
+    else if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
+}
+
+HRESULT source_displaycapture::copy_between_adapters(
+    ID3D11Device* dst_dev, ID3D11Texture2D* dst,
+    ID3D11Device* src_dev, ID3D11Texture2D* src)
+{
+    HRESULT hr = S_OK;
+    D3D11_TEXTURE2D_DESC desc;
+    CComPtr<ID3D11DeviceContext> src_dev_ctx, dst_dev_ctx;
+
+    src_dev->GetImmediateContext(&src_dev_ctx);
+    dst_dev->GetImmediateContext(&dst_dev_ctx);
+
+    src->GetDesc(&desc);
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.MiscFlags = 0;
+
+    // create staging texture for reading
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    if(!this->stage_src)
+        CHECK_HR(hr = src_dev->CreateTexture2D(&desc, NULL, &this->stage_src));
+
+    // create staging texture for writing
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if(!this->stage_dst)
+        CHECK_HR(hr = dst_dev->CreateTexture2D(&desc, NULL, &this->stage_dst));
+
+    // copy src video memory to src staging buffer
+    src_dev_ctx->CopyResource(this->stage_src, src);
+
+    // map the src staging buffer for reading
+    D3D11_MAPPED_SUBRESOURCE src_sub_rsrc;
+    src_dev_ctx->Map(this->stage_src, 0, D3D11_MAP_READ, 0, &src_sub_rsrc);
+
+    // map the dst staging buffer for writing
+    D3D11_MAPPED_SUBRESOURCE dst_sub_rsrc;
+    {
+        // context mutex needs to be locked for the whole duration of map/unmap
+        scoped_lock lock(*this->context_mutex);
+        dst_dev_ctx->Map(this->stage_dst, 0, D3D11_MAP_WRITE, 0, &dst_sub_rsrc);
+
+        assert_(src_sub_rsrc.RowPitch == dst_sub_rsrc.RowPitch);
+
+        // copy from src staging buffer to dst staging buffer
+        const size_t size = dst_sub_rsrc.RowPitch * desc.Height;
+        memcpy(dst_sub_rsrc.pData, src_sub_rsrc.pData, size);
+
+        // unmap the staging buffers
+        src_dev_ctx->Unmap(this->stage_src, 0);
+        dst_dev_ctx->Unmap(this->stage_dst, 0);
+
+        // copy from dst staging buffer to dst video memory
+        dst_dev_ctx->CopyResource(dst, this->stage_dst);
+    }
+
+done:
+    return hr;
 }
 
 

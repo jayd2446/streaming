@@ -28,8 +28,6 @@ source_wasapi::source_wasapi(const media_session_t& session) :
     captured_audio(new media_sample_audio_mixer_frames),
     sine_wave_counter(0.0)
 {
-    HRESULT hr = S_OK;
-
     // the capture callback really cannot be in higher priority mode,
     // because it can cause problems with the work queue under a high load
     this->capture_callback.Attach(new async_callback_t(&source_wasapi::capture_cb));

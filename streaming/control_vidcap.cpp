@@ -55,7 +55,7 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
     if(this->disabled)
         goto out;
 
-    std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
+    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
     {
         if(this->is_identical_control(control))
         {
@@ -70,7 +70,7 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
 
     if(!component)
     {
-        std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
+        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
         {
             if(this->is_identical_control(control))
             {
@@ -104,7 +104,7 @@ out:
 }
 
 void control_vidcap::list_available_vidcap_params(
-    const control_pipeline2_t& pipeline,
+    const control_pipeline2_t& /*pipeline*/,
     std::vector<vidcap_params>& params)
 {
     assert_(params.empty());
@@ -145,7 +145,7 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-D2D1_RECT_F control_vidcap::get_rectangle(bool dest_params) const
+D2D1_RECT_F control_vidcap::get_rectangle(bool /*dest_params*/) const
 {
     /*const source_vidcap_t& component = this->reference ?
         this->reference->component : this->component;

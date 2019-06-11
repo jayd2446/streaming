@@ -125,8 +125,6 @@ done:
 
 void stream_color_converter::initialize_buffer(const media_buffer_texture_t& buffer)
 {
-    HRESULT hr = S_OK;
-
     // create output texture with nv12 color format
     // nv12 format is 1 byte
     // TODO: figure out the real size of nv12 format
@@ -153,10 +151,6 @@ void stream_color_converter::initialize_buffer(const media_buffer_texture_t& buf
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
     buffer->initialize(this->transform->d3d11dev, desc, &subrsrc);
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 }
 
 media_buffer_texture_t stream_color_converter::acquire_buffer()

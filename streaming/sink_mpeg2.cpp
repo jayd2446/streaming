@@ -263,7 +263,7 @@ media_stream::result_t stream_mpeg2::request_sample(const request_packet& rp, co
 }
 
 media_stream::result_t stream_mpeg2::process_sample(
-    const media_component_args*, const request_packet& rp, const media_stream*)
+    const media_component_args*, const request_packet&, const media_stream*)
 {
     // TODO: request count should be dropped only after the request packet has been destroyed
 

@@ -111,7 +111,7 @@ media_stream::result_t stream_audio::request_sample(const request_packet& rp, co
 }
 
 media_stream::result_t stream_audio::process_sample(
-    const media_component_args*, const request_packet& rp, const media_stream*)
+    const media_component_args*, const request_packet&, const media_stream*)
 {
     this->requests--;
     return OK;

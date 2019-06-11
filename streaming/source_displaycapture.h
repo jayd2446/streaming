@@ -56,7 +56,7 @@ private:
     CComPtr<ID3D11Device> d3d11dev, d3d11dev2;
     CComPtr<ID3D11DeviceContext> d3d11devctx, d3d11devctx2;
     CComPtr<ID3D11Texture2D> stage_src, stage_dst;
-    bool same_device;
+    bool same_adapter;
 
     // source_base
     stream_source_base_t create_derived_stream();
@@ -66,6 +66,12 @@ private:
     void dispatch(request_t&);
 
     media_buffer_texture_t acquire_buffer(const std::shared_ptr<buffer_pool>&);
+
+    HRESULT copy_between_adapters(
+        ID3D11Device* dst_dev,
+        ID3D11Texture2D* dst,
+        ID3D11Device* src_dev,
+        ID3D11Texture2D* src);
     HRESULT reinitialize(UINT output_index);
     HRESULT initialize_pointer_texture(media_buffer_texture_t&);
     HRESULT create_pointer_texture(
@@ -86,7 +92,13 @@ public:
         UINT output_index,
         const CComPtr<ID3D11Device>&,
         const CComPtr<ID3D11DeviceContext>&);
-    // TODO: create a d3d11 device that is bound to the adapter index
+    void initialize(
+        const control_class_t&,
+        UINT adapter_index,
+        UINT output_index,
+        const CComPtr<IDXGIFactory1>&,
+        const CComPtr<ID3D11Device>&,
+        const CComPtr<ID3D11DeviceContext>&);
 };
 
 typedef std::shared_ptr<source_displaycapture> source_displaycapture_t;

@@ -71,7 +71,6 @@ void sink_preview2::initialize(
 
     // identify the physical adapter (gpu or card) this device runs on
     CHECK_HR(hr = this->dxgidev->GetAdapter(&dxgiadapter));
-    CHECK_HR(hr = dxgiadapter->EnumOutputs(0, &this->dxgioutput));
 
     // get the factory object that created this dxgi device
     CHECK_HR(hr = dxgiadapter->GetParent(IID_PPV_ARGS(&dxgifactory)));
@@ -151,10 +150,10 @@ void sink_preview2::draw_sample(const media_component_args* args_)
 
     HRESULT hr = S_OK;
     bool has_video_control = false;
-    int highlighted_points;
+    int highlighted_points = 0;
     D2D1_RECT_F dest_rect;
     D2D1::Matrix3x2F dest_m;
-    control_video2::video_params_t video_params;
+    control_video2::video_params_t video_params = {0};
     {
         // only try to lock so that the pipeline doesn't stall on component initializations
         std::unique_lock<std::recursive_mutex> lock(this->ctrl_pipeline->mutex, std::try_to_lock);

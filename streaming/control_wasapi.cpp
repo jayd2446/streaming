@@ -59,7 +59,7 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
         goto out;
 
     // try to find a control to reference in the new set
-    std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
+    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
     {
         if(this->is_identical_control(control))
         {
@@ -75,7 +75,7 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
     if(!component)
     {
         // try to reuse the component stored in the last set's control
-        std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
+        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
         {
             if(this->is_identical_control(control))
             {

@@ -156,7 +156,7 @@ void media_buffer_texture::initialize(const CComPtr<ID3D11Device>& dev,
 
         // reclaim the resource;
         // the texture cannot be used before it is reclaimed again
-        BOOL was_discarded;
+        /*BOOL was_discarded;*/
         CHECK_HR(hr = this->texture->QueryInterface(&resource));
         CHECK_HR(hr = resource->SetEvictionPriority(DXGI_RESOURCE_PRIORITY_MAXIMUM));
         /*CHECK_HR(hr = resource->GetDevice(__uuidof(IDXGIDevice2), (void**)&device));

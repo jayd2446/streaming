@@ -28,7 +28,7 @@ private:
     media_buffer_texture_t buffer;
     D3D11_TEXTURE2D_DESC desc;
 public:
-    explicit media_buffer_wrapper(const context_mutex_t& context_mutex,
+    explicit media_buffer_wrapper(const context_mutex_t& /*context_mutex*/,
         const media_buffer_texture_t& buffer,
         const CComPtr<IMF2DBuffer>& buffer2d) :
         buffer(buffer)
@@ -798,7 +798,7 @@ void stream_h264_encoder::on_component_start(time_unit t)
         this->transform->time_shift = t;
 }
 
-void stream_h264_encoder::on_component_stop(time_unit t)
+void stream_h264_encoder::on_component_stop(time_unit)
 {
     this->stopping = true;
 }

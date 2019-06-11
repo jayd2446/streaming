@@ -44,7 +44,6 @@ private:
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<IDXGISwapChain1> swapchain;
     CComPtr<IDXGIDevice1> dxgidev;
-    CComPtr<IDXGIOutput> dxgioutput;
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID3D11RenderTargetView> render_target_view;
     CComPtr<ID2D1SolidColorBrush> box_brush;

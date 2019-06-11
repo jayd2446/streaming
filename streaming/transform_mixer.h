@@ -15,6 +15,9 @@
 #include <mutex>
 #include <iostream>
 
+#pragma warning(push)
+#pragma warning(disable: 4706) // assignment within conditional expression
+
 // on stream stop the component should serve requests to the request point, so that
 // a component that might stop receives enough samples;
 // at other times, a component is allowed serve samples from zero up to the request point
@@ -489,3 +492,5 @@ typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
 
     return OK;
 }
+
+#pragma warning(pop)

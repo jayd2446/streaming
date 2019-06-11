@@ -74,7 +74,7 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
         goto out;
 
     // try to find a control to reference in the new set
-    std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
+    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
     {
         if(this->is_identical_control(control))
         {
@@ -91,7 +91,7 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
     if(!component)
     {
         // try to reuse the component stored in the last set's control
-        std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
+        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
         {
             if(this->is_identical_control(control))
             {
@@ -115,11 +115,11 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
                     this->pipeline.shared_from_this<control_pipeline2>(),
                     this->params.output_ordinal, 
                     this->pipeline.d3d11dev, this->pipeline.devctx);
-            /*else
+            else
                 displaycapture_source->initialize(
                     this->pipeline.shared_from_this<control_pipeline2>(),
                     this->params.adapter_ordinal, this->params.output_ordinal, 
-                    this->pipeline.dxgifactory, this->pipeline.d3d11dev, this->pipeline.devctx);*/
+                    this->pipeline.dxgifactory, this->pipeline.d3d11dev, this->pipeline.devctx);
 
             component = displaycapture_source;
         }

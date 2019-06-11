@@ -5,6 +5,9 @@
 #include "request_packet.h"
 #include <mutex>
 
+#pragma warning(push)
+#pragma warning(disable: 4706) // assignment within conditional expression
+
 // helper base class for serial request serving
 
 template<class Request>
@@ -59,3 +62,5 @@ void request_queue_handler<T>::serve()
         request_queue_lock.lock();
     }
 }
+
+#pragma warning(pop)

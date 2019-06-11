@@ -3,6 +3,9 @@
 #include <iostream>
 #include <sstream>
 
+#pragma warning(push)
+#pragma warning(disable: 4706) // assignment within conditional expression
+
 gui_scenedlg::gui_scenedlg(gui_sourcedlg& dlg_sources, const control_pipeline2_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
     dlg_sources(dlg_sources),
@@ -17,7 +20,7 @@ void gui_scenedlg::add_scene(const std::wstring& /*scene_name*/)
     std::wostringstream sts;
     sts << "scene" << this->scene_counter;
     std::wstring&& str = sts.str();
-    control_scene2& scene = *this->ctrl_pipeline->root_scene.add_scene(str);
+    control_scene2& scene = *this->ctrl_pipeline->root_scene.add_scene(str); scene;
     this->scene_counter++;
 
     const int index = this->wnd_scenelist.AddString(str.c_str());
@@ -438,3 +441,5 @@ BOOL gui_controldlg::OnIdle()
 {
     return FALSE;
 }
+
+#pragma warning(pop)

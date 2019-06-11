@@ -364,7 +364,7 @@ void stream_aac_encoder::on_component_start(time_unit t)
         this->transform->time_shift = t;
 }
 
-void stream_aac_encoder::on_component_stop(time_unit t)
+void stream_aac_encoder::on_component_stop(time_unit)
 {
     this->stopping = true;
     /*this->drain_point = t;*/
