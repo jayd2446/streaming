@@ -94,7 +94,13 @@ media_sample_video_mixer_frames_t video_source_helper::make_sample(frame_unit fr
             this->captured_frames.pop();
         }
         else
+        {
+            // add the last served frame if no captured frames were added
+            if(sample->frames.empty())
+                sample->add_consecutive_frames(this->last_served_frame);
+
             break;
+        }
     }
 
     // add padding up to frame_end

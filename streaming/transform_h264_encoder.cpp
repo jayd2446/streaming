@@ -202,8 +202,13 @@ HRESULT transform_h264_encoder::set_input_stream_type()
     CComPtr<IMFMediaType> input_type;
     CHECK_HR(hr = MFCreateMediaType(&input_type));
     CHECK_HR(hr = input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
+
     CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12));
+    /*CHECK_HR(hr = input_type->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709));
+    CHECK_HR(hr = input_type->SetUINT32(MF_MT_VIDEO_CHROMA_SITING, MFVideoChromaSubsampling_Cosited));
+    CHECK_HR(hr = input_type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235));*/
     /*CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));*/
+
     CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, frame_rate_num, frame_rate_den));
     CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
@@ -254,12 +259,15 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     v.vt = VT_UI4;
     v.ullVal = avg_bitrate;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v));
-    v.vt = VT_UI4;
+    /*v.vt = VT_UI4;
     v.ullVal = 1;
-    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncVideoForceKeyFrame, &v));
-    /*v.vt = VT_BOOL;
-    v.ulVal = VARIANT_FALSE;
-    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));*/
+    CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncVideoForceKeyFrame, &v));*/
+    if(codec->IsSupported(&CODECAPI_AVLowLatencyMode) == S_OK)
+    {
+        v.vt = VT_BOOL;
+        v.ulVal = VARIANT_FALSE;
+        CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));
+    }
     /*v.vt = VT_UI4;
     v.ulVal = 0;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncNumWorkerThreads, &v));*/
@@ -417,7 +425,7 @@ bool transform_h264_encoder::on_serve(request_queue::request_t& request)
 
     HRESULT hr = S_OK;
 
-    const bool non_null_request = request.sample.drain ||
+    const bool not_served_request = request.sample.drain ||
         (request.sample.args && request.sample.args->has_frames);
     media_sample_video_frame video_frame;
     const bool pop_request = this->extract_frame(video_frame, request);
@@ -461,8 +469,7 @@ bool transform_h264_encoder::on_serve(request_queue::request_t& request)
         assert_(this->encoder_requests >= 0);
     }
 
-    // null requests were passed already
-    if(pop_request && non_null_request)
+    if(pop_request && not_served_request)
     {
         // event callback will dispatch the last request
         if(!request.sample.drain || this->software)

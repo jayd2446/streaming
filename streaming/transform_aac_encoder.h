@@ -72,7 +72,7 @@ private:
     bool on_serve(request_queue::request_t&);
     request_queue::request_t* next_request();
 
-    bool encode(const media_sample_audio_frames&, media_sample_aac_frames&, bool drain);
+    bool encode(const media_sample_audio_frames*, media_sample_aac_frames&, bool drain);
     bool process_output(IMFSample*);
 public:
     CComPtr<IMFMediaType> output_type;

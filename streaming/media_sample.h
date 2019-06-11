@@ -385,7 +385,10 @@ template<typename T>
 typename media_sample_audio_frames_template<T>::sample_t&
 media_sample_audio_frames_template<T>::add_consecutive_frames(const sample_t& new_frame)
 {
-    assert_(new_frame.dur > 0);
+    /*assert_(new_frame.dur > 0);*/
+    // just throw until source_base race condition is fixed
+    if(new_frame.dur <= 0)
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     this->frames.push_back(new_frame);
     this->end = std::max(new_frame.pos + new_frame.dur, this->end);
@@ -505,7 +508,10 @@ template<typename T>
 typename media_sample_video_frames_template<T>::sample_t&
 media_sample_video_frames_template<T>::add_consecutive_frames(const sample_t& new_frame)
 {
-    assert_(new_frame.dur > 0);
+    /*assert_(new_frame.dur > 0);*/
+    // just throw until source_base race condition is fixed
+    if(new_frame.dur <= 0)
+        throw HR_EXCEPTION(E_UNEXPECTED);
 
     this->frames.push_back(new_frame);
     this->end = std::max(new_frame.pos + new_frame.dur, this->end);

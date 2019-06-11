@@ -355,8 +355,9 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                             D2D1_BITMAP_OPTIONS_NONE,
                             PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)),
                         &bitmap));
-                    frame->bitmap_brush->SetBitmap(bitmap);
 
+                    frame->bitmap_brush->SetBitmap(bitmap);
+                    /*frame->bitmap_brush->SetInterpolationMode1(D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);*/
                     frame->bitmap_brush->SetTransform(brush);
 
                     if(!user_params.axis_aligned_clip)

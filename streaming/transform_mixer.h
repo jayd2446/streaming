@@ -25,6 +25,8 @@
 // arg with empty sample indicates a frame skip;
 // frame with empty buffer indicates a silent frame
 
+// a request tagged with last packet might have null args
+
 // the user params apply to a request only, which means that they might lag behind
 // if the same parameters are applied to samples which have different timestamps
 

@@ -112,7 +112,9 @@ stream_color_converter::stream_color_converter(const transform_color_converter_t
         // DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709 partial range
         // DXGI_COLOR_SPACE_YCBCR_FULL_G22_LEFT_P709 for full range
         video_context->VideoProcessorSetOutputColorSpace1(
-            this->videoprocessor, DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
+            this->videoprocessor, 
+            /*DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P601*/
+            DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709);
 
         // srgb
         video_context->VideoProcessorSetStreamColorSpace1(

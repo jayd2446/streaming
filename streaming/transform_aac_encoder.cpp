@@ -22,7 +22,7 @@ transform_aac_encoder::~transform_aac_encoder()
     this->buffer_pool_memory->dispose();
 }
 
-bool transform_aac_encoder::encode(const media_sample_audio_frames& in_frames,
+bool transform_aac_encoder::encode(const media_sample_audio_frames* in_frames,
     media_sample_aac_frames& out_frames, bool drain)
 {
     assert_(out_frames.frames.empty());
@@ -118,48 +118,51 @@ bool transform_aac_encoder::encode(const media_sample_audio_frames& in_frames,
     };
 
     // currently, the audio mixer only outputs one frame
-    for(auto&& elem : in_frames.frames)
+    if(in_frames)
     {
-        assert_(elem.buffer);
-
-        // create a sample that has time and duration converted from frame unit to time unit
-        CComPtr<IMFSample> in_sample;
-        CComPtr<IMFMediaBuffer> in_buffer;
-        frame_unit frame_pos, frame_dur;
-        LONGLONG time, dur;
-
-        CHECK_HR(hr = MFCreateSample(&in_sample));
-        in_buffer = elem.buffer;
-        CHECK_HR(hr = in_sample->AddBuffer(in_buffer));
-
-        frame_pos = elem.pos;
-        frame_dur = elem.dur;
-        time = (LONGLONG)(convert_to_time_unit(frame_pos, sample_rate, 1) - this->time_shift);
-        dur = (LONGLONG)convert_to_time_unit(frame_dur, sample_rate, 1);
-
-        if(time < 0)
+        for(auto&& elem : in_frames->frames)
         {
-            LONGLONG off = time;
-            time = 0;
-            std::cout << "aac encoder time shift was off by " << off << std::endl;
-        }
+            assert_(elem.buffer);
 
-        CHECK_HR(hr = in_sample->SetSampleTime(time));
-        CHECK_HR(hr = in_sample->SetSampleDuration(dur));
+            // create a sample that has time and duration converted from frame unit to time unit
+            CComPtr<IMFSample> in_sample;
+            CComPtr<IMFMediaBuffer> in_buffer;
+            frame_unit frame_pos, frame_dur;
+            LONGLONG time, dur;
 
-    back:
-        hr = this->encoder->ProcessInput(this->input_id, in_sample, 0);
-        if(hr == MF_E_NOTACCEPTING)
-        {
-            if(reset_sample(), this->process_output(out_sample))
-                CHECK_HR(hr = process_sample());
+            CHECK_HR(hr = MFCreateSample(&in_sample));
+            in_buffer = elem.buffer;
+            CHECK_HR(hr = in_sample->AddBuffer(in_buffer));
 
-            goto back;
-        }
-        else
-        {
-            CHECK_HR(hr);
-            this->memory_hosts.push_back(elem.memory_host);
+            frame_pos = elem.pos;
+            frame_dur = elem.dur;
+            time = (LONGLONG)(convert_to_time_unit(frame_pos, sample_rate, 1) - this->time_shift);
+            dur = (LONGLONG)convert_to_time_unit(frame_dur, sample_rate, 1);
+
+            if(time < 0)
+            {
+                LONGLONG off = time;
+                time = 0;
+                std::cout << "aac encoder time shift was off by " << off << std::endl;
+            }
+
+            CHECK_HR(hr = in_sample->SetSampleTime(time));
+            CHECK_HR(hr = in_sample->SetSampleDuration(dur));
+
+        back:
+            hr = this->encoder->ProcessInput(this->input_id, in_sample, 0);
+            if(hr == MF_E_NOTACCEPTING)
+            {
+                if(reset_sample(), this->process_output(out_sample))
+                    CHECK_HR(hr = process_sample());
+
+                goto back;
+            }
+            else
+            {
+                CHECK_HR(hr);
+                this->memory_hosts.push_back(elem.memory_host);
+            }
         }
     }
 
@@ -175,16 +178,16 @@ done:
 
 bool transform_aac_encoder::on_serve(request_queue::request_t& request)
 {
-    const bool non_null_request = request.sample.drain ||
+    const bool not_served_request = request.sample.drain ||
         (request.sample.args && request.sample.args->has_frames);
     media_component_aac_encoder_args_t& args = request.sample.args;
     media_component_aac_audio_args_t out_args;
 
-    // null requests were passed already
-    if(non_null_request)
+    if(not_served_request)
     {
-        assert_(args->is_valid());
-        if(this->encode(*args->sample, *request.sample.out_sample, request.sample.drain))
+        assert_(!args.has_value() || args->is_valid());
+        if(this->encode(args.has_value() ? (args->sample.get()) : NULL, *request.sample.out_sample, 
+            request.sample.drain))
         {
             out_args = std::make_optional<media_component_aac_audio_args>();
             out_args->sample = std::move(request.sample.out_sample);
@@ -379,33 +382,35 @@ media_stream::result_t stream_aac_encoder::request_sample(const request_packet& 
 media_stream::result_t stream_aac_encoder::process_sample(
     const media_component_args* args_, const request_packet& rp, const media_stream*)
 {
-    media_sample_aac_frames_t out_sample;
     transform_aac_encoder::request_t request;
     if(args_)
     {
         const media_component_aac_encoder_args& args = 
             static_cast<const media_component_aac_encoder_args&>(*args_);
-
         // aac encoder expects full buffers, so the args should include the full buffer
         // (is_valid call tests this)
         assert_(args.is_valid());
-
-        buffer_pool_aac_frames_t::scoped_lock lock(this->buffer_pool_aac_frames->mutex);
-        out_sample = this->buffer_pool_aac_frames->acquire_buffer();
-        out_sample->initialize();
-
         request.sample.args = std::make_optional(args);
     }
 
     request.rp = rp;
+    // last packet might have null args
     request.sample.drain = (rp.flags & FLAG_LAST_PACKET) && this->stopping;
     request.stream = this;
-    request.sample.out_sample = out_sample;
+
+    const bool process_request = request.sample.drain ||
+        (request.sample.args && request.sample.args->has_frames);
+    if(process_request)
+    {
+        buffer_pool_aac_frames_t::scoped_lock lock(this->buffer_pool_aac_frames->mutex);
+        request.sample.out_sample = this->buffer_pool_aac_frames->acquire_buffer();
+        request.sample.out_sample->initialize();
+    }
 
     this->transform->requests.push(request);
 
     // pass null requests downstream
-    if(!request.sample.drain && (!request.sample.args || !request.sample.args->has_frames))
+    if(!process_request)
         this->transform->session->give_sample(this, NULL, request.rp);
 
     this->transform->serve();
