@@ -143,8 +143,9 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
         pointer_frame.params.dest_m = D2D1::Matrix3x2F::Identity();
     };
 
-    media_component_videomixer_args& args = request.sample->args.args;
-    media_component_videomixer_args& pointer_args = request.sample->args.pointer_args;
+    request.sample.args = std::make_optional<displaycapture_args>();
+    media_component_videomixer_args& args = request.sample.args->args;
+    media_component_videomixer_args& pointer_args = request.sample.args->pointer_args;
     media_sample_video_mixer_frame frame, pointer_frame;
 
     try
@@ -185,10 +186,10 @@ void source_displaycapture::dispatch(request_t& request)
 {
     stream_displaycapture* stream = static_cast<stream_displaycapture*>(request.stream);
 
-    this->session->give_sample(stream, request.sample.has_value() ?
-        &request.sample->args.args : NULL, request.rp);
-    this->session->give_sample(stream->pointer_stream.get(), request.sample.has_value() ?
-        &request.sample->args.pointer_args : NULL, request.rp);
+    this->session->give_sample(stream, request.sample.args.has_value() ?
+        &request.sample.args->args : NULL, request.rp);
+    this->session->give_sample(stream->pointer_stream.get(), request.sample.args.has_value() ?
+        &request.sample.args->pointer_args : NULL, request.rp);
 }
 
 HRESULT source_displaycapture::initialize_pointer_texture(media_buffer_texture_t& pointer)

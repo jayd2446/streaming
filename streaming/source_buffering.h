@@ -102,15 +102,16 @@ bool source_buffering<T>::get_samples_end(time_unit /*request_time*/, frame_unit
 template<class T>
 void source_buffering<T>::make_request(request_t& request, frame_unit frame_end)
 {
-    out_args_t& args = request.sample->args;
+    request.sample.args = std::make_optional<out_args_t>();
+    out_args_t& args = *request.sample.args;
     args.frame_end = frame_end;
 }
 
 template<class T>
 void source_buffering<T>::dispatch(request_t& request)
 {
-    this->session->give_sample(request.stream, request.sample.has_value() ?
-        &request.sample->args : NULL, request.rp);
+    this->session->give_sample(request.stream, request.sample.args.has_value() ?
+        &(*request.sample.args) : NULL, request.rp);
 }
 
 

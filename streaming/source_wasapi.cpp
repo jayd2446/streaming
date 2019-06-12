@@ -80,7 +80,8 @@ bool source_wasapi::get_samples_end(time_unit /*request_time*/, frame_unit& end)
 
 void source_wasapi::make_request(request_t& request, frame_unit frame_end)
 {
-    media_component_audiomixer_args& args = request.sample->args;
+    request.sample.args = std::make_optional<media_component_audiomixer_args>();
+    media_component_audiomixer_args& args = *request.sample.args;
 
     media_sample_audio_mixer_frames_t captured_audio;
     if(!args.sample)
@@ -108,8 +109,8 @@ void source_wasapi::make_request(request_t& request, frame_unit frame_end)
 
 void source_wasapi::dispatch(request_t& request)
 {
-    this->session->give_sample(request.stream, request.sample.has_value() ?
-        &request.sample->args : NULL, request.rp);
+    this->session->give_sample(request.stream, request.sample.args.has_value() ?
+        &(*request.sample.args) : NULL, request.rp);
 }
 
 HRESULT source_wasapi::queue_new_capture()
@@ -187,7 +188,7 @@ void source_wasapi::capture_cb(void*)
         frames = returned_frames;
         devposition = returned_devposition;
 
-        if(flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY || this->set_new_frame_base)
+        if((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) || this->set_new_frame_base)
         {
             std::cout << "DATA DISCONTINUITY, " << devposition << ", "
                 << devposition + frames << std::endl;

@@ -28,11 +28,11 @@ class source_base : public media_component
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
     typedef Args args_t;
-    struct payload_t {bool drain; args_t args;};
+    struct payload_t {bool drain; std::optional<args_t> args;};
     typedef stream_source_base<source_base> stream_source_base;
     typedef std::shared_ptr<stream_source_base> stream_source_base_t;
     // TODO: this should not be a typedef
-    typedef typename request_queue<std::optional<payload_t>>::request_t request_t;
+    typedef typename request_queue<payload_t>::request_t request_t;
 private:
     std::mutex active_topology_mutex;
     std::queue<media_topology_t> active_topology;
@@ -50,10 +50,11 @@ protected:
     // returns whether the end is undefined(=there are no samples available);
     // multithreaded
     virtual bool get_samples_end(time_unit request_time, frame_unit& end) = 0;
-    // populates the sample field of the request;
+    // sets the args field in request_t;
     // fetched samples must include padding frames;
     // make_request must add frames up to the frame_end point only;
-    // the sample collection in the request must not be empty;
+    // the sample collection in args must not be empty;
+    // args can be set to NULL;
     // singlethreaded
     virtual void make_request(request_t&, frame_unit frame_end) = 0;
     // the request_t might contain null args;
@@ -75,15 +76,14 @@ public:
 template<class SourceBase>
 class stream_source_base : 
     public media_stream_message_listener,
-    request_queue_handler<std::optional<typename SourceBase::payload_t>>
+    request_queue_handler<typename SourceBase::payload_t>
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
     typedef SourceBase source_base;
     typedef std::shared_ptr<source_base> source_base_t;
     typedef request_dispatcher<typename source_base::request_t> request_dispatcher;
-    typedef typename 
-        request_queue_handler<std::optional<typename SourceBase::payload_t>>::request_queue 
+    typedef typename request_queue_handler<typename SourceBase::payload_t>::request_queue 
         request_queue;
 private:
     source_base_t source;
@@ -240,7 +240,8 @@ bool stream_source_base<T>::on_serve(typename request_queue::request_t& request)
     // TODO: source_base should serve null if a request has been served with valid data
     // up to request_time already;
     // currently, such case would cause an assert failure;
-    // such case might happen on drain operation
+    // such case might happen on drain operation;
+    // ^ should be fixed
 
     // only serve the request with samples if the request originates from the active topology
     if(active_topology == request.rp.topology)
@@ -250,21 +251,21 @@ bool stream_source_base<T>::on_serve(typename request_queue::request_t& request)
             this->source->framerate.first, this->source->framerate.second);
         const bool valid_end = this->get_samples_end(request.rp.request_time, samples_end);
 
-        assert_(!request.sample->drain || (request.sample->drain && valid_end));
+        /*assert_(!request.sample->drain || (request.sample->drain && valid_end));*/
 
         if(valid_end)
         {
             const frame_unit end = std::min(request_end, samples_end);
+            // make_request is allowed to set the args in request to null
             this->source->make_request(request, end);
         }
         else
-            // reset the arg to null if the request is served without data
-            request.sample.reset();
+            assert_(!request.sample.args);
 
         // pop the current active topology if the request has drain flag;
         // it is important to pop the topology after make_request call so that
         // it stays singlethreaded
-        if(request.sample->drain)
+        if(request.sample.drain)
         {
             scoped_lock lock(this->source->active_topology_mutex);
             assert_(!this->source->active_topology.empty());
@@ -272,7 +273,7 @@ bool stream_source_base<T>::on_serve(typename request_queue::request_t& request)
         }
     }
     else
-        request.sample.reset();
+        assert_(!request.sample.args);
 
     this->dispatcher->dispatch_request(std::move(request),
         std::bind(&source_base::dispatch, this->source, std::placeholders::_1));
@@ -295,8 +296,7 @@ media_stream::result_t stream_source_base<T>::request_sample(
     typename request_queue::request_t request;
     request.rp = rp; 
     request.stream = this;
-    request.sample = std::make_optional<typename source_base::payload_t>();
-    request.sample->drain = this->drainable_or_drained;
+    request.sample.drain = this->drainable_or_drained;
     this->requests.push(request);
 
     // sources flip the direction

@@ -202,7 +202,8 @@ void source_vidcap::make_request(request_t& request, frame_unit frame_end)
 {
     scoped_lock lock(this->source_helper_mutex);
 
-    media_component_videomixer_args& args = request.sample->args;
+    request.sample.args = std::make_optional<media_component_videomixer_args>();
+    media_component_videomixer_args& args = *request.sample.args;
 
     args.frame_end = frame_end;
 
@@ -218,8 +219,8 @@ void source_vidcap::make_request(request_t& request, frame_unit frame_end)
 
 void source_vidcap::dispatch(request_t& request)
 {
-    this->session->give_sample(request.stream, request.sample.has_value() ?
-        &request.sample->args : NULL, request.rp);
+    this->session->give_sample(request.stream, request.sample.args.has_value() ?
+        &(*request.sample.args) : NULL, request.rp);
 }
 
 HRESULT source_vidcap::queue_new_capture()

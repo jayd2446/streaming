@@ -33,7 +33,11 @@ bool source_empty_audio::get_samples_end(time_unit request_time, frame_unit& end
 
 void source_empty_audio::make_request(request_t& request, frame_unit frame_end)
 {
-    media_component_audiomixer_args& args = request.sample->args;
+    if(this->last_frame_end == frame_end)
+        return;
+
+    request.sample.args = std::make_optional<media_component_audiomixer_args>();
+    media_component_audiomixer_args& args = *request.sample.args;
     media_sample_audio_mixer_frame frame;
 
     if(!args.sample)
@@ -62,8 +66,8 @@ void source_empty_audio::make_request(request_t& request, frame_unit frame_end)
 
 void source_empty_audio::dispatch(request_t& request)
 {
-    this->session->give_sample(request.stream, request.sample.has_value() ?
-        &request.sample->args : NULL, request.rp);
+    this->session->give_sample(request.stream, request.sample.args.has_value() ?
+        &(*request.sample.args) : NULL, request.rp);
 }
 
 
@@ -124,7 +128,11 @@ bool source_empty_video::get_samples_end(time_unit request_time, frame_unit& end
 
 void source_empty_video::make_request(request_t& request, frame_unit frame_end)
 {
-    media_component_videomixer_args& args = request.sample->args;
+    if(this->last_frame_end == frame_end)
+        return;
+
+    request.sample.args = std::make_optional<media_component_videomixer_args>();
+    media_component_videomixer_args& args = *request.sample.args;
     media_sample_video_mixer_frame frame;
 
     if(!args.sample)
@@ -152,8 +160,8 @@ void source_empty_video::make_request(request_t& request, frame_unit frame_end)
 
 void source_empty_video::dispatch(request_t& request)
 {
-    this->session->give_sample(request.stream, request.sample.has_value() ?
-        &request.sample->args : NULL, request.rp);
+    this->session->give_sample(request.stream, request.sample.args.has_value() ?
+        &(*request.sample.args) : NULL, request.rp);
 }
 
 
