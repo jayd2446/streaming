@@ -153,8 +153,7 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
     }
     catch(displaycapture_exception)
     {
-        // reset the scene to recreate this component
-        this->request_reinitialization(this->ctrl_pipeline);
+        this->set_broken();
     }
 
     // params are ignored if the buffer in sample is null(=silent)
@@ -363,7 +362,6 @@ done:
 
 media_buffer_texture_t source_displaycapture::acquire_buffer(const std::shared_ptr<buffer_pool>& pool)
 {
-    // TODO: this probably should be a free function that is defined in buffer_pool
     buffer_pool::scoped_lock lock(pool->mutex);
     return pool->acquire_buffer();
 }
@@ -425,7 +423,7 @@ void source_displaycapture::initialize(
 {
     HRESULT hr = S_OK;
 
-    this->source_base::initialize(
+    this->source_base::initialize(ctrl_pipeline,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
 
@@ -454,7 +452,7 @@ void source_displaycapture::initialize(
 {
     HRESULT hr = S_OK;
 
-    this->source_base::initialize(
+    this->source_base::initialize(ctrl_pipeline,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
 

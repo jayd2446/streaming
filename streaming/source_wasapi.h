@@ -27,7 +27,6 @@ public:
     static const INT64 capture_interval_ms = 40;
     static const frame_unit maximum_buffer_size = transform_aac_encoder::sample_rate;
 private:
-    control_class_t ctrl_pipeline;
     audio_resampler resampler;
 
     std::mutex captured_audio_mutex;

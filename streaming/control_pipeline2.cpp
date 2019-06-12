@@ -291,7 +291,8 @@ void control_pipeline2::activate_components()
         this->video_buffering_source->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
         source_buffering_video_t video_buffering_source(new source_buffering_video(this->session));
-        video_buffering_source->initialize(transform_h264_encoder::frame_rate_num,
+        video_buffering_source->initialize(this->shared_from_this<control_pipeline2>(),
+            transform_h264_encoder::frame_rate_num,
             transform_h264_encoder::frame_rate_den, BUFFERING_DEFAULT_VIDEO_LATENCY);
 
         this->video_buffering_source = video_buffering_source;
@@ -302,7 +303,8 @@ void control_pipeline2::activate_components()
         this->audio_buffering_source->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
         source_buffering_audio_t audio_buffering_source(new source_buffering_audio(this->audio_session));
-        audio_buffering_source->initialize(transform_aac_encoder::sample_rate, 1,
+        audio_buffering_source->initialize(this->shared_from_this<control_pipeline2>(),
+            transform_aac_encoder::sample_rate, 1,
             BUFFERING_DEFAULT_AUDIO_LATENCY);
 
         this->audio_buffering_source = audio_buffering_source;

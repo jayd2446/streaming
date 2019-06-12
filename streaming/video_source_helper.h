@@ -40,6 +40,7 @@ public:
     // makes a frame collection up to frame_end
     media_sample_video_mixer_frames_t make_sample(frame_unit frame_end);
 
-    void set_broken(bool broken) {this->broken = broken;}
+    // TODO: fully remove broken functionality
+    /*void set_broken(bool broken) {this->broken = broken;}*/
     void set_initialized(bool fully_initialized) {this->fully_initialized = fully_initialized;}
 };

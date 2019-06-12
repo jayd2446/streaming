@@ -15,9 +15,9 @@ source_empty_audio::~source_empty_audio()
     this->buffer_pool_audio_frames->dispose();
 }
 
-void source_empty_audio::initialize()
+void source_empty_audio::initialize(const control_class_t& ctrl_pipeline)
 {
-    this->source_base::initialize(transform_aac_encoder::sample_rate, 1);
+    this->source_base::initialize(ctrl_pipeline, transform_aac_encoder::sample_rate, 1);
 }
 
 source_empty_audio::stream_source_base_t source_empty_audio::create_derived_stream()
@@ -102,9 +102,10 @@ source_empty_video::~source_empty_video()
     this->buffer_pool_video_frames->dispose();
 }
 
-void source_empty_video::initialize()
+void source_empty_video::initialize(const control_class_t& ctrl_pipeline)
 {
-    this->source_base::initialize(transform_h264_encoder::frame_rate_num,
+    this->source_base::initialize(ctrl_pipeline,
+        transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
 }
 

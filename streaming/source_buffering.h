@@ -34,7 +34,8 @@ private:
 public:
     explicit source_buffering(const media_session_t& session);
 
-    void initialize(frame_unit frame_rate_num, frame_unit frame_rate_den, time_unit latency);
+    void initialize(const control_class_t&,
+        frame_unit frame_rate_num, frame_unit frame_rate_den, time_unit latency);
 };
 
 typedef source_buffering<media_component_audiomixer_args> source_buffering_audio;
@@ -72,10 +73,11 @@ source_buffering<T>::source_buffering(const media_session_t& session) : source_b
 }
 
 template<class T>
-void source_buffering<T>::initialize(frame_unit frame_rate_num, frame_unit frame_rate_den,
+void source_buffering<T>::initialize(const control_class_t& ctrl_pipeline,
+    frame_unit frame_rate_num, frame_unit frame_rate_den,
     time_unit latency)
 {
-    this->source_base<T>::initialize(frame_rate_num, frame_rate_den);
+    this->source_base<T>::initialize(ctrl_pipeline, frame_rate_num, frame_rate_den);
 
     this->framerate.first = frame_rate_num;
     this->framerate.second = frame_rate_den;

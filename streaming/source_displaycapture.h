@@ -34,7 +34,6 @@ public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool;
 private:
-    control_class_t ctrl_pipeline;
     // since the dxgi output duplication seems to use the d3d11 context,
     // the mutex must be locked when capturing a frame
     context_mutex_t context_mutex;

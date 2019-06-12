@@ -40,7 +40,7 @@ void control_scene2::build_video_topology(const media_stream_t& from,
     if(no_video)
     {
         source_empty_video_t empty_source(new source_empty_video(this->pipeline.session));
-        empty_source->initialize();
+        empty_source->initialize(this->pipeline.shared_from_this<control_pipeline2>());
 
         media_stream_t empty_stream = empty_source->create_stream(topology->get_message_generator());
         empty_stream->connect_streams(from, topology);
@@ -83,7 +83,7 @@ void control_scene2::build_audio_topology(const media_stream_t& from,
     if(no_audio)
     {
         source_empty_audio_t empty_source(new source_empty_audio(this->pipeline.audio_session));
-        empty_source->initialize();
+        empty_source->initialize(this->pipeline.shared_from_this<control_pipeline2>());
 
         media_stream_t empty_stream = empty_source->create_stream(topology->get_message_generator());
         empty_stream->connect_streams(from, topology);

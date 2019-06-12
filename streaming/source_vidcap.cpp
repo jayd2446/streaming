@@ -73,7 +73,7 @@ void source_vidcap::source_reader_callback_t::on_error(const source_vidcap_t& so
 
     {
         scoped_lock lock(source->source_helper_mutex);
-        source->source_helper.set_broken(true);
+        /*source->source_helper.set_broken(true);*/
     }
     source->request_reinitialization(source->ctrl_pipeline);
 }
@@ -241,13 +241,12 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
 
     assert_(!this->device);
 
-    this->source_base::initialize(
+    this->source_base::initialize(ctrl_pipeline,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
 
     this->d3d11dev = d3d11dev;
     this->symbolic_link = symbolic_link;
-    this->ctrl_pipeline = ctrl_pipeline;
 
     CComPtr<IMFAttributes> attributes;
     CComPtr<IMFMediaType> output_type;

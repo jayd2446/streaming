@@ -288,10 +288,9 @@ done:
     }
     if(FAILED(hr))
     {
-        // TODO: enable
-        /*if(hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_SERVICE_NOT_RUNNING)
-            this->request_reinitialization(this->ctrl_pipeline);
-        else*/
+        if(hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_SERVICE_NOT_RUNNING)
+            this->set_broken();
+        else
             throw HR_EXCEPTION(hr);
     }
 
@@ -356,7 +355,7 @@ void source_wasapi::initialize(const control_class_t& ctrl_pipeline,
 {
     HRESULT hr = S_OK;
 
-    this->source_base::initialize(transform_aac_encoder::sample_rate, 1);
+    this->source_base::initialize(ctrl_pipeline, transform_aac_encoder::sample_rate, 1);
 
     CComPtr<IMMDeviceEnumerator> enumerator;
     CComPtr<IMMDevice> device;
@@ -364,7 +363,6 @@ void source_wasapi::initialize(const control_class_t& ctrl_pipeline,
     UINT32 buffer_frame_count;
     REFERENCE_TIME def_device_period, min_device_period;
 
-    this->ctrl_pipeline = ctrl_pipeline;
     this->capture = capture;
 
     CHECK_HR(hr = CoCreateInstance(

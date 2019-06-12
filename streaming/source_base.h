@@ -8,6 +8,7 @@
 #include <queue>
 #include <optional>
 #include <mutex>
+#include <atomic>
 
 #undef min
 #undef max
@@ -16,10 +17,6 @@
 // derived classes should only access the args field of the request_queue::request_t type
 // TODO: enforce this^
 // the args type is wrapped into an optional type to enable null args
-
-// TODO: handle broken components here;
-// broken components will always have samples up to the request_point and the samples
-// are just silent frames
 
 template<class SourceBase>
 class stream_source_base;
@@ -40,9 +37,13 @@ private:
     std::mutex active_topology_mutex;
     std::queue<media_topology_t> active_topology;
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
+    std::atomic<bool> broken_flag;
 protected:
+    control_class_t ctrl_pipeline;
+
     // derived class must call this
-    void initialize(frame_unit frame_rate_num, frame_unit frame_rate_den);
+    void initialize(const control_class_t& ctrl_pipeline,
+        frame_unit frame_rate_num, frame_unit frame_rate_den);
 
     virtual stream_source_base_t create_derived_stream() = 0;
     // sets the end of samples to 'end',
@@ -58,6 +59,12 @@ protected:
     // the request_t might contain null args;
     // multithreaded
     virtual void dispatch(request_t&) = 0;
+
+    // sets the component as broken;
+    // source_base serves frame skips when the component is broken;
+    // NOTE: should not be called in request call chain, which means that
+    // this should not be called in get_samples_end
+    void set_broken();
 public:
     explicit source_base(const media_session_t& session);
     virtual ~source_base();
@@ -85,6 +92,9 @@ private:
     std::shared_ptr<::request_dispatcher<void*>> serve_dispatcher;
     std::shared_ptr<request_dispatcher> dispatcher;
 
+    // wrapper for source_base::get_samples_end, handles broken functionality
+    bool get_samples_end(time_unit request_time, frame_unit& end);
+
     // media_stream_message_listener
     void on_stream_start(time_unit);
     bool is_drainable_or_drained(time_unit);
@@ -109,7 +119,8 @@ public:
 
 template<typename T>
 source_base<T>::source_base(const media_session_t& session) :
-    media_component(session)
+    media_component(session),
+    broken_flag(false)
 {
 }
 
@@ -119,8 +130,17 @@ source_base<T>::~source_base()
 }
 
 template<typename T>
-void source_base<T>::initialize(frame_unit frame_rate_num, frame_unit frame_rate_den)
+void source_base<T>::set_broken()
 {
+    this->broken_flag = true;
+    this->request_reinitialization(this->ctrl_pipeline);
+}
+
+template<typename T>
+void source_base<T>::initialize(const control_class_t& ctrl_pipeline,
+    frame_unit frame_rate_num, frame_unit frame_rate_den)
+{
+    this->ctrl_pipeline = ctrl_pipeline;
     this->framerate.first = frame_rate_num;
     this->framerate.second = frame_rate_den;
 }
@@ -148,6 +168,22 @@ stream_source_base<T>::stream_source_base(const source_base_t& source) :
     dispatcher(new request_dispatcher),
     serve_dispatcher(new ::request_dispatcher<void*>)
 {
+}
+
+template<typename T>
+bool stream_source_base<T>::get_samples_end(time_unit request_time, frame_unit& end)
+{
+    const bool broken_flag = this->source->broken_flag;
+    if(broken_flag)
+    {
+        // source_base serves frame skips when the source is broken
+        end = convert_to_frame_unit(request_time,
+            this->source->framerate.first,
+            this->source->framerate.second);
+        return true;
+    }
+    else
+        return this->source->get_samples_end(request_time, end);
 }
 
 template<typename T>
@@ -181,7 +217,7 @@ bool stream_source_base<T>::is_drainable_or_drained(time_unit t)
             frame_unit samples_end;
             const frame_unit request_end = convert_to_frame_unit(t,
                 this->source->framerate.first, this->source->framerate.second);
-            const bool valid_end = this->source->get_samples_end(t, samples_end);
+            const bool valid_end = this->get_samples_end(t, samples_end);
             // drain can be finished when the source has samples up to the drain point
             if(valid_end && (samples_end >= request_end))
                 this->drainable_or_drained = true;
@@ -212,7 +248,7 @@ bool stream_source_base<T>::on_serve(typename request_queue::request_t& request)
         frame_unit samples_end;
         const frame_unit request_end = convert_to_frame_unit(request.rp.request_time,
             this->source->framerate.first, this->source->framerate.second);
-        const bool valid_end = this->source->get_samples_end(request.rp.request_time, samples_end);
+        const bool valid_end = this->get_samples_end(request.rp.request_time, samples_end);
 
         assert_(!request.sample->drain || (request.sample->drain && valid_end));
 

@@ -28,7 +28,7 @@ public:
     explicit source_empty_audio(const media_session_t& session);
     ~source_empty_audio();
 
-    void initialize();
+    void initialize(const control_class_t&);
 };
 
 typedef std::shared_ptr<source_empty_audio> source_empty_audio_t;
@@ -62,7 +62,7 @@ public:
     explicit source_empty_video(const media_session_t& session);
     ~source_empty_video();
 
-    void initialize();
+    void initialize(const control_class_t&);
 };
 
 typedef std::shared_ptr<source_empty_video> source_empty_video_t;

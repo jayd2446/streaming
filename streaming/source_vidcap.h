@@ -29,8 +29,6 @@ public:
     typedef async_callback<source_vidcap> async_callback_t;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool_texture_t;
 private:
-    control_class_t ctrl_pipeline;
-
     std::mutex source_helper_mutex;
     video_source_helper source_helper;
     std::shared_ptr<buffer_pool_texture_t> buffer_pool_texture;
