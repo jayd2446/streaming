@@ -34,7 +34,7 @@ void media_session::switch_topology_immediate(
     if(old_topology)
         new_topology->topology_number = old_topology->topology_number + 1;
 
-    // acquire old event generator
+    // acquire old message generator
     media_message_generator_t message_generator;
     if(this->current_topology)
         message_generator = this->current_topology->get_message_generator();
@@ -42,13 +42,13 @@ void media_session::switch_topology_immediate(
     // switch to the new topology
     this->current_topology = new_topology;
 
-    // acquire new event generator
-    media_message_generator_t new_event_generator = this->current_topology->get_message_generator();
-    if(!new_event_generator)
+    // acquire new message generator
+    media_message_generator_t new_message_generator = this->current_topology->get_message_generator();
+    if(!new_message_generator)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
     // the new topology will be actived
-    new_event_generator->clock_start(time_point, message_generator);
+    new_message_generator->clock_start(time_point, message_generator);
 }
 
 void media_session::start_playback(const media_topology_t& topology, time_unit time_point)

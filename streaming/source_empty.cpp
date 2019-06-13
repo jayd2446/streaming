@@ -40,7 +40,6 @@ void source_empty_audio::make_request(request_t& request, frame_unit frame_end)
     media_component_audiomixer_args& args = *request.sample.args;
     media_sample_audio_mixer_frame frame;
 
-    if(!args.sample)
     {
         buffer_pool_audio_frames_t::scoped_lock lock(this->buffer_pool_audio_frames->mutex);
         args.sample = this->buffer_pool_audio_frames->acquire_buffer();
@@ -135,7 +134,6 @@ void source_empty_video::make_request(request_t& request, frame_unit frame_end)
     media_component_videomixer_args& args = *request.sample.args;
     media_sample_video_mixer_frame frame;
 
-    if(!args.sample)
     {
         buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
         args.sample = this->buffer_pool_video_frames->acquire_buffer();

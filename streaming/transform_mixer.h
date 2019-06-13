@@ -15,6 +15,8 @@
 #include <mutex>
 #include <iostream>
 
+#define TRANSFORM_MIXER_APPLY_STREAM_CONTROLLER_IMMEDIATELY
+
 #pragma warning(push)
 #pragma warning(disable: 4706) // assignment within conditional expression
 
@@ -354,6 +356,16 @@ void stream_mixer<T>::process(typename request_queue::request_t& request)
 
         // assign the processed arg to the request
         item.arg = new_arg;
+
+#ifdef TRANSFORM_MIXER_APPLY_STREAM_CONTROLLER_IMMEDIATELY
+        // apply stream controller here;
+        // it overwrites the previous value set in request_sample
+        if(item.valid_user_params)
+        {
+            this->input_streams_props[item.stream_index].user_params_controller->get_params(
+                item.user_params);
+        }
+#endif
     }
 
 out:

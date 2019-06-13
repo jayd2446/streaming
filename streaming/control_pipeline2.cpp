@@ -445,7 +445,7 @@ void control_pipeline2::start_recording(const std::wstring& /*filename*/, ATL::C
 
     this->recording_initiator_wnd = initiator;
     this->recording = true;
-    control_class::activate();
+    this->control_class::activate();
 
     std::cout << "recording started" << std::endl;
 }
@@ -453,7 +453,7 @@ void control_pipeline2::start_recording(const std::wstring& /*filename*/, ATL::C
 void control_pipeline2::stop_recording()
 {
     this->recording = false;
-    control_class::activate();
+    this->control_class::activate();
 
     std::cout << "recording stopped" << std::endl;
 }

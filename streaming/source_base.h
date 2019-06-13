@@ -14,8 +14,6 @@
 #undef max
 
 // source specialization base class for components;
-// derived classes should only access the args field of the request_queue::request_t type
-// TODO: enforce this^
 // the args type is wrapped into an optional type to enable null args
 
 template<class SourceBase>
