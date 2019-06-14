@@ -260,10 +260,6 @@ paket-files/
 __pycache__/
 *.pyc
 *.mp4
-/streaming/media_item.h
-/streaming/scene_item.h
-/streaming/control_video.h
-/streaming/control_video.cpp
 *.rar
 /streaming/source_displaycapture_legacy.cpp
 /streaming/source_displaycapture_legacy.h
