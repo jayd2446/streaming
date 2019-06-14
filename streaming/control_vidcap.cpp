@@ -1,11 +1,11 @@
 #include "control_vidcap.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 control_vidcap::control_vidcap(control_set_t& active_controls,
-    control_pipeline2& pipeline) :
-    control_video2(active_controls, pipeline),
+    control_pipeline& pipeline) :
+    control_video(active_controls, pipeline),
     videomixer_params(new stream_videomixer_controller),
     reference(NULL)
 {
@@ -49,6 +49,8 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
 {
     source_vidcap_t component;
 
+    bool new_component = false;
+
     this->stream = NULL;
     this->reference = NULL;
 
@@ -85,11 +87,12 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
         if(!component)
         {
             source_vidcap_t vidcap_source(new source_vidcap(this->pipeline.session));
-            vidcap_source->initialize(this->pipeline.shared_from_this<control_pipeline2>(),
+            vidcap_source->initialize(this->pipeline.shared_from_this<control_pipeline>(),
                 this->pipeline.d3d11dev,
                 this->params.symbolic_link);
 
             component = vidcap_source;
+            new_component = true;
         }
     }
 
@@ -98,9 +101,17 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
 out:
     this->component = component;
 
-    // update the transformations
-    /*this->control_video2::apply_transformation(false);
-    this->control_video2::apply_transformation(true);*/
+    if(this->component)
+    {
+        if(new_component)
+            // set the default video params;
+            // this must be called after vidcap source has been initialized
+            this->apply_default_video_params();
+        else
+            // update the source transformation when the new control_vidcap activates;
+            // this allows components to reactivate the active scene and update their native size
+            this->control_video::apply_transformation(false);
+    }
 }
 
 void control_vidcap::list_available_vidcap_params(
@@ -147,7 +158,7 @@ done:
 
 D2D1_RECT_F control_vidcap::get_rectangle(bool /*dest_params*/) const
 {
-    /*const source_vidcap_t& component = this->reference ?
+    const source_vidcap_t& component = this->reference ?
         this->reference->component : this->component;
 
     if(component)
@@ -158,8 +169,7 @@ D2D1_RECT_F control_vidcap::get_rectangle(bool /*dest_params*/) const
         return D2D1::RectF(0.f, 0.f, (FLOAT)width, (FLOAT)height);
     }
     else
-        return D2D1::RectF();*/
-    return D2D1::RectF(0.f, 0.f, 640.f, 480.f);
+        return D2D1::RectF();
 }
 
 void control_vidcap::apply_transformation(

@@ -15,8 +15,8 @@
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
 
-class control_pipeline2;
-typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
+class control_pipeline;
+typedef std::shared_ptr<control_pipeline> control_pipeline2_t;
 
 class sink_preview2 : public media_sink
 {

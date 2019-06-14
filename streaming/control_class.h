@@ -8,8 +8,8 @@
 #include <deque>
 #include <mutex>
 
-class control_pipeline2;
-class control_scene2;
+class control_pipeline;
+class control_scene;
 class control_class;
 
 /*
@@ -32,7 +32,7 @@ typedef std::deque<control_class*> control_set_t;
 
 class control_class : public enable_shared_from_this
 {
-    friend class control_scene2;
+    friend class control_scene;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 protected:

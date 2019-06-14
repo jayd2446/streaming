@@ -3,7 +3,7 @@
 #include "wtl.h"
 #include "gui_previewwnd.h"
 #include "gui_dlgs.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 #include <atlsplit.h>
 
 class gui_mainwnd;

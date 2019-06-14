@@ -1,5 +1,5 @@
 #include "control_class.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 
 control_class::control_class(control_set_t& active_controls, std::recursive_mutex& mutex) :
     mutex(mutex),

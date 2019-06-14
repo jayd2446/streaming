@@ -1,6 +1,6 @@
 #include "source_wasapi.h"
 #include "assert.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 #include "transform_aac_encoder.h"
 #include <initguid.h>
 #include <mmdeviceapi.h>

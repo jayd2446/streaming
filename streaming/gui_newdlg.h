@@ -1,9 +1,9 @@
 #pragma once
 
 #include "wtl.h"
-#include "control_scene2.h"
-#include "control_pipeline2.h"
-#include "control_displaycapture5.h"
+#include "control_scene.h"
+#include "control_pipeline.h"
+#include "control_displaycapture.h"
 #include "control_vidcap.h"
 #include "control_wasapi.h"
 #include <string>

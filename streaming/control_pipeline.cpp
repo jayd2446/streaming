@@ -1,4 +1,4 @@
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 #include "wtl.h"
 #include <iostream>
 #include <d3d11_4.h>
@@ -14,7 +14,7 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-control_pipeline2::control_pipeline2() :
+control_pipeline::control_pipeline() :
     control_class(controls, pipeline_mutex),
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
@@ -78,7 +78,7 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
-void control_pipeline2::activate(const control_set_t& last_set, control_set_t& new_set)
+void control_pipeline::activate(const control_set_t& last_set, control_set_t& new_set)
 {
     // catch all unhandled initialization exceptions
     try
@@ -113,7 +113,7 @@ void control_pipeline2::activate(const control_set_t& last_set, control_set_t& n
     }
 }
 
-void control_pipeline2::activate_components()
+void control_pipeline::activate_components()
 {
     /*this->running = true;*/
 
@@ -205,7 +205,7 @@ void control_pipeline2::activate_components()
         this->preview_sink->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
         sink_preview2_t preview_sink(new sink_preview2(this->session, this->context_mutex));
-        preview_sink->initialize(this->shared_from_this<control_pipeline2>(), this->preview_hwnd,
+        preview_sink->initialize(this->shared_from_this<control_pipeline>(), this->preview_hwnd,
             this->d2d1dev, this->d3d11dev, this->d2d1factory);
 
         this->preview_sink = preview_sink;
@@ -291,7 +291,7 @@ void control_pipeline2::activate_components()
         this->video_buffering_source->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
         source_buffering_video_t video_buffering_source(new source_buffering_video(this->session));
-        video_buffering_source->initialize(this->shared_from_this<control_pipeline2>(),
+        video_buffering_source->initialize(this->shared_from_this<control_pipeline>(),
             transform_h264_encoder::frame_rate_num,
             transform_h264_encoder::frame_rate_den, BUFFERING_DEFAULT_VIDEO_LATENCY);
 
@@ -303,7 +303,7 @@ void control_pipeline2::activate_components()
         this->audio_buffering_source->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
         source_buffering_audio_t audio_buffering_source(new source_buffering_audio(this->audio_session));
-        audio_buffering_source->initialize(this->shared_from_this<control_pipeline2>(),
+        audio_buffering_source->initialize(this->shared_from_this<control_pipeline>(),
             transform_aac_encoder::sample_rate, 1,
             BUFFERING_DEFAULT_AUDIO_LATENCY);
 
@@ -311,7 +311,7 @@ void control_pipeline2::activate_components()
     }
 }
 
-void control_pipeline2::deactivate_components()
+void control_pipeline::deactivate_components()
 {
     if(this->is_recording())
         this->stop_recording();
@@ -343,7 +343,7 @@ void control_pipeline2::deactivate_components()
     /*Sleep(INFINITE);*/
 }
 
-void control_pipeline2::build_and_switch_topology()
+void control_pipeline::build_and_switch_topology()
 {
     // catch all unhandled initialization exceptions
     try
@@ -438,7 +438,7 @@ void control_pipeline2::build_and_switch_topology()
     }
 }
 
-void control_pipeline2::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)
+void control_pipeline::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)
 {
     assert_(!this->is_recording());
     assert_(!this->is_disabled());
@@ -450,7 +450,7 @@ void control_pipeline2::start_recording(const std::wstring& /*filename*/, ATL::C
     std::cout << "recording started" << std::endl;
 }
 
-void control_pipeline2::stop_recording()
+void control_pipeline::stop_recording()
 {
     this->recording = false;
     this->control_class::activate();

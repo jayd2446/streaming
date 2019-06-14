@@ -1,6 +1,6 @@
 #pragma once
 #include "control_class.h"
-#include "control_displaycapture5.h"
+#include "control_displaycapture.h"
 #include "control_wasapi.h"
 #include "control_vidcap.h"
 #include "transform_videomixer.h"

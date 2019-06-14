@@ -91,12 +91,13 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
     CHECK_HR(hr);
 
-    //  this is assumed to be singlethreaded
+    // TODO: https://docs.microsoft.com/en-us/windows/desktop/medfound/handling-video-device-loss
 
-    // TODO: drain here
-    if(flags & MF_SOURCE_READERF_ENDOFSTREAM)
+    //  this is assumed to be singlethreaded
+    if((flags & MF_SOURCE_READERF_ENDOFSTREAM) || (flags & MF_SOURCE_READERF_ERROR))
     {
         std::cout << "end of stream" << std::endl;
+        source->set_broken();
     }
     if(flags & MF_SOURCE_READERF_NEWSTREAM)
     {
@@ -109,6 +110,21 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
     if(flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)
     {
         std::cout << "current mediatype changed" << std::endl;
+
+        source->output_type = NULL;
+
+        CHECK_HR(hr = source->source_reader->GetCurrentMediaType(
+            (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+            &source->output_type));
+        CHECK_HR(hr = MFGetAttributeSize(source->output_type, MF_MT_FRAME_SIZE,
+            &source->frame_width, &source->frame_height));
+
+        // reactive the current scene; it will update the control_vidcap with 
+        // a possible new frame size
+        {
+            control_class::scoped_lock lock(source->ctrl_pipeline->mutex);
+            source->ctrl_pipeline->activate();
+        }
     }
     if(flags & MF_SOURCE_READERF_STREAMTICK)
     {
@@ -177,7 +193,8 @@ done:
 
 source_vidcap::source_vidcap(const media_session_t& session) :
     source_base(session),
-    buffer_pool_texture(new buffer_pool_texture_t)
+    buffer_pool_texture(new buffer_pool_texture_t),
+    frame_width(0), frame_height(0)
 {
 }
 

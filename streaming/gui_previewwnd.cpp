@@ -23,18 +23,18 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
     first_selection = false;
 
     // select item
-    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
     if(!this->ctrl_pipeline->get_preview_window())
         return false;
 
-    control_scene2* scene = this->ctrl_pipeline->root_scene.get_active_scene();
+    control_scene* scene = this->ctrl_pipeline->root_scene.get_active_scene();
     if(scene->video_controls.empty())
         return false;
     auto start_it = scene->video_controls.begin();
     if(!this->ctrl_pipeline->selected_items.empty())
     {
         // it is assumed that the selected item is contained in the active scene
-        control_video2* video_control = dynamic_cast<control_video2*>(
+        control_video* video_control = dynamic_cast<control_video*>(
             this->ctrl_pipeline->selected_items[0]);
         if(video_control)
         {
@@ -61,7 +61,7 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
                 break;
         }
 
-        control_video2* video_control = dynamic_cast<control_video2*>(it->get());
+        control_video* video_control = dynamic_cast<control_video*>(it->get());
         if(!video_control)
             continue;
 
@@ -97,7 +97,7 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
 
 LRESULT gui_previewwnd::OnSize(UINT /*nType*/, CSize /*Extent*/)
 {
-    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
     if(this->ctrl_pipeline->get_preview_window())
     {
         this->ctrl_pipeline->get_preview_window()->update_size();
@@ -108,12 +108,12 @@ LRESULT gui_previewwnd::OnSize(UINT /*nType*/, CSize /*Extent*/)
 
 void gui_previewwnd::OnRButtonDown(UINT /*nFlags*/, CPoint /*point*/)
 {
-    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
     if(!this->ctrl_pipeline->get_preview_window())
         return;
     if(this->ctrl_pipeline->selected_items.empty())
         return;
-    control_video2* video_control = dynamic_cast<control_video2*>(
+    control_video* video_control = dynamic_cast<control_video*>(
         this->ctrl_pipeline->selected_items[0]);
     if(!video_control)
         return;
@@ -122,7 +122,7 @@ void gui_previewwnd::OnRButtonDown(UINT /*nFlags*/, CPoint /*point*/)
     video_control->apply_transformation(true);*/
 
     /*video_control->scale(40.f, 40.f, 
-        control_video2::SCALE_LEFT | control_video2::PRESERVE_ASPECT_RATIO,
+        control_video::SCALE_LEFT | control_video::PRESERVE_ASPECT_RATIO,
         false);*/
     video_control->rotate(-10.f);
     video_control->apply_transformation();
@@ -135,7 +135,7 @@ void gui_previewwnd::OnRButtonDown(UINT /*nFlags*/, CPoint /*point*/)
 
     //video_control->scale(this->ctrl_pipeline->get_preview_window(),
     //    (FLOAT)this->ctrl_pipeline->get_preview_window()->get_preview_rect().left, (FLOAT)y,
-    //    (FLOAT)0.f, (FLOAT)0.f, control_video2::SCALE_TOP | control_video2::SCALE_LEFT | control_video2::ABSOLUTE_MODE);
+    //    (FLOAT)0.f, (FLOAT)0.f, control_video::SCALE_TOP | control_video::SCALE_LEFT | control_video::ABSOLUTE_MODE);
 
     //y += 10.f;
 }
@@ -144,11 +144,11 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
 {
     int dragging = 0;
     {
-        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
-        control_video2* video_control;
+        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+        control_video* video_control;
         if(!this->ctrl_pipeline->selected_items.empty() &&
             (video_control = 
-                dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0])))
+                dynamic_cast<control_video*>(this->ctrl_pipeline->selected_items[0])))
         {
             dragging = video_control->get_highlighted_points();
         }
@@ -170,10 +170,10 @@ void gui_previewwnd::OnLButtonDown(UINT /*nFlags*/, CPoint point)
         this->dragging = true;
 
         // initialize the pos to center vector
-        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
         if(this->ctrl_pipeline->selected_items.empty())
             return;
-        control_video2* video_control = dynamic_cast<control_video2*>(
+        control_video* video_control = dynamic_cast<control_video*>(
             this->ctrl_pipeline->selected_items[0]);
         if(!video_control)
             return;
@@ -199,17 +199,17 @@ void gui_previewwnd::OnLButtonUp(UINT /*nFlags*/, CPoint /*point*/)
 
 void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 {
-    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
     if(!this->ctrl_pipeline->get_preview_window())
         return;
     if(this->ctrl_pipeline->selected_items.empty())
         return;
-    control_video2* video_control = dynamic_cast<control_video2*>(
+    control_video* video_control = dynamic_cast<control_video*>(
         this->ctrl_pipeline->selected_items[0]);
     if(!video_control)
         return;
 
-    /*control_video2::video_params_t video_params = video_control->get_video_params(true);*/
+    /*control_video::video_params_t video_params = video_control->get_video_params(true);*/
     D2D1_RECT_F preview_rect = this->ctrl_pipeline->get_preview_window()->get_preview_rect();
     // do not allow dragging if the preview rect has an invalid size
     if(preview_rect.left >= preview_rect.right || preview_rect.top >= preview_rect.bottom)
@@ -239,7 +239,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     {
         this->sizing_point = 0;
         left_scaled = top_scaled = true;
-        this->scale_flags |= control_video2::SCALE_LEFT | control_video2::SCALE_TOP;
+        this->scale_flags |= control_video::SCALE_LEFT | control_video::SCALE_TOP;
     }
     if(pointer_pos.x >= (sizing_points[1].x - size_point_radius) &&
         pointer_pos.x <= (sizing_points[1].x + size_point_radius) &&
@@ -249,7 +249,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     {
         this->sizing_point = 1;
         right_scaled = top_scaled = true;
-        this->scale_flags |= control_video2::SCALE_RIGHT | control_video2::SCALE_TOP;
+        this->scale_flags |= control_video::SCALE_RIGHT | control_video::SCALE_TOP;
     }
     if(pointer_pos.x >= (sizing_points[2].x - size_point_radius) &&
         pointer_pos.x <= (sizing_points[2].x + size_point_radius) &&
@@ -259,7 +259,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     {
         this->sizing_point = 2;
         left_scaled = bottom_scaled = true;
-        this->scale_flags |= control_video2::SCALE_LEFT | control_video2::SCALE_BOTTOM;
+        this->scale_flags |= control_video::SCALE_LEFT | control_video::SCALE_BOTTOM;
     }
     if(pointer_pos.x >= (sizing_points[3].x - size_point_radius) &&
         pointer_pos.x <= (sizing_points[3].x + size_point_radius) &&
@@ -268,7 +268,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         !left_scaled && !top_scaled)
     {
         this->sizing_point = 3;
-        this->scale_flags |= control_video2::SCALE_RIGHT | control_video2::SCALE_BOTTOM;
+        this->scale_flags |= control_video::SCALE_RIGHT | control_video::SCALE_BOTTOM;
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////
@@ -281,7 +281,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     {
         this->sizing_point = 4;
         left_scaled = top_scaled = true;
-        this->scale_flags |= control_video2::SCALE_TOP;
+        this->scale_flags |= control_video::SCALE_TOP;
     }
     if(pointer_pos.x >= (sizing_points[5].x - size_point_radius) &&
         pointer_pos.x <= (sizing_points[5].x + size_point_radius) &&
@@ -291,7 +291,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     {
         this->sizing_point = 5;
         right_scaled = top_scaled = true;
-        this->scale_flags |= control_video2::SCALE_RIGHT;
+        this->scale_flags |= control_video::SCALE_RIGHT;
     }
     if(pointer_pos.x >= (sizing_points[6].x - size_point_radius) &&
         pointer_pos.x <= (sizing_points[6].x + size_point_radius) &&
@@ -301,7 +301,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     {
         this->sizing_point = 6;
         left_scaled = bottom_scaled = true;
-        this->scale_flags |= control_video2::SCALE_LEFT;
+        this->scale_flags |= control_video::SCALE_LEFT;
     }
     if(pointer_pos.x >= (sizing_points[7].x - size_point_radius) &&
         pointer_pos.x <= (sizing_points[7].x + size_point_radius) &&
@@ -310,7 +310,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
         !left_scaled && !top_scaled)
     {
         this->sizing_point = 7;
-        this->scale_flags |= control_video2::SCALE_BOTTOM;
+        this->scale_flags |= control_video::SCALE_BOTTOM;
     }
 
     video_control->highlight_sizing_points(this->scale_flags);
@@ -339,7 +339,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 
             // TODO: rotated clamping doesn't always work
 
-            video_control->scale(pos.x, pos.y, this->scale_flags | control_video2::ABSOLUTE_MODE);
+            video_control->scale(pos.x, pos.y, this->scale_flags | control_video::ABSOLUTE_MODE);
             bool x_clamped, y_clamped;
             // clamp the max distance
             const D2D1_POINT_2F clamping_vector = video_control->get_clamping_vector(
@@ -354,7 +354,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 
             video_control->scale(
                 points[this->sizing_point].x, points[this->sizing_point].y, this->scale_flags |
-                control_video2::ABSOLUTE_MODE | control_video2::PRESERVE_ASPECT_RATIO);
+                control_video::ABSOLUTE_MODE | control_video::PRESERVE_ASPECT_RATIO);
 
             /*video_control->align_source_rect();
             video_control->apply_transformation(false);*/

@@ -1,16 +1,16 @@
 #pragma once
 #include "control_class.h"
-#include "control_video2.h"
+#include "control_video.h"
 #include "source_vidcap.h"
 #include "transform_videomixer.h"
 #include <string>
 
-class control_pipeline2;
-typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
+class control_pipeline;
+typedef std::shared_ptr<control_pipeline> control_pipeline2_t;
 
-class control_vidcap : public control_video2
+class control_vidcap : public control_video
 {
-    friend class control_scene2;
+    friend class control_scene;
 public:
     struct vidcap_params
     {
@@ -32,13 +32,13 @@ private:
         const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
-    // control video2
+    // control video
     void apply_transformation(const D2D1::Matrix3x2F&&, bool dest_params);
     void set_default_video_params(video_params_t&, bool dest_params);
 
-    control_vidcap(control_set_t& active_controls, control_pipeline2&);
+    control_vidcap(control_set_t& active_controls, control_pipeline&);
 public:
-    // control video2
+    // control video
     D2D1_RECT_F get_rectangle(bool dest_params) const;
 
     // TODO: gui_newdlg should call a control_vidcap function that will 

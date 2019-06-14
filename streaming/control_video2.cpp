@@ -1,4 +1,4 @@
-#include "control_video2.h"
+#include "control_video.h"
 #include "control_pipeline2.h"
 #include "transform_videomixer.h"
 #include "sink_preview2.h"
@@ -11,7 +11,7 @@
 // clamp boundary is in client coordinates
 #define CLAMP_BOUNDARY 8
 
-control_video2::control_video2(control_set_t& active_controls, control_pipeline2& pipeline) :
+control_video::control_video(control_set_t& active_controls, control_pipeline& pipeline) :
     control_class(active_controls, pipeline.mutex), pipeline(pipeline), highlights(0),
     clamp_boundary(CLAMP_BOUNDARY)
 {
@@ -19,7 +19,7 @@ control_video2::control_video2(control_set_t& active_controls, control_pipeline2
     this->push_matrix(false);
 }
 
-void control_video2::push_matrix(bool dest_params)
+void control_video::push_matrix(bool dest_params)
 {
     using namespace D2D1;
 
@@ -31,22 +31,22 @@ void control_video2::push_matrix(bool dest_params)
             Matrix3x2F::Identity() : this->transformation_src.top());
 }
 
-void control_video2::pop_matrix(bool dest_params)
+void control_video::pop_matrix(bool dest_params)
 {
     dest_params ? this->transformation_dst.pop() : this->transformation_src.pop();
 }
 
-D2D1::Matrix3x2F control_video2::get_parent_transformation(bool dest_params) const
+D2D1::Matrix3x2F control_video::get_parent_transformation(bool dest_params) const
 {
     using namespace D2D1;
-    const control_video2* parent = dynamic_cast<const control_video2*>(this->parent);
+    const control_video* parent = dynamic_cast<const control_video*>(this->parent);
     if(parent)
         return parent->get_transformation(dest_params);
     
     return Matrix3x2F::Identity();
 }
 
-D2D1::Matrix3x2F control_video2::get_transformation(bool dest_params) const
+D2D1::Matrix3x2F control_video::get_transformation(bool dest_params) const
 {
     using namespace D2D1;
     const Matrix3x2F this_transformation = 
@@ -55,7 +55,7 @@ D2D1::Matrix3x2F control_video2::get_transformation(bool dest_params) const
     return (this_transformation * this->get_parent_transformation(dest_params));
 }
 
-void control_video2::apply_default_video_params()
+void control_video::apply_default_video_params()
 {
     video_params_t src_params, dst_params;
 
@@ -67,7 +67,7 @@ void control_video2::apply_default_video_params()
     this->apply_transformation(true);
 }
 
-void control_video2::build_transformation(const video_params_t& video_params, bool dest_params)
+void control_video::build_transformation(const video_params_t& video_params, bool dest_params)
 {
     using namespace D2D1;
     Matrix3x2F& transformation = dest_params ? this->transformation_dst.top() : 
@@ -81,7 +81,7 @@ void control_video2::build_transformation(const video_params_t& video_params, bo
         parent_transformation_invert;
 }
 
-control_video2::video_params_t control_video2::get_video_params(D2D1::Matrix3x2F&& m) const
+control_video::video_params_t control_video::get_video_params(D2D1::Matrix3x2F&& m) const
 {
     using namespace D2D1;
     video_params_t params;
@@ -100,7 +100,7 @@ control_video2::video_params_t control_video2::get_video_params(D2D1::Matrix3x2F
     return params;
 }
 
-void control_video2::move(FLOAT x, FLOAT y, bool absolute_mode, bool axis_aligned, bool dest_params)
+void control_video::move(FLOAT x, FLOAT y, bool absolute_mode, bool axis_aligned, bool dest_params)
 {
     const video_params_t old_params = this->get_video_params(dest_params);
     video_params_t params = old_params;
@@ -123,7 +123,7 @@ void control_video2::move(FLOAT x, FLOAT y, bool absolute_mode, bool axis_aligne
 }
 
 // TODO: rename to stretch
-void control_video2::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, bool dest_params)
+void control_video::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, bool dest_params)
 {
     const video_params_t old_params = this->get_video_params(dest_params);
     video_params_t params = old_params;
@@ -245,7 +245,7 @@ void control_video2::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, 
     this->build_transformation(params, dest_params);
 }
 
-void control_video2::rotate(FLOAT rotation, bool absolute_mode, bool dest_params)
+void control_video::rotate(FLOAT rotation, bool absolute_mode, bool dest_params)
 {
     const video_params_t old_params = this->get_video_params(dest_params);
     video_params_t params = old_params;
@@ -263,7 +263,7 @@ void control_video2::rotate(FLOAT rotation, bool absolute_mode, bool dest_params
     this->build_transformation(params, dest_params);
 }
 
-void control_video2::align_source_rect()
+void control_video::align_source_rect()
 {
     const video_params_t old_params = this->get_video_params(false),
         old_params_dst = this->get_video_params(true);
@@ -299,14 +299,14 @@ void control_video2::align_source_rect()
     this->build_transformation(params, false);
 }
 
-D2D1_POINT_2F control_video2::get_center(bool dest_params) const
+D2D1_POINT_2F control_video::get_center(bool dest_params) const
 {
     using namespace D2D1;
     const D2D1_RECT_F rect = this->get_rectangle(dest_params);
     return (Point2F(rect.left, rect.top) * this->get_transformation(dest_params));
 }
 
-D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview_sink, 
+D2D1_POINT_2F control_video::get_clamping_vector(const sink_preview2_t& preview_sink, 
     bool& x_clamped, bool& y_clamped, int clamped_sizing_point) const
 {
     if(!preview_sink)
@@ -375,7 +375,7 @@ D2D1_POINT_2F control_video2::get_clamping_vector(const sink_preview2_t& preview
     return (clamping_vector * Matrix3x2F::Rotation(-this->get_video_params(true).rotate));
 }
 
-D2D1_POINT_2F control_video2::client_to_canvas(
+D2D1_POINT_2F control_video::client_to_canvas(
     const sink_preview2_t& preview_sink, LONG x, LONG y, bool scale_only) const
 {
     using namespace D2D1;
@@ -391,7 +391,7 @@ D2D1_POINT_2F control_video2::client_to_canvas(
     return (Point2F((FLOAT)x, (FLOAT)y) * client_to_canvas);
 }
 
-void control_video2::get_sizing_points(const sink_preview2_t& preview_sink,
+void control_video::get_sizing_points(const sink_preview2_t& preview_sink,
     D2D1_POINT_2F points_out[], int array_size, bool dest_params) const
 {
     if(array_size != 8)

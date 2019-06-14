@@ -81,22 +81,10 @@
     <ClCompile Include="media_component.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="control_pipeline2.cpp">
-      <Filter>control</Filter>
-    </ClCompile>
-    <ClCompile Include="control_scene2.cpp">
-      <Filter>control</Filter>
-    </ClCompile>
-    <ClCompile Include="control_displaycapture5.cpp">
-      <Filter>control</Filter>
-    </ClCompile>
     <ClCompile Include="control_wasapi.cpp">
       <Filter>control</Filter>
     </ClCompile>
     <ClCompile Include="control_class.cpp">
-      <Filter>control</Filter>
-    </ClCompile>
-    <ClCompile Include="control_video2.cpp">
       <Filter>control</Filter>
     </ClCompile>
     <ClCompile Include="transform_videomixer.cpp">
@@ -128,6 +116,18 @@
     </ClCompile>
     <ClCompile Include="media_message_generator.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="control_video.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_scene.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_pipeline.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="control_displaycapture.cpp">
+      <Filter>control</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -215,19 +215,7 @@
     <ClInclude Include="control_class.h">
       <Filter>control</Filter>
     </ClInclude>
-    <ClInclude Include="control_displaycapture5.h">
-      <Filter>control</Filter>
-    </ClInclude>
-    <ClInclude Include="control_scene2.h">
-      <Filter>control</Filter>
-    </ClInclude>
     <ClInclude Include="control_wasapi.h">
-      <Filter>control</Filter>
-    </ClInclude>
-    <ClInclude Include="control_pipeline2.h">
-      <Filter>control</Filter>
-    </ClInclude>
-    <ClInclude Include="control_video2.h">
       <Filter>control</Filter>
     </ClInclude>
     <ClInclude Include="transform_mixer.h">
@@ -277,6 +265,18 @@
     </ClInclude>
     <ClInclude Include="source_base.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="control_video.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_scene.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_pipeline.h">
+      <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="control_displaycapture.h">
+      <Filter>control</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

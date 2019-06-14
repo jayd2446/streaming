@@ -1,5 +1,5 @@
 #include "source_displaycapture.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 #include "transform_h264_encoder.h"
 #include <iostream>
 #include <d2d1.h>

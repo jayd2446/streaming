@@ -1,5 +1,5 @@
-#include "control_scene2.h"
-#include "control_pipeline2.h"
+#include "control_scene.h"
+#include "control_pipeline.h"
 #include "source_empty.h"
 #include <algorithm>
 #include <iterator>

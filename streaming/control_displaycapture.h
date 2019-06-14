@@ -1,16 +1,16 @@
 #pragma once
 #include "control_class.h"
-#include "control_video2.h"
+#include "control_video.h"
 #include "source_displaycapture.h"
 #include "transform_videomixer.h"
 #include <vector>
 
-class control_pipeline2;
-typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
+class control_pipeline;
+typedef std::shared_ptr<control_pipeline> control_pipeline2_t;
 
-class control_displaycapture : public control_video2
+class control_displaycapture : public control_video
 {
-    friend class control_scene2;
+    friend class control_scene;
 public:
     struct displaycapture_params
     {
@@ -19,7 +19,7 @@ public:
         DXGI_OUTPUT_DESC output;
     };
 private:
-    /*control_pipeline2& pipeline;*/
+    /*control_pipeline& pipeline;*/
     displaycapture_params params;
     source_displaycapture_t component;
     stream_videomixer_controller_t videomixer_params;
@@ -32,13 +32,13 @@ private:
         const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
-    // control_video2
+    // control_video
     void apply_transformation(const D2D1::Matrix3x2F&&, bool dest_params);
     void set_default_video_params(video_params_t&, bool dest_params);
 
-    control_displaycapture(control_set_t& active_controls, control_pipeline2&);
+    control_displaycapture(control_set_t& active_controls, control_pipeline&);
 public:
-    // control_video2
+    // control_video
     D2D1_RECT_F get_rectangle(bool dest_params) const;
 
     // before the displaycapture can be activated, right params must be chosen and set

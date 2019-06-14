@@ -1,6 +1,6 @@
 #pragma once
 #include "control_class.h"
-#include "control_scene2.h"
+#include "control_scene.h"
 #include "media_clock.h"
 #include "media_session.h"
 #include "media_topology.h"
@@ -16,7 +16,6 @@
 #include "source_buffering.h"
 #include "output_file.h"
 #include "enable_shared_from_this.h"
-#include "control_scene2.h"
 #include "wtl.h"
 #include <atlbase.h>
 #include <d3d11.h>
@@ -35,9 +34,9 @@
 
 typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
 
-class control_pipeline2 : public control_class
+class control_pipeline : public control_class
 {
-    friend class control_scene2;
+    friend class control_scene;
 private:
     bool recording;
     HWND preview_hwnd;
@@ -78,13 +77,13 @@ public:
     CComPtr<ID2D1Device> d2d1dev;
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
-    control_scene2 root_scene;
+    control_scene root_scene;
 
     // the selected items must be contained in control_pipeline so that
     // the lifetimes are managed
     std::vector<control_class*> selected_items;
 
-    control_pipeline2();
+    control_pipeline();
 
     bool is_recording() const {return this->recording;}
 
@@ -99,4 +98,4 @@ public:
     void shutdown() {this->disable();}
 };
 
-typedef std::shared_ptr<control_pipeline2> control_pipeline2_t;
+typedef std::shared_ptr<control_pipeline> control_pipeline2_t;

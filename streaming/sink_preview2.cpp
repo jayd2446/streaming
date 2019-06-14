@@ -1,7 +1,7 @@
 #include "sink_preview2.h"
 #include "assert.h"
-#include "control_pipeline2.h"
-#include "control_video2.h"
+#include "control_pipeline.h"
+#include "control_video.h"
 #define _USE_MATH_DEFINES
 #include <math.h>
 
@@ -153,14 +153,14 @@ void sink_preview2::draw_sample(const media_component_args* args_)
     int highlighted_points = 0;
     D2D1_RECT_F dest_rect;
     D2D1::Matrix3x2F dest_m;
-    control_video2::video_params_t video_params = {0};
+    control_video::video_params_t video_params = {0};
     {
         // only try to lock so that the pipeline doesn't stall on component initializations
         std::unique_lock<std::recursive_mutex> lock(this->ctrl_pipeline->mutex, std::try_to_lock);
         if(!lock.owns_lock() || this->ctrl_pipeline->selected_items.empty())
             goto out;
-        control_video2* video_control = 
-            dynamic_cast<control_video2*>(this->ctrl_pipeline->selected_items[0]);
+        control_video* video_control = 
+            dynamic_cast<control_video*>(this->ctrl_pipeline->selected_items[0]);
         if(!video_control)
             goto out;
 
@@ -252,29 +252,29 @@ out:
                 corner3 = Point2F(dest_rect.left, dest_rect.bottom) * dest_m * canvas_to_preview,
                 corner4 = Point2F(dest_rect.right, dest_rect.bottom) * dest_m * canvas_to_preview;
 
-            if((highlighted & control_video2::SCALE_LEFT) &&
-                (highlighted & control_video2::SCALE_TOP))
+            if((highlighted & control_video::SCALE_LEFT) &&
+                (highlighted & control_video::SCALE_TOP))
                 brush = this->highlighted_brush, corner_stroke = 3.f;
             else
                 brush = this->line_brush, corner_stroke = 1.5f;
             this->d2d1devctx->DrawEllipse(Ellipse(corner, corner_length, corner_length), 
                 brush, corner_stroke);
-            if((highlighted & control_video2::SCALE_RIGHT) &&
-                (highlighted & control_video2::SCALE_TOP))
+            if((highlighted & control_video::SCALE_RIGHT) &&
+                (highlighted & control_video::SCALE_TOP))
                 brush = this->highlighted_brush, corner_stroke = 3.f;
             else
                 brush = this->line_brush, corner_stroke = 1.5f;
             this->d2d1devctx->DrawEllipse(Ellipse(corner2, corner_length, corner_length),
                 brush, corner_stroke);
-            if((highlighted & control_video2::SCALE_LEFT) &&
-                (highlighted & control_video2::SCALE_BOTTOM))
+            if((highlighted & control_video::SCALE_LEFT) &&
+                (highlighted & control_video::SCALE_BOTTOM))
                 brush = this->highlighted_brush, corner_stroke = 3.f;
             else
                 brush = this->line_brush, corner_stroke = 1.5f;
             this->d2d1devctx->DrawEllipse(Ellipse(corner3, corner_length, corner_length),
                 brush, corner_stroke);
-            if((highlighted & control_video2::SCALE_RIGHT) &&
-                (highlighted & control_video2::SCALE_BOTTOM))
+            if((highlighted & control_video::SCALE_RIGHT) &&
+                (highlighted & control_video::SCALE_BOTTOM))
                 brush = this->highlighted_brush, corner_stroke = 3.f;
             else
                 brush = this->line_brush, corner_stroke = 1.5f;
@@ -292,7 +292,7 @@ out:
                 center3 = Point2F(0.5f, 1.f) * dest_m * canvas_to_preview,
                 center4 = Point2F(1.f, 0.5f) * dest_m * canvas_to_preview;
 
-            if(highlighted == control_video2::SCALE_TOP)
+            if(highlighted == control_video::SCALE_TOP)
                 brush = this->highlighted_brush, corner_stroke = 3.5f;
             else
                 brush = this->line_brush, corner_stroke = 2.f;
@@ -300,7 +300,7 @@ out:
                 Point2F(center.x - corner_length * y_scale, center.y - corner_length * -x_scale),
                 Point2F(center.x + corner_length * y_scale, center.y + corner_length * -x_scale),
                 brush, corner_stroke);
-            if(highlighted == control_video2::SCALE_LEFT)
+            if(highlighted == control_video::SCALE_LEFT)
                 brush = this->highlighted_brush, corner_stroke = 3.5f;
             else
                 brush = this->line_brush, corner_stroke = 2.f;
@@ -308,7 +308,7 @@ out:
                 Point2F(center2.x - corner_length * x_scale, center2.y - corner_length * y_scale),
                 Point2F(center2.x + corner_length * x_scale, center2.y + corner_length * y_scale),
                 brush, corner_stroke);
-            if(highlighted == control_video2::SCALE_BOTTOM)
+            if(highlighted == control_video::SCALE_BOTTOM)
                 brush = this->highlighted_brush, corner_stroke = 3.5f;
             else
                 brush = this->line_brush, corner_stroke = 2.f;
@@ -316,7 +316,7 @@ out:
                 Point2F(center3.x - corner_length * y_scale, center3.y - corner_length * -x_scale),
                 Point2F(center3.x + corner_length * y_scale, center3.y + corner_length * -x_scale),
                 brush, corner_stroke);
-            if(highlighted == control_video2::SCALE_RIGHT)
+            if(highlighted == control_video::SCALE_RIGHT)
                 brush = this->highlighted_brush, corner_stroke = 3.5f;
             else
                 brush = this->line_brush, corner_stroke = 2.f;

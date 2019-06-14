@@ -6,7 +6,7 @@
 
 class control_wasapi : public control_class
 {
-    friend class control_scene2;
+    friend class control_scene;
 public:
     struct wasapi_params
     {
@@ -15,7 +15,7 @@ public:
         std::wstring device_friendlyname;
     };
 private:
-    control_pipeline2& pipeline;
+    control_pipeline& pipeline;
     wasapi_params params;
     source_wasapi_t component;
     stream_audiomixer2_controller_t audiomixer_params;
@@ -32,7 +32,7 @@ private:
         const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
-    control_wasapi(control_set_t& active_controls, control_pipeline2&);
+    control_wasapi(control_set_t& active_controls, control_pipeline&);
 public:
     // before the wasapi can be activated, right params must be chosen and set
     static void list_available_wasapi_params(std::vector<wasapi_params>&);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "wtl.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 #include <d2d1.h>
 
 class gui_sourcedlg;

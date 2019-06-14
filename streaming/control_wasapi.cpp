@@ -1,11 +1,11 @@
 #include "control_wasapi.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-control_wasapi::control_wasapi(control_set_t& active_controls, control_pipeline2& pipeline) :
+control_wasapi::control_wasapi(control_set_t& active_controls, control_pipeline& pipeline) :
     control_class(active_controls, pipeline.mutex),
     audiomixer_params(new stream_audiomixer2_controller),
     pipeline(pipeline),
@@ -92,7 +92,7 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
             // create a new component since it was not found in the last or in the new set
             source_wasapi_t wasapi_source(new source_wasapi(this->pipeline.audio_session));
 
-            wasapi_source->initialize(this->pipeline.shared_from_this<control_pipeline2>(),
+            wasapi_source->initialize(this->pipeline.shared_from_this<control_pipeline>(),
                 this->params.device_id, this->params.capture);
 
             component = wasapi_source;

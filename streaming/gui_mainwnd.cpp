@@ -36,7 +36,7 @@ int gui_controlwnd::OnCreate(LPCREATESTRUCT)
 
 void gui_controlwnd::OnDestroy()
 {
-    control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
 
     this->ctrl_pipeline->shutdown();
 
@@ -80,7 +80,7 @@ LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*
 
 
 gui_mainwnd::gui_mainwnd() : 
-    ctrl_pipeline(new control_pipeline2),
+    ctrl_pipeline(new control_pipeline),
     wnd_control(this->ctrl_pipeline),
     wnd_preview(wnd_control.dlg_sources, this->ctrl_pipeline),
     // use this class' messagemap(=this) and use map section 1
@@ -194,7 +194,7 @@ void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
     {
         this->was_minimized = bMinimized;
 
-        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
         if(this->ctrl_pipeline->get_preview_window())
             this->ctrl_pipeline->get_preview_window()->set_state(!bMinimized);
     }
@@ -263,14 +263,14 @@ LRESULT gui_mainwnd::OnAbout(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
 LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
     {
-        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
         if(this->ctrl_pipeline->root_scene.video_controls.size() < 2)
             return 0;
     }
 
     for(int i = 0; i < 19; i++)
     {
-        control_pipeline2::scoped_lock lock(this->ctrl_pipeline->mutex);
+        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
         this->wnd_control.dlg_scenes.wnd_scenelist.SetCurSel(i % 2);
         this->ctrl_pipeline->root_scene.switch_scene(true, i % 2);
         this->wnd_control.dlg_sources.set_source_tree(

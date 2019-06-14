@@ -1,7 +1,7 @@
 #pragma once
 
 #include "wtl.h"
-#include "control_pipeline2.h"
+#include "control_pipeline.h"
 #include <string>
 
 class gui_sourcedlg;
@@ -65,7 +65,7 @@ public:
 
     gui_sourcedlg(gui_scenedlg&, const control_pipeline2_t&);
 
-    void set_source_tree(const control_scene2*);
+    void set_source_tree(const control_scene*);
     void set_selected_item(const control_class*);
 
     BEGIN_MSG_MAP(gui_sourcedlg)

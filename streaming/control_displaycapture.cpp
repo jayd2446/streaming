@@ -1,11 +1,11 @@
-#include "control_displaycapture5.h"
-#include "control_pipeline2.h"
+#include "control_displaycapture.h"
+#include "control_pipeline.h"
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 control_displaycapture::control_displaycapture(control_set_t& active_controls, 
-    control_pipeline2& pipeline) :
-    control_video2(active_controls, pipeline),
+    control_pipeline& pipeline) :
+    control_video(active_controls, pipeline),
     videomixer_params(new stream_videomixer_controller),
     /*control_class(active_controls, pipeline.mutex),
     pipeline(pipeline),*/
@@ -112,12 +112,12 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
 
             if(this->params.adapter_ordinal == this->pipeline.d3d11dev_adapter)
                 displaycapture_source->initialize(
-                    this->pipeline.shared_from_this<control_pipeline2>(),
+                    this->pipeline.shared_from_this<control_pipeline>(),
                     this->params.output_ordinal, 
                     this->pipeline.d3d11dev, this->pipeline.devctx);
             else
                 displaycapture_source->initialize(
-                    this->pipeline.shared_from_this<control_pipeline2>(),
+                    this->pipeline.shared_from_this<control_pipeline>(),
                     this->params.adapter_ordinal, this->params.output_ordinal, 
                     this->pipeline.dxgifactory, this->pipeline.d3d11dev, this->pipeline.devctx);
 
