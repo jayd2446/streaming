@@ -71,9 +71,9 @@ int YourReportHook( int reportType, char *message, int *returnValue )
 }
 #endif
 
-DWORD capture_work_queue_id;
+//DWORD capture_work_queue_id;
 // greater priority value has a greater priority
-LONG capture_audio_priority = 10;
+//LONG capture_audio_priority = 10;
 
 int main()
 {
@@ -84,8 +84,8 @@ int main()
     CHECK_HR(hr = module_.Init(NULL, NULL));
 
     // lock a capture priority multithreaded work queue
-    DWORD task_id = 0;
-    CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &capture_work_queue_id));
+    /*DWORD task_id = 0;
+    CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &capture_work_queue_id));*/
 
     //// register all media foundation standard work queues as playback
     /*DWORD taskgroup_id = 0;

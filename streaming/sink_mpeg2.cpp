@@ -68,7 +68,7 @@ stream_mpeg2_t sink_mpeg2::create_stream(
 /////////////////////////////////////////////////////////////////
 
 
-extern DWORD capture_work_queue_id;
+//extern DWORD capture_work_queue_id;
 
 stream_mpeg2::stream_mpeg2(
     const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream) : 

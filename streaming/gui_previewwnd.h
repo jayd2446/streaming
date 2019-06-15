@@ -13,7 +13,6 @@ class gui_previewwnd : public CWindowImpl<gui_previewwnd>
 {
 private:
     control_pipeline2_t ctrl_pipeline;
-    gui_sourcedlg& dlg_sources;
     bool dragging, scaling, moving;
     int scale_flags;
     int sizing_point;
@@ -24,7 +23,7 @@ private:
 public:
     DECLARE_WND_CLASS(L"preview")
 
-    gui_previewwnd(gui_sourcedlg&, const control_pipeline2_t&);
+    explicit gui_previewwnd(const control_pipeline2_t&);
 
     BEGIN_MSG_MAP(gui_previewwnd)
         MSG_WM_SIZE(OnSize)

@@ -3,6 +3,7 @@
 #include "media_topology.h"
 #include "media_session.h"
 #include "enable_shared_from_this.h"
+#include "gui_event_handler.h"
 #include <string>
 #include <memory>
 #include <deque>
@@ -28,16 +29,19 @@ reactivate itself if the component needs to be reinitialized
 // TODO: control class needs explicit referencing;
 // explicit referencing simply uses the parameters of the referenced control class
 
-typedef std::deque<control_class*> control_set_t;
+class control_class;
+typedef std::shared_ptr<control_class> control_class_t;
+typedef std::deque<control_class_t> control_set_t;
 
 class control_class : public enable_shared_from_this
 {
     friend class control_scene;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+private:
+    control_set_t& active_controls;
 protected:
     control_class* parent;
-    control_set_t& active_controls;
 
     // for control referencing to work,
     // the topology building calls for controls must happen in the same order
@@ -62,10 +66,15 @@ protected:
     // deactivation also breaks a possible circular dependency between the control and its component
     virtual void activate(const control_set_t& last_set, control_set_t& new_set) = 0;
 
-    control_class(control_set_t& active_controls, std::recursive_mutex& mutex);
+    control_class(control_set_t& active_controls,
+        std::recursive_mutex& mutex,
+        gui_event_provider& event_provider);
 public:
     // name uniquely identifies a control
     std::wstring name;
+
+    // used by control classes to produce events and by gui classes to consume them
+    gui_event_provider& event_provider;
 
     // pipeline control class allocates this mutex;
     // the mutex must be locked before using any of the control class functions;
@@ -74,6 +83,8 @@ public:
     std::recursive_mutex& mutex;
 
     virtual ~control_class() {}
+
+    // TODO: is_active
 
     // TODO: the encapsulated component must be dismissed if the reactivation needs reinitialization
 
@@ -87,5 +98,7 @@ public:
     void disable();
 
     control_class* get_root();
-    bool is_disabled() const {return this->disabled;}
+    bool is_disabled() const { return this->disabled; }
+    // returns true if this is found in active set
+    bool is_active() const;
 };

@@ -1,28 +1,29 @@
 #pragma once
 
 #include "wtl.h"
+#include "gui_event_handler.h"
 #include "control_pipeline.h"
 #include <string>
 
-class gui_sourcedlg;
-class gui_previewwnd;
-
 class gui_scenedlg :
+    public gui_event_handler,
     public CDialogImpl<gui_scenedlg>,
     public CDialogResize<gui_scenedlg>
 {
-public:
+private:
     int scene_counter;
     control_pipeline2_t ctrl_pipeline;
-    gui_sourcedlg& dlg_sources;
     CButton btn_addscene, btn_removescene;
     CListBox wnd_scenelist;
 
+    // gui_event_handler
+    void on_scene_activate(control_scene* activated_scene, bool deactivated) override;
+    void on_control_added(control_class*, bool removed) override;
+public:
     enum {IDD = IDD_SCENEDLG};
 
-    gui_scenedlg(gui_sourcedlg&, const control_pipeline2_t&);
-
-    void add_scene(const std::wstring& scene_name);
+    explicit gui_scenedlg(const control_pipeline2_t&);
+    ~gui_scenedlg();
 
     // command handlers handle events from child windows
     BEGIN_MSG_MAP(gui_scenedlg)
@@ -48,6 +49,7 @@ public:
 };
 
 class gui_sourcedlg :
+    public gui_event_handler,
     public CDialogImpl<gui_sourcedlg>,
     public CDialogResize<gui_sourcedlg>
 {
@@ -55,18 +57,24 @@ private:
     int video_counter, audio_counter;
 
     control_pipeline2_t ctrl_pipeline;
-    gui_scenedlg& dlg_scenes;
     CButton btn_addsource, btn_removesource;
     CTreeViewCtrlEx wnd_sourcetree;
+    bool do_not_reselect;
+
+    // gui_event_handler
+    void on_scene_activate(control_scene* activated_scene, bool deactivated) override;
+    void on_activate(control_class*, bool deactivated) override;
+    void on_control_added(control_class*, bool removed) override;
+    void on_control_selection_changed(bool cleared) override;
 
     void set_selected_item(CTreeItem item);
+    void set_source_tree(const control_scene*);
+    void set_selected_item(const control_class*);
 public:
     enum {IDD = IDD_SOURCEDLG};
 
-    gui_sourcedlg(gui_scenedlg&, const control_pipeline2_t&);
-
-    void set_source_tree(const control_scene*);
-    void set_selected_item(const control_class*);
+    explicit gui_sourcedlg(const control_pipeline2_t&);
+    ~gui_sourcedlg();
 
     BEGIN_MSG_MAP(gui_sourcedlg)
         COMMAND_HANDLER(IDC_ADDSRC, BN_CLICKED, OnBnClickedAddsrc)

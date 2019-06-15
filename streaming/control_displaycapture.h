@@ -19,7 +19,7 @@ public:
         DXGI_OUTPUT_DESC output;
     };
 private:
-    /*control_pipeline& pipeline;*/
+    control_pipeline& pipeline;
     displaycapture_params params;
     source_displaycapture_t component;
     stream_videomixer_controller_t videomixer_params;
@@ -52,7 +52,7 @@ public:
     /*void apply_default_video_params();*/
 
     // checks if the control's displaycapture parameters match this class' parameters
-    bool is_identical_control(const control_class*) const;
+    bool is_identical_control(const control_class_t&) const;
 
     /*bool is_activated() const;*/
 };

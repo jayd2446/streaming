@@ -20,6 +20,7 @@ public:
         // the mf media source object
     };
 private:
+    control_pipeline& pipeline;
     vidcap_params params;
     source_vidcap_t component;
     stream_videomixer_controller_t videomixer_params;
@@ -50,5 +51,5 @@ public:
         std::vector<vidcap_params>&);
     void set_vidcap_params(const vidcap_params& params) {this->params = params;}
 
-    bool is_identical_control(const control_class*) const;
+    bool is_identical_control(const control_class_t&) const;
 };

@@ -61,6 +61,10 @@ private:
     // active controls must not have duplicate elements
     control_set_t controls;
 
+    // the selected items must be contained in control_pipeline so that
+    // the lifetimes are managed
+    std::vector<control_class*> selected_controls;
+
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
     void activate_components();
@@ -77,13 +81,16 @@ public:
     CComPtr<ID2D1Device> d2d1dev;
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
-    control_scene root_scene;
-
-    // the selected items must be contained in control_pipeline so that
-    // the lifetimes are managed
-    std::vector<control_class*> selected_items;
+    std::shared_ptr<control_scene> root_scene;
+    gui_event_provider event_provider;
 
     control_pipeline();
+    ~control_pipeline();
+
+    enum selection_type { ADD, SET, CLEAR };
+    // control class must not be null, unless cleared
+    void set_selected_control(control_class*, selection_type type = SET);
+    const std::vector<control_class*>& get_selected_controls() const { return this->selected_controls; }
 
     bool is_recording() const {return this->recording;}
 

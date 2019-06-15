@@ -8,20 +8,27 @@
 #include <vector>
 #include <memory>
 
+/*
+
+control_scene allows 'global' controls that are present in every scene that are contained
+in the parent scene
+
+*/
+
 class control_pipeline;
 
 class control_scene : public control_class
 {
     friend class control_pipeline;
-    typedef std::unique_ptr<control_class> control_class_t;
 public:
     typedef std::vector<control_class_t> controls_t;
 private:
     control_pipeline& pipeline;
-
-    // the last control that was activated using the switch functionality
-    bool current_control_video;
-    int current_control;
+    control_scene* selected_scene;
+    // video controls include scene controls aswell so that scenes can have ordering;
+    // first control appears topmost
+    controls_t video_controls;
+    controls_t audio_controls;
 
     void build_video_topology(const media_stream_t& from,
         const media_stream_t& to, const media_topology_t&);
@@ -29,16 +36,10 @@ private:
         const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
-    control_class* find_control(bool is_control_video, int control_index) const;
+    void switch_scene(bool is_video_control, int control_index);
 
     control_scene(control_set_t& active_controls, control_pipeline&);
 public:
-    // TODO: scene really shouldn't expose these fields but instead have functions
-    // video controls include scene controls aswell so that scenes can have ordering;
-    // first control appears topmost
-    controls_t video_controls;
-    controls_t audio_controls;
-
     // the controls must be configured before they can be activated,
     // otherwise they will throw;
     // the added controls must be explicitly activated;
@@ -49,15 +50,22 @@ public:
     control_vidcap* add_vidcap(const std::wstring& name, bool add_front = true);
     control_scene* add_scene(const std::wstring& name, bool add_front = false);
 
-    void switch_scene(bool is_video_control, int control_index);
+    // iterator must be valid;
+    // sets the control to disabled and erases it from this
+    void remove_control(bool is_video_control, const controls_t::iterator&);
+
+    // new_scene must be contained in this scene
     void switch_scene(const control_scene& new_scene);
-    // scene might be null if this scene isn't active or the active scene isn't
-    // of scene type
-    control_scene* get_active_scene() const;
+
+    // returns null if there's no selected scene
+    control_scene* get_selected_scene() const;
+    void unselect_selected_scene();
 
     const controls_t& get_video_controls() const {return this->video_controls;}
     const controls_t& get_audio_controls() const {return this->audio_controls;}
 
+    // TODO: this should be private
+    control_class* find_control(bool is_control_video, int control_index) const;
     // returns audio_controls.end() if no control was found
     controls_t::iterator find_control_iterator(
         const std::wstring& control_name,

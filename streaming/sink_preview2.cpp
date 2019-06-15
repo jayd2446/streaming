@@ -157,10 +157,10 @@ void sink_preview2::draw_sample(const media_component_args* args_)
     {
         // only try to lock so that the pipeline doesn't stall on component initializations
         std::unique_lock<std::recursive_mutex> lock(this->ctrl_pipeline->mutex, std::try_to_lock);
-        if(!lock.owns_lock() || this->ctrl_pipeline->selected_items.empty())
+        if(!lock.owns_lock() || this->ctrl_pipeline->get_selected_controls().empty())
             goto out;
         control_video* video_control = 
-            dynamic_cast<control_video*>(this->ctrl_pipeline->selected_items[0]);
+            dynamic_cast<control_video*>(this->ctrl_pipeline->get_selected_controls()[0]);
         if(!video_control)
             goto out;
 

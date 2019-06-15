@@ -6,6 +6,7 @@
 control_vidcap::control_vidcap(control_set_t& active_controls,
     control_pipeline& pipeline) :
     control_video(active_controls, pipeline),
+    pipeline(pipeline),
     videomixer_params(new stream_videomixer_controller),
     reference(NULL)
 {
@@ -57,11 +58,11 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
     if(this->disabled)
         goto out;
 
-    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
+    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class_t& control)
     {
         if(this->is_identical_control(control))
         {
-            const control_vidcap* vidcap_control = (const control_vidcap*)control;
+            const control_vidcap* vidcap_control = (const control_vidcap*)control.get();
             this->reference = vidcap_control;
             component = vidcap_control->component;
 
@@ -72,11 +73,11 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
 
     if(!component)
     {
-        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
+        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class_t& control)
         {
             if(this->is_identical_control(control))
             {
-                const control_vidcap* vidcap_control = (const control_vidcap*)control;
+                const control_vidcap* vidcap_control = (const control_vidcap*)control.get();
                 component = vidcap_control->component;
 
                 return true;
@@ -96,7 +97,7 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
         }
     }
 
-    new_set.push_back(this);
+    new_set.push_back(this->shared_from_this<control_vidcap>());
 
 out:
     this->component = component;
@@ -111,7 +112,11 @@ out:
             // update the source transformation when the new control_vidcap activates;
             // this allows components to reactivate the active scene and update their native size
             this->control_video::apply_transformation(false);
+
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
     }
+    else
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
 }
 
 void control_vidcap::list_available_vidcap_params(
@@ -204,9 +209,9 @@ void control_vidcap::set_default_video_params(video_params_t& video_params, bool
     video_params.scale = D2D1::Point2F(1.f, 1.f);
 }
 
-bool control_vidcap::is_identical_control(const control_class* control) const
+bool control_vidcap::is_identical_control(const control_class_t& control) const
 {
-    const control_vidcap* vidcap_control = dynamic_cast<const control_vidcap*>(control);
+    const control_vidcap* vidcap_control = dynamic_cast<const control_vidcap*>(control.get());
 
     if(!vidcap_control || !vidcap_control->component)
         return false;

@@ -6,29 +6,43 @@
 #pragma warning(push)
 #pragma warning(disable: 4706) // assignment within conditional expression
 
-gui_scenedlg::gui_scenedlg(gui_sourcedlg& dlg_sources, const control_pipeline2_t& ctrl_pipeline) :
+gui_scenedlg::gui_scenedlg(const control_pipeline2_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
-    dlg_sources(dlg_sources),
     scene_counter(0)
 {
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    this->ctrl_pipeline->event_provider.register_event_handler(*this);
 }
 
-void gui_scenedlg::add_scene(const std::wstring& /*scene_name*/)
+gui_scenedlg::~gui_scenedlg()
 {
     control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    this->ctrl_pipeline->event_provider.unregister_event_handler(*this);
+}
 
-    std::wostringstream sts;
-    sts << "scene" << this->scene_counter;
-    std::wstring&& str = sts.str();
-    control_scene& scene = *this->ctrl_pipeline->root_scene.add_scene(str); scene;
-    this->scene_counter++;
+void gui_scenedlg::on_scene_activate(control_scene* activated_scene, bool deactivated)
+{
+    // find the scene on the wnd_scenelist
+    const int listbox_count = this->wnd_scenelist.GetCount();
+    int i;
+    for(i = 0; i < listbox_count && !deactivated; i++)
+    {
+        CString text;
+        const int len = this->wnd_scenelist.GetText(i, text);
+        if(len && activated_scene->name.compare(text) == 0)
+            break;
+    }
 
-    const int index = this->wnd_scenelist.AddString(str.c_str());
-    this->wnd_scenelist.SetCurSel(index);
+    const bool found = (i < listbox_count);
+    if(found && !deactivated)
+        this->wnd_scenelist.SetCurSel(i);
+}
 
-    // manully trigger the event selection event
-    BOOL b;
-    this->OnLbnSelchangeScenelist(0, 0, NULL, b);
+void gui_scenedlg::on_control_added(control_class* new_control, bool removed)
+{
+    control_scene* new_scene = dynamic_cast<control_scene*>(new_control);
+    if(!removed && new_scene)
+        const int index = this->wnd_scenelist.AddString(new_scene->name.c_str());
 }
 
 LRESULT gui_scenedlg::OnBnClickedAddscene(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
@@ -38,7 +52,17 @@ LRESULT gui_scenedlg::OnBnClickedAddscene(WORD /*wNotifyCode*/, WORD /*wID*/, HW
     if(ret == 0)
         this->add_scene(dlg.new_scene_name);*/
 
-    this->add_scene(L"");
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+
+    std::wostringstream sts;
+    sts << "scene" << this->scene_counter;
+    std::wstring&& str = sts.str();
+    control_scene* scene = this->ctrl_pipeline->root_scene->add_scene(str);
+    if(!scene)
+        throw HR_EXCEPTION(E_UNEXPECTED);
+    this->scene_counter++;
+
+    this->ctrl_pipeline->root_scene->switch_scene(*scene);
 
     return 0;
 }
@@ -61,27 +85,26 @@ LRESULT gui_scenedlg::OnBnClickedRemovescene(WORD /*wNotifyCode*/, WORD /*wID*/,
 
             bool is_video_control, found;
             bool is_video_control2, found2;
-            auto it = this->ctrl_pipeline->root_scene.find_control_iterator(
+            auto it = this->ctrl_pipeline->root_scene->find_control_iterator(
                 std::wstring(name), is_video_control, found),
-                old_it = this->ctrl_pipeline->root_scene.find_control_iterator(
+                old_it = this->ctrl_pipeline->root_scene->find_control_iterator(
                     std::wstring(old_name), is_video_control2, found2);
             control_scene* scene, *scene2;
 
             if(found && (scene = dynamic_cast<control_scene*>(it->get())))
             {
-                // switch to new scene
-                this->ctrl_pipeline->root_scene.switch_scene(*scene);
                 // remove old scene
                 if(found2 && is_video_control2 && 
                     (scene2 = dynamic_cast<control_scene*>(old_it->get())))
                 {
-                   this->ctrl_pipeline->root_scene.video_controls.erase(old_it);
+                    this->ctrl_pipeline->root_scene->remove_control(is_video_control2, old_it);
                 }
+
+                // switch to new scene(activate is called here)
+                this->ctrl_pipeline->root_scene->switch_scene(*scene);
             }
 
-            this->wnd_scenelist.SetCurSel(next_index);
             this->wnd_scenelist.DeleteString(index);
-            this->dlg_sources.set_source_tree(this->ctrl_pipeline->root_scene.get_active_scene());
         }
         else if(size == 1)
         {
@@ -89,23 +112,25 @@ LRESULT gui_scenedlg::OnBnClickedRemovescene(WORD /*wNotifyCode*/, WORD /*wID*/,
             this->wnd_scenelist.GetText(index, old_name);
 
             bool is_video_control2, found2;
-            auto old_it = this->ctrl_pipeline->root_scene.find_control_iterator(
+            auto old_it = this->ctrl_pipeline->root_scene->find_control_iterator(
                 std::wstring(old_name), is_video_control2, found2);
             control_scene* scene2;
 
-            // deactivate pipeline since it is the last scene and remove old scene
+            // remove old scene
             if(found2 && is_video_control2 &&
                 (scene2 = dynamic_cast<control_scene*>(old_it->get())))
             {
+                this->ctrl_pipeline->root_scene->remove_control(is_video_control2, old_it);
+
+                // unselect the selected scene, since this was the last scene
+                this->ctrl_pipeline->root_scene->unselect_selected_scene();
+
+                // deactive the pipeline
                 this->ctrl_pipeline->deactivate();
-                this->ctrl_pipeline->root_scene.video_controls.erase(old_it);
-                assert_(this->ctrl_pipeline->root_scene.video_controls.empty());
-                assert_(this->ctrl_pipeline->root_scene.audio_controls.empty());
             }
 
             this->wnd_scenelist.SetCurSel(-1);
             this->wnd_scenelist.DeleteString(index);
-            this->dlg_sources.set_source_tree(this->ctrl_pipeline->root_scene.get_active_scene());
         }
     }
 
@@ -116,6 +141,7 @@ LRESULT gui_scenedlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lP
 {
     this->DlgResize_Init(false);
 
+    // the parent-child window pair for idc_addscene is defined in the resource file
     this->btn_addscene.Attach(this->GetDlgItem(IDC_ADDSCENE));
     this->btn_removescene.Attach(this->GetDlgItem(IDC_REMOVESCENE));
     this->wnd_scenelist.Attach(this->GetDlgItem(IDC_SCENELIST));
@@ -127,16 +153,13 @@ LRESULT gui_scenedlg::OnLbnSelchangeScenelist(WORD /*wNotifyCode*/, WORD /*wID*/
 {
     control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
 
+    // TODO: string lookup should be used
     const int index = this->wnd_scenelist.GetCurSel();
-    this->ctrl_pipeline->root_scene.switch_scene(true, index);
-
-    this->dlg_sources.set_source_tree(this->ctrl_pipeline->root_scene.get_active_scene());
+    this->ctrl_pipeline->root_scene->switch_scene(*(control_scene*)
+        this->ctrl_pipeline->root_scene->find_control(true, index));
 
     // set focus to the source dialog
-    this->dlg_sources.SetFocus();
-
-    // unselect items
-    this->dlg_sources.set_selected_item(NULL);
+    /*this->dlg_sources.SetFocus();*/
 
     return 0;
 }
@@ -147,11 +170,42 @@ LRESULT gui_scenedlg::OnLbnSelchangeScenelist(WORD /*wNotifyCode*/, WORD /*wID*/
 /////////////////////////////////////////////////////////////////
 
 
-gui_sourcedlg::gui_sourcedlg(gui_scenedlg& dlg_scenes, const control_pipeline2_t& ctrl_pipeline) :
+gui_sourcedlg::gui_sourcedlg(const control_pipeline2_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
-    dlg_scenes(dlg_scenes),
-    video_counter(0), audio_counter(0)
+    video_counter(0), audio_counter(0),
+    do_not_reselect(false)
 {
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    this->ctrl_pipeline->event_provider.register_event_handler(*this);
+}
+
+gui_sourcedlg::~gui_sourcedlg()
+{
+    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    this->ctrl_pipeline->event_provider.unregister_event_handler(*this);
+}
+
+void gui_sourcedlg::on_scene_activate(control_scene* activated_scene, bool deactivated)
+{
+    if(activated_scene == this->ctrl_pipeline->root_scene->get_selected_scene() && !deactivated)
+        this->set_source_tree(activated_scene);
+}
+
+void gui_sourcedlg::on_activate(control_class* activated_control, bool deactivated)
+{
+    if(deactivated && activated_control == this->ctrl_pipeline.get())
+        this->set_source_tree(NULL);
+}
+
+void gui_sourcedlg::on_control_added(control_class*, bool /*removed*/)
+{
+    // currently scene is reactivated after controls have been added/removed
+    /*this->set_source_tree(this->ctrl_pipeline->root_scene->get_selected_scene());*/
+}
+
+void gui_sourcedlg::on_control_selection_changed(bool cleared)
+{
+    this->set_selected_item(cleared ? NULL : this->ctrl_pipeline->get_selected_controls()[0]);
 }
 
 void gui_sourcedlg::set_source_tree(const control_scene* scene)
@@ -179,21 +233,16 @@ void gui_sourcedlg::set_selected_item(CTreeItem item)
         item.GetText(str);
 
         bool is_video_control, found;
-        control_scene* active_scene = this->ctrl_pipeline->root_scene.get_active_scene();
+        control_scene* active_scene = this->ctrl_pipeline->root_scene->get_selected_scene();
         if(!active_scene)
             return;
         auto it = active_scene->find_control_iterator(str.GetBuffer(), is_video_control, found);
 
         if(found)
-        {
-            this->ctrl_pipeline->selected_items.clear();
-            this->ctrl_pipeline->selected_items.push_back(it->get());
-        }
+            this->ctrl_pipeline->set_selected_control(it->get());
     }
     else
-    {
-        this->ctrl_pipeline->selected_items.clear();
-    }
+        this->ctrl_pipeline->set_selected_control(NULL, control_pipeline::CLEAR);
 }
 
 void gui_sourcedlg::set_selected_item(const control_class* control)
@@ -212,7 +261,12 @@ void gui_sourcedlg::set_selected_item(const control_class* control)
         if(control->name.compare(text) == 0)
         {
             // triggers the OnTvnSelchangedSourcetree event handler
+            this->do_not_reselect = true;
             item.Select();
+            this->do_not_reselect = false;
+
+            this->wnd_sourcetree.SetFocus();
+
             return;
         }
 
@@ -221,20 +275,25 @@ void gui_sourcedlg::set_selected_item(const control_class* control)
     while(item != first_item);
 
 unselect:
+    this->do_not_reselect = true;
     this->wnd_sourcetree.Select(NULL, TVGN_CARET);
+    this->do_not_reselect = false;
 }
 
 LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
     control_scene* scene;
+    // add the first scene if there wasn't a scene before
     {
         control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
-        scene = this->ctrl_pipeline->root_scene.get_active_scene();
+        scene = this->ctrl_pipeline->root_scene->get_selected_scene();
         if(!scene)
         {
-            this->dlg_scenes.add_scene(L"New Scene");
-            scene = this->ctrl_pipeline->root_scene.get_active_scene();
-            assert_(scene);
+            scene = this->ctrl_pipeline->root_scene->add_scene(L"first scene");
+            if(!scene)
+                throw HR_EXCEPTION(E_UNEXPECTED);
+
+            this->ctrl_pipeline->root_scene->switch_scene(*scene);
         }
     }
 
@@ -258,9 +317,6 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             displaycapture.set_displaycapture_params(dlg.displaycaptures[dlg.cursel]);
             // displaycapture params must be set before setting video params
             displaycapture.apply_default_video_params();
-
-            // TODO: just add items instead of rebuilding the tree
-            this->set_source_tree(scene);
         }
         else if(dlg.cursel < dlg.audio_sel_offset)
         {
@@ -274,8 +330,6 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             const int index = dlg.cursel - dlg.vidcap_sel_offset;
             vidcap->set_vidcap_params(dlg.vidcaps[index]);
             /*vidcap->apply_default_video_params();*/
-
-            this->set_source_tree(scene);
         }
         else
         {
@@ -288,9 +342,6 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             this->audio_counter++;
 
             wasapi.set_wasapi_params(dlg.audios[index]);
-
-            // TODO: just add items instead of rebuilding the tree
-            this->set_source_tree(scene);
         }
 
         ((control_class*)this->ctrl_pipeline.get())->activate();
@@ -311,21 +362,15 @@ LRESULT gui_sourcedlg::OnBnClickedRemovesrc(WORD /*wNotifyCode*/, WORD /*wID*/, 
         item.GetText(str);
 
         bool is_video_control, found;
-        control_scene* active_scene = this->ctrl_pipeline->root_scene.get_active_scene();
+        control_scene* active_scene = this->ctrl_pipeline->root_scene->get_selected_scene();
         auto it = active_scene->find_control_iterator(str.GetBuffer(), is_video_control, found);
-        control_scene::controls_t& controls = is_video_control ?
-            active_scene->video_controls : active_scene->audio_controls;
 
         if(found)
         {
-            (*it)->deactivate();
-            controls.erase(it);
-
-            this->set_source_tree(active_scene);
+            active_scene->remove_control(is_video_control, it);
+            ((control_class*)this->ctrl_pipeline.get())->activate();
         }
     }
-
-    /*this->wnd_sourcetree.GetSelectedCount();*/
 
     return 0;
 }
@@ -343,28 +388,36 @@ LRESULT gui_sourcedlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*l
 
 LRESULT gui_sourcedlg::OnTvnSelchangedSourcetree(int /*idCtrl*/, LPNMHDR pNMHDR, BOOL& /*bHandled*/)
 {
+    if(this->do_not_reselect)
+        return 0;
+
     LPNMTREEVIEW pNMTreeView = reinterpret_cast<LPNMTREEVIEW>(pNMHDR);
     this->set_selected_item(CTreeItem(pNMTreeView->itemNew.hItem, &this->wnd_sourcetree));
+
     return 0;
 }
 
 LRESULT gui_sourcedlg::OnKillFocus(int /*idCtrl*/, LPNMHDR /*pNMHDR*/, BOOL& /*bHandled*/)
 {
-    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    /*control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    this->ctrl_pipeline->set_selected_control(NULL, control_pipeline::CLEAR);*/
+
+
+
     /*if(this->ctrl_pipeline->get_preview_window())*/
-        this->ctrl_pipeline->selected_items.clear();
+        /*this->ctrl_pipeline->selected_items.clear();*/
         /*this->ctrl_pipeline->get_preview_window()->set_size_box(NULL);*/
     return 0;
 }
 
 LRESULT gui_sourcedlg::OnSetFocus(int /*idCtrl*/, LPNMHDR /*pNMHDR*/, BOOL& /*bHandled*/)
 {
-    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
+    /*control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
     control_class* selected_item = NULL;
     if(!this->ctrl_pipeline->selected_items.empty())
         selected_item = this->ctrl_pipeline->selected_items[0];
 
-    this->set_selected_item(selected_item);
+    this->set_selected_item(selected_item);*/
     return 0;
 }
 
@@ -405,7 +458,7 @@ LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*w
 {
     control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
 
-    if(!this->ctrl_pipeline->root_scene.get_active_scene())
+    if(!this->ctrl_pipeline->root_scene->get_selected_scene())
     {
         this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
         return 0;

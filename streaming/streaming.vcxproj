@@ -458,6 +458,7 @@
     <ClCompile Include="control_vidcap.cpp" />
     <ClCompile Include="control_video.cpp" />
     <ClCompile Include="control_wasapi.cpp" />
+    <ClCompile Include="gui_event_handler.cpp" />
     <ClCompile Include="gui_mainwnd.cpp" />
     <ClCompile Include="gui_newdlg.cpp" />
     <ClCompile Include="gui_previewwnd.cpp" />
@@ -508,6 +509,7 @@
     <ClInclude Include="control_vidcap.h" />
     <ClInclude Include="control_video.h" />
     <ClInclude Include="control_wasapi.h" />
+    <ClInclude Include="gui_event_handler.h" />
     <ClInclude Include="gui_mainwnd.h" />
     <ClInclude Include="gui_newdlg.h" />
     <ClInclude Include="gui_previewwnd.h" />

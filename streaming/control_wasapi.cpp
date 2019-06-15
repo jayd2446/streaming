@@ -6,7 +6,7 @@
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 control_wasapi::control_wasapi(control_set_t& active_controls, control_pipeline& pipeline) :
-    control_class(active_controls, pipeline.mutex),
+    control_class(active_controls, pipeline.mutex, pipeline.event_provider),
     audiomixer_params(new stream_audiomixer2_controller),
     pipeline(pipeline),
     reference(NULL)
@@ -59,11 +59,11 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
         goto out;
 
     // try to find a control to reference in the new set
-    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
+    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class_t& control)
     {
         if(this->is_identical_control(control))
         {
-            const control_wasapi* wasapi_control = (const control_wasapi*)control;
+            const control_wasapi* wasapi_control = (const control_wasapi*)control.get();
             this->reference = wasapi_control;
             component = wasapi_control->component;
 
@@ -75,11 +75,11 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
     if(!component)
     {
         // try to reuse the component stored in the last set's control
-        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
+        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class_t& control)
         {
             if(this->is_identical_control(control))
             {
-                const control_wasapi* wasapi_control = (const control_wasapi*)control;
+                const control_wasapi* wasapi_control = (const control_wasapi*)control.get();
                 component = wasapi_control->component;
 
                 return true;
@@ -99,10 +99,15 @@ void control_wasapi::activate(const control_set_t& last_set, control_set_t& new_
         }
     }
 
-    new_set.push_back(this);
+    new_set.push_back(this->shared_from_this<control_wasapi>());
 
 out:
     this->component = component;
+
+    if(this->component)
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
+    else
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
 }
 
 void control_wasapi::list_available_wasapi_params(
@@ -156,10 +161,9 @@ void control_wasapi::list_available_wasapi_params(
     f(eRender);
 }
 
-bool control_wasapi::is_identical_control(const control_class* control) const
+bool control_wasapi::is_identical_control(const control_class_t& control) const
 {
-    const control_wasapi* wasapi_control =
-        dynamic_cast<const control_wasapi*>(control);
+    const control_wasapi* wasapi_control = dynamic_cast<const control_wasapi*>(control.get());
 
     // check that the control is of wasapi type and it stores a component
     if(!wasapi_control || !wasapi_control->component)

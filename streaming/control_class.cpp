@@ -1,8 +1,12 @@
 #include "control_class.h"
 #include "control_pipeline.h"
+#include <algorithm>
 
-control_class::control_class(control_set_t& active_controls, std::recursive_mutex& mutex) :
+control_class::control_class(control_set_t& active_controls, 
+    std::recursive_mutex& mutex,
+    gui_event_provider& event_provider) :
     mutex(mutex),
+    event_provider(event_provider),
     parent(NULL), disabled(false),
     active_controls(active_controls)
 {
@@ -42,4 +46,11 @@ control_class* control_class::get_root()
         return this->parent->get_root();
     else
         return this;
+}
+
+bool control_class::is_active() const
+{
+    return (std::find_if(this->active_controls.begin(), this->active_controls.end(),
+        [this](const control_class_t& control)
+        { return (control.get() == this); }) != this->active_controls.end());
 }

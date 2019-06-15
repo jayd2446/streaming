@@ -12,7 +12,8 @@
 #define CLAMP_BOUNDARY 8
 
 control_video::control_video(control_set_t& active_controls, control_pipeline& pipeline) :
-    control_class(active_controls, pipeline.mutex), pipeline(pipeline), highlights(0),
+    control_class(active_controls, pipeline.mutex, pipeline.event_provider), 
+    highlights(0),
     clamp_boundary(CLAMP_BOUNDARY)
 {
     this->push_matrix(true);

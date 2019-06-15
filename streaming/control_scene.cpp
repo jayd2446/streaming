@@ -4,13 +4,10 @@
 #include <algorithm>
 #include <iterator>
 
-#define INVALID_CONTROL_INDEX -1
-
 control_scene::control_scene(control_set_t& active_controls, control_pipeline& pipeline) :
-    control_class(active_controls, pipeline.mutex),
+    control_class(active_controls, pipeline.mutex, pipeline.event_provider),
     pipeline(pipeline),
-    current_control_video(true),
-    current_control(INVALID_CONTROL_INDEX)
+    selected_scene(NULL)
 {
 }
 
@@ -110,13 +107,16 @@ void control_scene::activate(const control_set_t& last_set, control_set_t& new_s
         f(this->video_controls);
         f(this->audio_controls);
 
+        // trigger event
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_scene_activate(this, true); });
+
         return;
     }
 
     // add this to the new set;
     // this control must be pushed to the new set before activating new controls
     // so that the ordering stays consistent
-    new_set.push_back(this);
+    new_set.push_back(this->shared_from_this<control_scene>());
 
     // activate all video/scene controls
     for(auto&& elem : this->video_controls)
@@ -124,6 +124,9 @@ void control_scene::activate(const control_set_t& last_set, control_set_t& new_s
     // activate all audio controls
     for(auto&& elem : this->audio_controls)
         elem->activate(last_set, new_set);
+
+    // trigger event
+    this->event_provider.for_each([this](gui_event_handler* e) { e->on_scene_activate(this, false); });
 }
 
 control_displaycapture* control_scene::add_displaycapture(const std::wstring& name, bool add_front)
@@ -142,6 +145,12 @@ control_displaycapture* control_scene::add_displaycapture(const std::wstring& na
         this->video_controls.push_back(std::move(displaycapture_control));
     else
         this->video_controls.insert(this->video_controls.begin(), std::move(displaycapture_control));
+
+    // trigger event
+    if(ptr)
+        this->event_provider.for_each([ptr](gui_event_handler* e)
+            { e->on_control_added(ptr, false); });
+
     return ptr;
 }
 
@@ -160,6 +169,12 @@ control_wasapi* control_scene::add_wasapi(const std::wstring& name, bool add_fro
         this->audio_controls.push_back(std::move(wasapi_control));
     else
         this->audio_controls.insert(this->audio_controls.begin(), std::move(wasapi_control));
+
+    // trigger event
+    if(ptr)
+        this->event_provider.for_each([ptr](gui_event_handler* e)
+            { e->on_control_added(ptr, false); });
+
     return ptr;
 }
 
@@ -179,6 +194,11 @@ control_vidcap* control_scene::add_vidcap(const std::wstring& name, bool add_fro
     else
         this->video_controls.insert(this->video_controls.begin(), std::move(vidcap_control));
 
+    // trigger event
+    if(ptr)
+        this->event_provider.for_each([ptr](gui_event_handler* e)
+            { e->on_control_added(ptr, false); });
+
     return ptr;
 }
 
@@ -197,31 +217,52 @@ control_scene* control_scene::add_scene(const std::wstring& name, bool add_front
         this->video_controls.push_back(std::move(scene_control));
     else
         this->video_controls.insert(this->video_controls.begin(), std::move(scene_control));
+
+    // trigger event
+    if(ptr)
+        this->event_provider.for_each([ptr](gui_event_handler* e)
+            { e->on_control_added(ptr, false); });
+
     return ptr;
+}
+
+void control_scene::remove_control(bool is_video_control, const controls_t::iterator& it)
+{
+    control_class_t control_class = *it;
+    control_class->disabled = true;
+
+    is_video_control ? this->video_controls.erase(it) : this->audio_controls.erase(it);
+
+    // trigger event
+    this->event_provider.for_each([control_class](gui_event_handler* e)
+        { e->on_control_added(control_class.get(), true); });
 }
 
 control_class* control_scene::find_control(bool is_control_video, int control_index) const
 {
-    if(control_index == INVALID_CONTROL_INDEX)
-        return NULL;
-
     if(is_control_video)
-        return control_index >= this->video_controls.size() ? NULL : 
+        return (size_t)control_index >= this->video_controls.size() ? NULL : 
         this->video_controls[control_index].get();
     else
-        return control_index >= this->audio_controls.size() ? NULL :
+        return (size_t)control_index >= this->audio_controls.size() ? NULL :
         this->audio_controls[control_index].get();
 }
 
 void control_scene::switch_scene(bool is_video_control, int control_index)
 {
     control_class* new_control = this->find_control(is_video_control, control_index);
-    control_class* old_control = this->find_control(this->current_control_video, this->current_control);
+    control_class* old_control = this->get_selected_scene();
+    assert_(dynamic_cast<control_scene*>(new_control));
 
     if(new_control == old_control)
         return;
 
+    this->selected_scene = static_cast<control_scene*>(new_control);
+
     control_class* root = this->get_root();
+
+    // TODO: control_class activate can be only used if the build_and_switch_topology
+    // is separated
 
     control_set_t new_set;
     new_control->disabled = false;
@@ -237,9 +278,6 @@ void control_scene::switch_scene(bool is_video_control, int control_index)
     }
     else
         this->active_controls = std::move(new_set);
-
-    this->current_control_video = is_video_control;
-    this->current_control = control_index;
 
     this->build_and_switch_topology();
 }
@@ -259,10 +297,14 @@ void control_scene::switch_scene(const control_scene& new_scene)
     this->switch_scene(true, control_index);
 }
 
-control_scene* control_scene::get_active_scene() const
+control_scene* control_scene::get_selected_scene() const
 {
-    return dynamic_cast<control_scene*>(this->find_control(
-        this->current_control_video, this->current_control));
+    return this->selected_scene;
+}
+
+void control_scene::unselect_selected_scene()
+{
+    this->selected_scene = NULL;
 }
 
 control_scene::controls_t::iterator control_scene::find_control_iterator(

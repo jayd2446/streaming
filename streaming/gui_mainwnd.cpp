@@ -6,8 +6,8 @@ extern CAppModule module_;
 
 gui_controlwnd::gui_controlwnd(const control_pipeline2_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
-    dlg_scenes(dlg_sources, ctrl_pipeline),
-    dlg_sources(dlg_scenes, ctrl_pipeline),
+    dlg_scenes(ctrl_pipeline),
+    dlg_sources(ctrl_pipeline),
     dlg_controls(ctrl_pipeline),
     dpi_changed(false)
 {
@@ -82,7 +82,7 @@ LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*
 gui_mainwnd::gui_mainwnd() : 
     ctrl_pipeline(new control_pipeline),
     wnd_control(this->ctrl_pipeline),
-    wnd_preview(wnd_control.dlg_sources, this->ctrl_pipeline),
+    wnd_preview(this->ctrl_pipeline),
     // use this class' messagemap(=this) and use map section 1
     wnd_statusbar(this, 1),
     was_minimized(FALSE)
@@ -262,9 +262,9 @@ LRESULT gui_mainwnd::OnAbout(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
 
 LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    {
+    /*{
         control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
-        if(this->ctrl_pipeline->root_scene.video_controls.size() < 2)
+        if(this->ctrl_pipeline->root_scene->video_controls.size() < 2)
             return 0;
     }
 
@@ -272,10 +272,10 @@ LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
     {
         control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
         this->wnd_control.dlg_scenes.wnd_scenelist.SetCurSel(i % 2);
-        this->ctrl_pipeline->root_scene.switch_scene(true, i % 2);
+        this->ctrl_pipeline->root_scene->switch_scene(true, i % 2);
         this->wnd_control.dlg_sources.set_source_tree(
-            this->ctrl_pipeline->root_scene.get_active_scene());
-    }
+            this->ctrl_pipeline->root_scene->get_selected_scene());
+    }*/
 
     return 0;
 }

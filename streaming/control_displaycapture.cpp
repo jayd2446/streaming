@@ -7,8 +7,7 @@ control_displaycapture::control_displaycapture(control_set_t& active_controls,
     control_pipeline& pipeline) :
     control_video(active_controls, pipeline),
     videomixer_params(new stream_videomixer_controller),
-    /*control_class(active_controls, pipeline.mutex),
-    pipeline(pipeline),*/
+    pipeline(pipeline),
     reference(NULL)
 {
 }
@@ -74,12 +73,12 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
         goto out;
 
     // try to find a control to reference in the new set
-    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class* control)
+    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class_t& control)
     {
         if(this->is_identical_control(control))
         {
             const control_displaycapture* displaycapture_control = 
-                (const control_displaycapture*)control;
+                (const control_displaycapture*)control.get();
             this->reference = displaycapture_control;
             component = displaycapture_control->component;
 
@@ -91,12 +90,12 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
     if(!component)
     {
         // try to reuse the component stored in the last set's control
-        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class* control)
+        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class_t& control)
         {
             if(this->is_identical_control(control))
             {
                 const control_displaycapture* displaycapture_control = 
-                    (const control_displaycapture*)control;
+                    (const control_displaycapture*)control.get();
                 component = displaycapture_control->component;
 
                 return true;
@@ -125,10 +124,15 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
         }
     }
 
-    new_set.push_back(this);
+    new_set.push_back(this->shared_from_this<control_displaycapture>());
 
 out:
     this->component = component;
+
+    if(this->component)
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
+    else
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
 }
 
 void control_displaycapture::list_available_displaycapture_params(
@@ -211,10 +215,10 @@ void control_displaycapture::set_default_video_params(video_params_t& video_para
     video_params.scale = D2D1::Point2F(1.f, 1.f);
 }
 
-bool control_displaycapture::is_identical_control(const control_class* control) const
+bool control_displaycapture::is_identical_control(const control_class_t& control) const
 {
     const control_displaycapture* displaycapture_control =
-        dynamic_cast<const control_displaycapture*>(control);
+        dynamic_cast<const control_displaycapture*>(control.get());
 
     // check that the control is of displaycapture type and it stores a component
     if(!displaycapture_control || !displaycapture_control->component)

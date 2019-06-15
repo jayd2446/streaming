@@ -39,8 +39,6 @@ private:
     void build_transformation(const video_params_t& video_params, bool dest_params);
     video_params_t get_video_params(D2D1::Matrix3x2F&&) const;
 protected:
-    control_pipeline& pipeline;
-
     control_video(control_set_t& active_controls, control_pipeline&);
     // passed transformation is either dst or src transformation
     // TODO: change rvalue reference to lvalue reference

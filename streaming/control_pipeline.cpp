@@ -15,13 +15,13 @@
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 control_pipeline::control_pipeline() :
-    control_class(controls, pipeline_mutex),
+    control_class(controls, pipeline_mutex, event_provider),
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
-    root_scene(controls, *this),
+    root_scene(new control_scene(controls, *this)),
     recording(false)
 {
-    this->root_scene.parent = this;
+    this->root_scene->parent = this;
 
     HRESULT hr = S_OK;
     CComPtr<IDXGIAdapter1> dxgiadapter;
@@ -78,6 +78,10 @@ done:
         throw HR_EXCEPTION(hr);
 }
 
+control_pipeline::~control_pipeline()
+{
+}
+
 void control_pipeline::activate(const control_set_t& last_set, control_set_t& new_set)
 {
     // catch all unhandled initialization exceptions
@@ -85,16 +89,21 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
     {
         // selected items need to be cleared every time the active control set changes,
         // otherwise the selected items might become invalid
-        this->selected_items.clear();
+        this->set_selected_control(NULL, CLEAR);
 
         if(this->disabled)
         {
-            const bool old_disabled = this->root_scene.disabled;
-            this->root_scene.disabled = true;
-            this->root_scene.activate(last_set, new_set);
-            this->root_scene.disabled = old_disabled;
+           // this also breaks the possible circular dependency between control pipeline
+            // and the component
+
+            const bool old_disabled = this->root_scene->disabled;
+            this->root_scene->disabled = true;
+            this->root_scene->activate(last_set, new_set);
+            this->root_scene->disabled = old_disabled;
 
             this->deactivate_components();
+
+            this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
 
             return;
         }
@@ -102,10 +111,12 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
         this->activate_components();
 
         // add this to the new set
-        new_set.push_back(this);
+        new_set.push_back(this->shared_from_this<control_pipeline>());
 
         // activate the root scene
-        this->root_scene.activate(last_set, new_set);
+        this->root_scene->activate(last_set, new_set);
+
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
     }
     catch(streaming::exception e)
     {
@@ -115,8 +126,6 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
 
 void control_pipeline::activate_components()
 {
-    /*this->running = true;*/
-
     if(!this->time_source)
     {
         this->time_source.reset(new media_clock);
@@ -370,9 +379,9 @@ void control_pipeline::build_and_switch_topology()
         this->videomixer_transform->create_stream(this->video_topology->get_message_generator());
 
     // connect the sources to mixers
-    this->root_scene.build_video_topology(
+    this->root_scene->build_video_topology(
         mpeg_stream, videomixer_stream, this->video_topology);
-    this->root_scene.build_audio_topology(
+    this->root_scene->build_audio_topology(
         audio_stream, audiomixer_stream, this->audio_topology);
 
     // connect the buffering sources to mixers
@@ -436,6 +445,20 @@ void control_pipeline::build_and_switch_topology()
     {
     streaming::print_error_and_abort(e.what());
     }
+}
+
+void control_pipeline::set_selected_control(control_class* control, selection_type type)
+{
+    assert_(control != NULL || type == CLEAR);
+
+    if(type == SET || type == CLEAR)
+        this->selected_controls.clear();
+    if(type == SET || type == ADD)
+        this->selected_controls.push_back(control);
+
+    // trigger
+    this->event_provider.for_each(
+        [type](gui_event_handler* e) { e->on_control_selection_changed(type == CLEAR); });
 }
 
 void control_pipeline::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)

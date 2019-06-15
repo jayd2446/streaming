@@ -19,9 +19,6 @@
     <Filter Include="control">
       <UniqueIdentifier>{8e72a79c-df43-42d4-a772-83ff60b171fb}</UniqueIdentifier>
     </Filter>
-    <Filter Include="device">
-      <UniqueIdentifier>{7cd74cec-54d7-4420-84b4-7cf7a417163c}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -128,6 +125,9 @@
     </ClCompile>
     <ClCompile Include="control_displaycapture.cpp">
       <Filter>control</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_event_handler.cpp">
+      <Filter>gui</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -277,6 +277,9 @@
     </ClInclude>
     <ClInclude Include="control_displaycapture.h">
       <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_event_handler.h">
+      <Filter>gui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

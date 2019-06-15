@@ -40,7 +40,7 @@ public:
     // while it is active
     void set_wasapi_params(const wasapi_params& params) {this->params = params;}
 
-    bool is_identical_control(const control_class*) const;
+    bool is_identical_control(const control_class_t&) const;
 
     /*bool is_activated() const;*/
 };
