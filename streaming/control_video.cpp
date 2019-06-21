@@ -12,7 +12,7 @@
 #define CLAMP_BOUNDARY 8
 
 control_video::control_video(control_set_t& active_controls, control_pipeline& pipeline) :
-    control_class(active_controls, pipeline.mutex, pipeline.event_provider), 
+    control_class(active_controls, pipeline.event_provider),
     highlights(0),
     clamp_boundary(CLAMP_BOUNDARY)
 {
@@ -307,18 +307,16 @@ D2D1_POINT_2F control_video::get_center(bool dest_params) const
     return (Point2F(rect.left, rect.top) * this->get_transformation(dest_params));
 }
 
-D2D1_POINT_2F control_video::get_clamping_vector(const sink_preview2_t& preview_sink, 
+D2D1_POINT_2F control_video::get_clamping_vector(const control_preview& preview_control,
     bool& x_clamped, bool& y_clamped, int clamped_sizing_point) const
 {
-    if(!preview_sink)
-        throw HR_EXCEPTION(E_UNEXPECTED);
     if(clamped_sizing_point > 7)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
     using namespace D2D1;
     const D2D1_RECT_F clamp_edges = RectF(0.f, 0.f, (FLOAT)transform_videomixer::canvas_width,
         (FLOAT)transform_videomixer::canvas_height);
-    const D2D1_POINT_2F clamp_boundary = this->client_to_canvas(preview_sink,
+    const D2D1_POINT_2F clamp_boundary = this->client_to_canvas(preview_control,
         this->clamp_boundary, this->clamp_boundary, true);
     D2D1_POINT_2F clamping_vector = Point2F();
     FLOAT diff, min_diff_x = std::numeric_limits<FLOAT>::max(), 
@@ -377,10 +375,10 @@ D2D1_POINT_2F control_video::get_clamping_vector(const sink_preview2_t& preview_
 }
 
 D2D1_POINT_2F control_video::client_to_canvas(
-    const sink_preview2_t& preview_sink, LONG x, LONG y, bool scale_only) const
+    const control_preview& preview_control, LONG x, LONG y, bool scale_only) const
 {
     using namespace D2D1;
-    const D2D1_RECT_F&& preview_rect = preview_sink->get_preview_rect();
+    const D2D1_RECT_F&& preview_rect = preview_control.get_preview_rect();
     const FLOAT canvas_client_ratio_x = (FLOAT)transform_videomixer::canvas_width /
         (preview_rect.right - preview_rect.left);
     const FLOAT canvas_client_ratio_y = (FLOAT)transform_videomixer::canvas_height /
@@ -392,7 +390,7 @@ D2D1_POINT_2F control_video::client_to_canvas(
     return (Point2F((FLOAT)x, (FLOAT)y) * client_to_canvas);
 }
 
-void control_video::get_sizing_points(const sink_preview2_t& preview_sink,
+void control_video::get_sizing_points(const control_preview* preview_control,
     D2D1_POINT_2F points_out[], int array_size, bool dest_params) const
 {
     if(array_size != 8)
@@ -401,9 +399,9 @@ void control_video::get_sizing_points(const sink_preview2_t& preview_sink,
     using namespace D2D1;
     Matrix3x2F canvas_to_client = Matrix3x2F::Identity();
 
-    if(preview_sink)
+    if(preview_control)
     {
-        const D2D1_RECT_F&& preview_rect = preview_sink->get_preview_rect();
+        const D2D1_RECT_F&& preview_rect = preview_control->get_preview_rect();
         canvas_to_client = Matrix3x2F::Scale(
             (preview_rect.right - preview_rect.left) /
             (FLOAT)transform_videomixer::canvas_width,

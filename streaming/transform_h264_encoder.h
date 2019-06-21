@@ -13,12 +13,18 @@
 #include <mutex>
 #include <atomic>
 
+// TODO: h264 encoder should have an internal queue
+
 // h264 encoder
 class stream_h264_encoder;
 typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;
 
 // internal to h264 encoder
-struct h264_encoder_transform_packet {bool drain; media_component_h264_encoder_args_t args;};
+struct h264_encoder_transform_packet 
+{ 
+    bool drain, already_served; 
+    media_component_h264_encoder_args_t args; 
+};
 
 class transform_h264_encoder : 
     public media_component,

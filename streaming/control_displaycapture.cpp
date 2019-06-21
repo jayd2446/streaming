@@ -136,7 +136,7 @@ out:
 }
 
 void control_displaycapture::list_available_displaycapture_params(
-    const control_pipeline2_t& pipeline,
+    const control_pipeline_t& pipeline,
     std::vector<displaycapture_params>& displaycaptures)
 {
     assert_(displaycaptures.empty());

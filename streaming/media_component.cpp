@@ -22,15 +22,16 @@ void media_component::request_reinitialization(const control_class_t& pipeline)
         // all component locks(those that keep locking)
         // should be unlocked before calling any pipeline functions
         // to prevent possible deadlock scenarios
-        control_class::scoped_lock lock(pipeline->mutex);
+        pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+            {
+                // set the component as not shareable so that it is recreated when
+                // resetting the active scene
+                this->instance_type = media_component::INSTANCE_NOT_SHAREABLE;
 
-        // set the component as not shareable so that it is recreated when
-        // resetting the active scene
-        this->instance_type = media_component::INSTANCE_NOT_SHAREABLE;
-
-        // testing is_disabled really won't matter, because
-        // the pipeline won't be activated if it is disabled(=shutdown)
-        if(!pipeline->is_disabled())
-            pipeline->activate();
+                // testing is_disabled really won't matter, because
+                // the pipeline won't be activated if it is disabled(=shutdown)
+                if(!pipeline->is_disabled())
+                    pipeline->activate();
+            });
     }
 }

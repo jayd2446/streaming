@@ -1,11 +1,9 @@
 #pragma once
 #include "control_class.h"
+#include "control_preview.h"
 #include <stack>
 
 // base class for control classes that support video transformations
-
-class sink_preview2;
-typedef std::shared_ptr<sink_preview2> sink_preview2_t;
 
 // TODO: control scene will implement the control video, apply_transformation
 // will update its own transform first and then update all scene items by calling
@@ -89,17 +87,17 @@ public:
     // the clamping area is the canvas area;
     // the returned vector is not axis aligned;
     // negative sizing point includes all points
-    D2D1_POINT_2F get_clamping_vector(const sink_preview2_t&, 
+    D2D1_POINT_2F get_clamping_vector(const control_preview&, 
         bool& x_clamped, bool& y_clamped, int clamped_sizing_point = -1) const;
 
-    D2D1_POINT_2F client_to_canvas(const sink_preview2_t&, LONG x, LONG y, 
+    D2D1_POINT_2F client_to_canvas(const control_preview&, LONG x, LONG y,
         bool scale_only = false) const;
 
     void highlight_sizing_points(int scale_type) { this->highlights = scale_type; }
     int get_highlighted_points() const { return this->highlights; }
     // 0 1 | 4 5
     // 2 3 | 6 7;
-    // if null sink preview is passed, the points are in canvas coordinates
-    void get_sizing_points(const sink_preview2_t&, D2D1_POINT_2F points_out[], int array_size,
+    // if null preview control is passed, the points are in canvas coordinates
+    void get_sizing_points(const control_preview*, D2D1_POINT_2F points_out[], int array_size,
         bool dest_params = true) const;
 };

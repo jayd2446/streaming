@@ -1,5 +1,6 @@
 #include "control_pipeline.h"
 #include "wtl.h"
+#include "gui_threadwnd.h"
 #include <iostream>
 #include <d3d11_4.h>
 #include <d2d1_2.h>
@@ -14,15 +15,18 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-control_pipeline::control_pipeline() :
-    control_class(controls, pipeline_mutex, event_provider),
+control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
+    gui_thread_hwnd(gui_thread_hwnd),
+    control_class(controls, event_provider),
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
     root_scene(new control_scene(controls, *this)),
+    preview_control(new control_preview(controls, *this)),
     recording(false)
 {
     this->root_scene->parent = this;
 
+    // initialize graphics
     HRESULT hr = S_OK;
     CComPtr<IDXGIAdapter1> dxgiadapter;
     D3D_FEATURE_LEVEL feature_levels[] =
@@ -82,6 +86,17 @@ control_pipeline::~control_pipeline()
 {
 }
 
+bool control_pipeline::run_in_gui_thread(callable_f f)
+{
+    if(!this->is_active())
+        // gui_thread_wnd might have been destroyed when this isn't active anymore
+        return false;
+
+    control_class_t this_ = this->shared_from_this<control_class>();
+    // gui_threadwnd returns 0 if the callable_f was not called
+    return (SendMessage(this->gui_thread_hwnd, GUI_THREAD_MESSAGE, (WPARAM)&f, (LPARAM)&this_) != 0);
+}
+
 void control_pipeline::activate(const control_set_t& last_set, control_set_t& new_set)
 {
     // catch all unhandled initialization exceptions
@@ -96,10 +111,18 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
            // this also breaks the possible circular dependency between control pipeline
             // and the component
 
-            const bool old_disabled = this->root_scene->disabled;
-            this->root_scene->disabled = true;
-            this->root_scene->activate(last_set, new_set);
-            this->root_scene->disabled = old_disabled;
+            {
+                const bool old_disabled = this->root_scene->disabled;
+                this->root_scene->disabled = true;
+                this->root_scene->activate(last_set, new_set);
+                this->root_scene->disabled = old_disabled;
+            }
+            {
+                const bool old_disabled = this->preview_control->disabled;
+                this->preview_control->disabled = true;
+                this->preview_control->activate(last_set, new_set);
+                this->preview_control->disabled = old_disabled;
+            }
 
             this->deactivate_components();
 
@@ -112,6 +135,9 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
 
         // add this to the new set
         new_set.push_back(this->shared_from_this<control_pipeline>());
+
+        // activate the preview control
+        this->preview_control->activate(last_set, new_set);
 
         // activate the root scene
         this->root_scene->activate(last_set, new_set);
@@ -208,17 +234,6 @@ void control_pipeline::activate_components()
     }
     else if(!this->recording)
         this->color_converter_transform = NULL;
-
-    // create preview window sink
-    if(!this->preview_sink || 
-        this->preview_sink->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
-    {
-        sink_preview2_t preview_sink(new sink_preview2(this->session, this->context_mutex));
-        preview_sink->initialize(this->shared_from_this<control_pipeline>(), this->preview_hwnd,
-            this->d2d1dev, this->d3d11dev, this->d2d1factory);
-
-        this->preview_sink = preview_sink;
-    }
 
     // create aac encoder transform
     if(this->recording && (!this->aac_encoder_transform ||
@@ -336,7 +351,6 @@ void control_pipeline::deactivate_components()
     this->videomixer_transform = NULL;
     this->h264_encoder_transform = NULL;
     this->color_converter_transform = NULL;
-    this->preview_sink = NULL;
     this->mp4_sink = sink_mp4_t(NULL, NULL);
     this->mpeg_sink = NULL;
     this->aac_encoder_transform = NULL;
@@ -372,7 +386,6 @@ void control_pipeline::build_and_switch_topology()
         transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
 
     // set the topology
-    media_stream_t preview_stream = this->preview_sink->create_stream();
     stream_audiomixer2_base_t audiomixer_stream =
         this->audiomixer_transform->create_stream(this->audio_topology->get_message_generator());
     stream_videomixer_base_t videomixer_stream = 
@@ -396,12 +409,10 @@ void control_pipeline::build_and_switch_topology()
     videomixer_stream->connect_streams(video_buffering_stream, NULL, this->video_topology);
     audiomixer_stream->connect_streams(audio_buffering_stream, NULL, this->audio_topology);
 
-    // connect the video mixer stream to preview stream
-    preview_stream->connect_streams(videomixer_stream, this->video_topology);
-
     if(!this->recording)
     {
-        mpeg_stream->connect_streams(preview_stream, this->video_topology);
+        this->preview_control->build_video_topology(
+            videomixer_stream, mpeg_stream, this->video_topology);
         audio_stream->connect_streams(audiomixer_stream, this->audio_topology);
     }
     else
@@ -420,7 +431,9 @@ void control_pipeline::build_and_switch_topology()
         mpeg_stream->encoder_stream = 
             std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream_video);
 
-        color_converter_stream->connect_streams(preview_stream, this->video_topology);
+        this->preview_control->build_video_topology(
+            videomixer_stream, color_converter_stream, this->video_topology);
+        /*color_converter_stream->connect_streams(preview_stream, this->video_topology);*/
         encoder_stream_video->connect_streams(color_converter_stream, this->video_topology);
         mp4_stream_video->connect_streams(encoder_stream_video, this->video_topology);
         mpeg_stream->connect_streams(mp4_stream_video, this->video_topology);

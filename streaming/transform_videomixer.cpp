@@ -216,12 +216,22 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     for(size_t i = 0; i < maximum_frame_count; i++)
         allowed_frames[i] = -1;
 
+    // TODO: use z order instead of stream_index so that the user input can be instant
     // sort the packets list for correct z order
     std::sort(packets.container.begin(), packets.container.end(),
         [](const packet_t& a, const packet_t& b)
-    {
-        return (a.stream_index < b.stream_index);
-    });
+        {
+            // user_params.z_order;
+            // control_pipeline stores all stream controllers and control_scene
+            // uses those to update z order
+
+            // TODO: stream controller should be reinitialized on activate
+            // (the params should be copied over)
+            // TODO: remove mutex in control class and implement run_in_gui_thread
+
+            // set streams with invalid user params behind everything else
+            return (a.stream_index < b.stream_index);
+        });
 
     media_sample_video_frames_t frames;
     {

@@ -120,7 +120,7 @@ out:
 }
 
 void control_vidcap::list_available_vidcap_params(
-    const control_pipeline2_t& /*pipeline*/,
+    const control_pipeline_t& /*pipeline*/,
     std::vector<vidcap_params>& params)
 {
     assert_(params.empty());

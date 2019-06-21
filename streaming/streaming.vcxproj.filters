@@ -129,6 +129,12 @@
     <ClCompile Include="gui_event_handler.cpp">
       <Filter>gui</Filter>
     </ClCompile>
+    <ClCompile Include="gui_threadwnd.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="control_preview.cpp">
+      <Filter>control</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -280,6 +286,12 @@
     </ClInclude>
     <ClInclude Include="gui_event_handler.h">
       <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_threadwnd.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="control_preview.h">
+      <Filter>control</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

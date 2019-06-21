@@ -1,7 +1,7 @@
 #include "gui_newdlg.h"
 #include <sstream>
 
-gui_newdlg::gui_newdlg(const control_pipeline2_t& pipeline) : ctrl_pipeline(pipeline)
+gui_newdlg::gui_newdlg(const control_pipeline_t& pipeline) : ctrl_pipeline(pipeline)
 {
 }
 
@@ -24,7 +24,6 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
         // video
         {
-            control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
             control_displaycapture::list_available_displaycapture_params(this->ctrl_pipeline,
                 this->displaycaptures);
 
@@ -48,7 +47,6 @@ LRESULT gui_newdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam
 
         // vidcap
         {
-            control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
             control_vidcap::list_available_vidcap_params(this->ctrl_pipeline,
                 this->vidcaps);
 

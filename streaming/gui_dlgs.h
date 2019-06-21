@@ -12,7 +12,7 @@ class gui_scenedlg :
 {
 private:
     int scene_counter;
-    control_pipeline2_t ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     CButton btn_addscene, btn_removescene;
     CListBox wnd_scenelist;
 
@@ -22,7 +22,7 @@ private:
 public:
     enum {IDD = IDD_SCENEDLG};
 
-    explicit gui_scenedlg(const control_pipeline2_t&);
+    explicit gui_scenedlg(const control_pipeline_t&);
     ~gui_scenedlg();
 
     // command handlers handle events from child windows
@@ -56,7 +56,7 @@ class gui_sourcedlg :
 private:
     int video_counter, audio_counter;
 
-    control_pipeline2_t ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     CButton btn_addsource, btn_removesource;
     CTreeViewCtrlEx wnd_sourcetree;
     bool do_not_reselect;
@@ -73,7 +73,7 @@ private:
 public:
     enum {IDD = IDD_SOURCEDLG};
 
-    explicit gui_sourcedlg(const control_pipeline2_t&);
+    explicit gui_sourcedlg(const control_pipeline_t&);
     ~gui_sourcedlg();
 
     BEGIN_MSG_MAP(gui_sourcedlg)
@@ -84,14 +84,19 @@ public:
         NOTIFY_HANDLER(IDC_SOURCETREE, TVN_SELCHANGED, OnTvnSelchangedSourcetree)
         NOTIFY_HANDLER(IDC_SOURCETREE, NM_KILLFOCUS, OnKillFocus)
         NOTIFY_HANDLER(IDC_SOURCETREE, NM_SETFOCUS, OnSetFocus)
+        COMMAND_HANDLER(IDC_SRCUP, BN_CLICKED, OnBnClickedSrcup)
+        COMMAND_HANDLER(IDC_SRCDOWN, BN_CLICKED, OnBnClickedSrcdown)
     END_MSG_MAP()
 
-    BEGIN_DLGRESIZE_MAP(gui_scenedlg)
+    BEGIN_DLGRESIZE_MAP(gui_sourcedlg)
         DLGRESIZE_CONTROL(IDC_SOURCETREE, DLSZ_SIZE_X | DLSZ_SIZE_Y)
         /*BEGIN_DLGRESIZE_GROUP()*/
             DLGRESIZE_CONTROL(IDC_ADDSRC, DLSZ_MOVE_X | DLSZ_MOVE_Y)
             DLGRESIZE_CONTROL(IDC_REMOVESRC, DLSZ_MOVE_X | DLSZ_MOVE_Y)
         /*END_DLGRESIZE_GROUP()*/
+
+        DLGRESIZE_CONTROL(IDC_SRCUP, DLSZ_MOVE_X /*| DLSZ_MOVE_Y*/)
+        DLGRESIZE_CONTROL(IDC_SRCDOWN, DLSZ_MOVE_X /*| DLSZ_MOVE_Y*/)
     END_DLGRESIZE_MAP()
 
     LRESULT OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
@@ -100,6 +105,8 @@ public:
     LRESULT OnTvnSelchangedSourcetree(int /*idCtrl*/, LPNMHDR pNMHDR, BOOL& /*bHandled*/);
     LRESULT OnKillFocus(int /*idCtrl*/, LPNMHDR pNMHDR, BOOL& /*bHandled*/);
     LRESULT OnSetFocus(int /*idCtrl*/, LPNMHDR pNMHDR, BOOL& /*bHandled*/);
+    LRESULT OnBnClickedSrcup(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+    LRESULT OnBnClickedSrcdown(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };
 
 class gui_controldlg :
@@ -108,12 +115,12 @@ class gui_controldlg :
     public CIdleHandler
 {
 private:
-    control_pipeline2_t ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     CButton btn_start_recording;
 public:
     enum {IDD = IDD_CTRLDLG};
 
-    explicit gui_controldlg(const control_pipeline2_t&);
+    explicit gui_controldlg(const control_pipeline_t&);
 
     BEGIN_MSG_MAP(gui_controldlg)
         MSG_WM_DESTROY(OnDestroy)

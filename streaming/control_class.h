@@ -7,7 +7,7 @@
 #include <string>
 #include <memory>
 #include <deque>
-#include <mutex>
+#include <functional>
 
 class control_pipeline;
 class control_scene;
@@ -37,7 +37,7 @@ class control_class : public enable_shared_from_this
 {
     friend class control_scene;
 public:
-    typedef std::lock_guard<std::recursive_mutex> scoped_lock;
+    typedef std::function<void(const control_class_t&)> callable_f;
 private:
     control_set_t& active_controls;
 protected:
@@ -66,9 +66,7 @@ protected:
     // deactivation also breaks a possible circular dependency between the control and its component
     virtual void activate(const control_set_t& last_set, control_set_t& new_set) = 0;
 
-    control_class(control_set_t& active_controls,
-        std::recursive_mutex& mutex,
-        gui_event_provider& event_provider);
+    control_class(control_set_t& active_controls, gui_event_provider& event_provider);
 public:
     // name uniquely identifies a control
     std::wstring name;
@@ -76,15 +74,13 @@ public:
     // used by control classes to produce events and by gui classes to consume them
     gui_event_provider& event_provider;
 
-    // pipeline control class allocates this mutex;
-    // the mutex must be locked before using any of the control class functions;
-    // all locks should be cleared before locking this, and nothing that may
-    // lock should be called while holding this mutex
-    std::recursive_mutex& mutex;
-
     virtual ~control_class() {}
 
-    // TODO: is_active
+    // pipeline must use this for accessing control classes;
+    // NOTE: all locks should be cleared when calling this to avoid possible deadlocking scenarios;
+    // returns whether the function was run;
+    // no-op if control_pipeline has been deactivated
+    virtual bool run_in_gui_thread(callable_f) { assert_(false); return false; }
 
     // TODO: the encapsulated component must be dismissed if the reactivation needs reinitialization
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "control_class.h"
 #include "control_scene.h"
+#include "control_preview.h"
 #include "media_clock.h"
 #include "media_session.h"
 #include "media_topology.h"
@@ -11,7 +12,6 @@
 #include "transform_audiomixer2.h"
 #include "sink_mpeg2.h"
 #include "sink_audio.h"
-#include "sink_preview2.h"
 #include "sink_file.h"
 #include "source_buffering.h"
 #include "output_file.h"
@@ -39,9 +39,8 @@ class control_pipeline : public control_class
     friend class control_scene;
 private:
     bool recording;
-    HWND preview_hwnd;
     ATL::CWindow recording_initiator_wnd;
-    std::recursive_mutex pipeline_mutex;
+    HWND gui_thread_hwnd;
 
     media_clock_t time_source;
     media_topology_t video_topology, audio_topology;
@@ -51,7 +50,6 @@ private:
     transform_color_converter_t color_converter_transform;
     transform_aac_encoder_t aac_encoder_transform;
     transform_audiomixer2_t audiomixer_transform;
-    sink_preview2_t preview_sink;
     sink_mp4_t mp4_sink;
     sink_mpeg2_t mpeg_sink;
     sink_audio_t audio_sink;
@@ -81,11 +79,16 @@ public:
     CComPtr<ID2D1Device> d2d1dev;
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
+    // TODO: set root_scene and preview_control to private;
+    // TODO: make sure that these controls are always available
     std::shared_ptr<control_scene> root_scene;
+    std::shared_ptr<control_preview> preview_control;
     gui_event_provider event_provider;
 
-    control_pipeline();
+    explicit control_pipeline(HWND gui_thread_hwnd);
     ~control_pipeline();
+
+    bool run_in_gui_thread(callable_f);
 
     enum selection_type { ADD, SET, CLEAR };
     // control class must not be null, unless cleared
@@ -94,8 +97,9 @@ public:
 
     bool is_recording() const {return this->recording;}
 
-    void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
-    const sink_preview2_t& get_preview_window() const {return this->preview_sink;}
+    //void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
+    //// TODO: this should return control preview instead of the component
+    //const sink_preview2_t& get_preview_window() const {return this->preview_sink;}
 
     // message is sent to the initiator window when the recording has been stopped
     void start_recording(const std::wstring& filename, ATL::CWindow initiator);
@@ -105,4 +109,5 @@ public:
     void shutdown() {this->disable();}
 };
 
-typedef std::shared_ptr<control_pipeline> control_pipeline2_t;
+// TODO: rename this
+typedef std::shared_ptr<control_pipeline> control_pipeline_t;

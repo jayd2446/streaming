@@ -2,10 +2,7 @@
 #include "control_pipeline.h"
 #include <algorithm>
 
-control_class::control_class(control_set_t& active_controls, 
-    std::recursive_mutex& mutex,
-    gui_event_provider& event_provider) :
-    mutex(mutex),
+control_class::control_class(control_set_t& active_controls, gui_event_provider& event_provider) :
     event_provider(event_provider),
     parent(NULL), disabled(false),
     active_controls(active_controls)

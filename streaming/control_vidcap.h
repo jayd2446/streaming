@@ -6,7 +6,7 @@
 #include <string>
 
 class control_pipeline;
-typedef std::shared_ptr<control_pipeline> control_pipeline2_t;
+typedef std::shared_ptr<control_pipeline> control_pipeline_t;
 
 class control_vidcap : public control_video
 {
@@ -47,7 +47,7 @@ public:
     // the actual component will be activated on the activate function normally
 
     // before the vidcap can be activated, right params must be chosen and set
-    static void list_available_vidcap_params(const control_pipeline2_t&,
+    static void list_available_vidcap_params(const control_pipeline_t&,
         std::vector<vidcap_params>&);
     void set_vidcap_params(const vidcap_params& params) {this->params = params;}
 

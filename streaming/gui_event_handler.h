@@ -13,6 +13,8 @@ struct gui_event_handler
     // currently it can be assumed that pipeline is locked while these events
     // are called
 
+    // TODO: start recording etc events
+
     // NOTE: control_scene triggers on_scene_activate event
     virtual void on_activate(control_class*, bool /*deactivated*/) {}
     virtual void on_scene_activate(control_scene*, bool /*deactivated*/) {}

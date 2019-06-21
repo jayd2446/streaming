@@ -121,10 +121,10 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
         // reactive the current scene; it will update the control_vidcap with 
         // a possible new frame size
-        {
-            control_class::scoped_lock lock(source->ctrl_pipeline->mutex);
-            source->ctrl_pipeline->activate();
-        }
+        source->ctrl_pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+            {
+                pipeline->activate();
+            });
     }
     if(flags & MF_SOURCE_READERF_STREAMTICK)
     {

@@ -19,7 +19,7 @@ public:
         NEW_SCENE, NEW_VIDEO, NEW_AUDIO
     };
 private:
-    control_pipeline2_t ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     CComboBox combobox;
     CEdit editbox;
 public:
@@ -32,7 +32,7 @@ public:
     int cursel, audio_sel_offset, vidcap_sel_offset;
     int new_item;
 
-    explicit gui_newdlg(const control_pipeline2_t&);
+    explicit gui_newdlg(const control_pipeline_t&);
 
     BEGIN_MSG_MAP(gui_newdlg)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)

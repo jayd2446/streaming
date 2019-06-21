@@ -17,6 +17,9 @@
 
 #define TRANSFORM_MIXER_APPLY_STREAM_CONTROLLER_IMMEDIATELY
 
+#undef min
+#undef max
+
 #pragma warning(push)
 #pragma warning(disable: 4706) // assignment within conditional expression
 

@@ -1,10 +1,12 @@
 #pragma once
 
 #include "wtl.h"
+#include "gui_threadwnd.h"
 #include "gui_previewwnd.h"
 #include "gui_dlgs.h"
 #include "control_pipeline.h"
 #include <atlsplit.h>
+#include <memory>
 
 class gui_mainwnd;
 
@@ -15,16 +17,16 @@ class gui_controlwnd :
 {
     friend class gui_mainwnd;
 private:
-    control_pipeline2_t ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
     gui_scenedlg dlg_scenes;
     gui_sourcedlg dlg_sources;
     gui_controldlg dlg_controls;
 
     bool dpi_changed;
 public:
-    DECLARE_WND_CLASS(L"control")
+    DECLARE_WND_CLASS(L"gui_controlwnd")
 
-    explicit gui_controlwnd(const control_pipeline2_t&);
+    explicit gui_controlwnd(const control_pipeline_t&);
 
     BOOL PreTranslateMessage(MSG* pMsg);
 
@@ -49,12 +51,13 @@ class gui_mainwnd :
 {
 public:
 private:
-    control_pipeline2_t ctrl_pipeline;
+    control_pipeline_t ctrl_pipeline;
 
     BOOL was_minimized;
     CSplitterWindow wnd_splitter;
-    gui_previewwnd wnd_preview;
-    gui_controlwnd wnd_control;
+    std::unique_ptr<gui_threadwnd> wnd_thread;
+    /*std::unique_ptr<gui_previewwnd> wnd_preview;*/
+    std::unique_ptr<gui_controlwnd> wnd_control;
     CWindow last_focus;
     CContainedWindowT<CStatusBarCtrl> wnd_statusbar;
 

@@ -4,7 +4,7 @@ extern CAppModule module_;
 
 #undef max
 
-gui_controlwnd::gui_controlwnd(const control_pipeline2_t& ctrl_pipeline) :
+gui_controlwnd::gui_controlwnd(const control_pipeline_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
     dlg_scenes(ctrl_pipeline),
     dlg_sources(ctrl_pipeline),
@@ -36,10 +36,6 @@ int gui_controlwnd::OnCreate(LPCREATESTRUCT)
 
 void gui_controlwnd::OnDestroy()
 {
-    control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
-
-    this->ctrl_pipeline->shutdown();
-
     CMessageLoop* loop = module_.GetMessageLoop();
     loop->RemoveMessageFilter(this);
     this->SetMsgHandled(FALSE);
@@ -80,9 +76,9 @@ LRESULT gui_controlwnd::OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*
 
 
 gui_mainwnd::gui_mainwnd() : 
-    ctrl_pipeline(new control_pipeline),
+    /*ctrl_pipeline(new control_pipeline),
     wnd_control(this->ctrl_pipeline),
-    wnd_preview(this->ctrl_pipeline),
+    wnd_preview(this->ctrl_pipeline),*/
     // use this class' messagemap(=this) and use map section 1
     wnd_statusbar(this, 1),
     was_minimized(FALSE)
@@ -129,6 +125,14 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
     loop->AddMessageFilter(this);
     loop->AddIdleHandler(this);
     
+    // create windows and control_pipeline
+    this->wnd_thread.reset(new gui_threadwnd);
+    this->wnd_thread->Create(NULL);
+    this->ctrl_pipeline.reset(new control_pipeline(*this->wnd_thread));
+    this->wnd_thread->ctrl_pipeline = this->ctrl_pipeline;
+    /*this->wnd_preview.reset(new gui_previewwnd(this->ctrl_pipeline));*/
+    this->wnd_control.reset(new gui_controlwnd(this->ctrl_pipeline));
+
     // create status bar
     RECT rc;
     this->GetClientRect(&rc);
@@ -152,40 +156,50 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
     this->wnd_splitter.SetSplitterPos(rc.bottom - 200);
 
     // create preview window
-    this->wnd_preview.Create(
-        this->wnd_splitter, rcDefault, L"Preview", 
-        WS_CHILD /*| WS_CLIPSIBLINGS | WS_CLIPCHILDREN*/);
+    this->ctrl_pipeline->preview_control->initialize_window(this->wnd_splitter);
+    //this->wnd_preview->Create(
+    //    this->wnd_splitter, rcDefault, L"Preview", 
+    //    WS_CHILD /*| WS_CLIPSIBLINGS | WS_CLIPCHILDREN*/);
 
     // create control window
-    this->wnd_control.Create(
+    this->wnd_control->Create(
         this->wnd_splitter, rcDefault, L"Controls",
         WS_CHILD /*| WS_CLIPSIBLINGS | WS_CLIPCHILDREN*/);
 
     // set the splitter panes
-    this->wnd_splitter.SetSplitterPanes(this->wnd_preview, this->wnd_control);
+    this->wnd_splitter.SetSplitterPanes(this->ctrl_pipeline->preview_control->wnd_preview, 
+        *this->wnd_control);
 
     // show the windows
-    this->wnd_preview.ShowWindow(SW_SHOW);
-    this->wnd_control.ShowWindow(SW_SHOW);
+    this->ctrl_pipeline->preview_control->show_window();
+    /*this->wnd_preview->ShowWindow(SW_SHOW);*/
+    this->wnd_control->ShowWindow(SW_SHOW);
 
-    // set the preview window
-    this->ctrl_pipeline->set_preview_window(this->wnd_preview);
+    // initialize the preview window
+    /*this->ctrl_pipeline->set_preview_window(*this->wnd_preview);*/
 
     return 0;
 }
 
 void gui_mainwnd::OnDestroy()
 {
+    this->ctrl_pipeline->shutdown();
+    // wnd_thread must be destroyed after the pipeline has been shutdown;
+    // wm_destroy is sent to parent windows before child windows
+    this->wnd_thread->DestroyWindow();
+
     CMessageLoop* loop = module_.GetMessageLoop();
     loop->RemoveIdleHandler(this);
     loop->RemoveMessageFilter(this);
     this->SetMsgHandled(FALSE);
+
+    // framewindowimpl calls postquitmessage on wm_destroy
 }
 
 void gui_mainwnd::OnSetFocus(CWindow /*old*/)
 {
     if(this->wnd_control)
-        this->wnd_control.SetFocus();
+        this->wnd_control->SetFocus();
 }
 
 void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
@@ -194,9 +208,8 @@ void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
     {
         this->was_minimized = bMinimized;
 
-        control_pipeline::scoped_lock lock(this->ctrl_pipeline->mutex);
-        if(this->ctrl_pipeline->get_preview_window())
-            this->ctrl_pipeline->get_preview_window()->set_state(!bMinimized);
+        if(!this->ctrl_pipeline->preview_control->is_disabled())
+            this->ctrl_pipeline->preview_control->set_state(!bMinimized);
     }
 
     if(!bMinimized)

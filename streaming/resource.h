@@ -21,6 +21,8 @@
 #define IDC_ADDSCENE                    1028
 #define IDC_REMOVESCENE                 1029
 #define IDC_ADDSRC                      1030
+#define IDC_SRCUP                       1031
+#define IDC_SRCDOWN                     1032
 #define ID_ABOUT                        40001
 #define ID_FILE                         40002
 #define ID_DEBUG                        40003
@@ -31,7 +33,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        123
 #define _APS_NEXT_COMMAND_VALUE         40004
-#define _APS_NEXT_CONTROL_VALUE         1031
+#define _APS_NEXT_CONTROL_VALUE         1032
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

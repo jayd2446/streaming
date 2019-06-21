@@ -5,7 +5,7 @@
 #include <iterator>
 
 control_scene::control_scene(control_set_t& active_controls, control_pipeline& pipeline) :
-    control_class(active_controls, pipeline.mutex, pipeline.event_provider),
+    control_class(active_controls, pipeline.event_provider),
     pipeline(pipeline),
     selected_scene(NULL)
 {
@@ -226,7 +226,7 @@ control_scene* control_scene::add_scene(const std::wstring& name, bool add_front
     return ptr;
 }
 
-void control_scene::remove_control(bool is_video_control, const controls_t::iterator& it)
+void control_scene::remove_control(bool is_video_control, controls_t::const_iterator it)
 {
     control_class_t control_class = *it;
     control_class->disabled = true;
@@ -238,19 +238,31 @@ void control_scene::remove_control(bool is_video_control, const controls_t::iter
         { e->on_control_added(control_class.get(), true); });
 }
 
-control_class* control_scene::find_control(bool is_control_video, int control_index) const
+void control_scene::reorder_controls(controls_t::const_iterator src,
+    controls_t::const_iterator dst,
+    bool is_video_control)
 {
-    if(is_control_video)
-        return (size_t)control_index >= this->video_controls.size() ? NULL : 
-        this->video_controls[control_index].get();
-    else
-        return (size_t)control_index >= this->audio_controls.size() ? NULL :
-        this->audio_controls[control_index].get();
+    if(src == dst)
+        return;
+
+    controls_t& controls = is_video_control ? this->video_controls : this->audio_controls;
+    controls.insert(dst, *src);
+    controls.erase(src);
 }
 
-void control_scene::switch_scene(bool is_video_control, int control_index)
+//control_class* control_scene::find_control(bool is_control_video, int control_index) const
+//{
+//    if(is_control_video)
+//        return (size_t)control_index >= this->video_controls.size() ? NULL : 
+//        this->video_controls[control_index].get();
+//    else
+//        return (size_t)control_index >= this->audio_controls.size() ? NULL :
+//        this->audio_controls[control_index].get();
+//}
+
+void control_scene::switch_scene(controls_t::const_iterator new_scene)
 {
-    control_class* new_control = this->find_control(is_video_control, control_index);
+    control_class* new_control = new_scene->get();
     control_class* old_control = this->get_selected_scene();
     assert_(dynamic_cast<control_scene*>(new_control));
 
@@ -284,17 +296,11 @@ void control_scene::switch_scene(bool is_video_control, int control_index)
 
 void control_scene::switch_scene(const control_scene& new_scene)
 {
-    int control_index = 0;
-    for(auto&& elem : this->video_controls)
-    {
-        if(elem.get() == &new_scene)
-            break;
-        control_index++;
-    }
+    bool is_video_control, found;
+    auto it = this->find_control_iterator(new_scene.name, is_video_control, found);
+    assert_(is_video_control && found);
 
-    assert_(control_index < this->video_controls.size());
-
-    this->switch_scene(true, control_index);
+    this->switch_scene(it);
 }
 
 control_scene* control_scene::get_selected_scene() const

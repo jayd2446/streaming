@@ -425,8 +425,7 @@ bool transform_h264_encoder::on_serve(request_queue::request_t& request)
 
     HRESULT hr = S_OK;
 
-    const bool not_served_request = request.sample.drain ||
-        (request.sample.args && request.sample.args->has_frames);
+    const bool not_served_request = !request.sample.already_served;
     media_sample_video_frame video_frame;
     const bool pop_request = this->extract_frame(video_frame, request);
 
@@ -831,11 +830,21 @@ media_stream::result_t stream_h264_encoder::process_sample(
             std::make_optional(static_cast<const media_component_h264_encoder_args&>(*args_));
         assert_(request.sample.args->is_valid());
     }
+    request.sample.already_served = !request.sample.drain &&
+        (!request.sample.args || !request.sample.args->has_frames);
     request.rp = rp;
     this->transform->requests.push(request);
 
+    // TODO: the stored request should be served on process_output_cb;
+    // the request packet numbering can be reordered; last packet needs to have the last number
+    // though
+    // requests should be served while the buffer is not full;
+    // packet numbers are also reassigned;
+    // async processing doesn't really fit into this pipeline design;
+    // components should request/pass samples independently from the mpeg_sink
+
     // pass null requests downstream
-    if(!request.sample.drain && (!request.sample.args || !request.sample.args->has_frames))
+    if(request.sample.already_served)
         this->transform->session->give_sample(this, NULL, request.rp);
 
     /*std::cout << rp.packet_number << std::endl;*/

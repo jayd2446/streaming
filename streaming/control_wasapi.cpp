@@ -6,7 +6,7 @@
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
 control_wasapi::control_wasapi(control_set_t& active_controls, control_pipeline& pipeline) :
-    control_class(active_controls, pipeline.mutex, pipeline.event_provider),
+    control_class(active_controls, pipeline.event_provider),
     audiomixer_params(new stream_audiomixer2_controller),
     pipeline(pipeline),
     reference(NULL)

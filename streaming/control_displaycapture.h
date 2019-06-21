@@ -6,7 +6,8 @@
 #include <vector>
 
 class control_pipeline;
-typedef std::shared_ptr<control_pipeline> control_pipeline2_t;
+// TODO: rename typedef
+typedef std::shared_ptr<control_pipeline> control_pipeline_t;
 
 class control_displaycapture : public control_video
 {
@@ -42,7 +43,7 @@ public:
     D2D1_RECT_F get_rectangle(bool dest_params) const;
 
     // before the displaycapture can be activated, right params must be chosen and set
-    static void list_available_displaycapture_params(const control_pipeline2_t&,
+    static void list_available_displaycapture_params(const control_pipeline_t&,
         std::vector<displaycapture_params>&);
     // TODO: set displaycapture params sets the initial videoprocessor params aswell
     // set displaycapture params will cause the scene to reactivate itself if it is called

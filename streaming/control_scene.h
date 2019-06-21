@@ -5,7 +5,7 @@
 #include "control_vidcap.h"
 #include "transform_videomixer.h"
 #include <string>
-#include <vector>
+#include <list>
 #include <memory>
 
 /*
@@ -21,7 +21,8 @@ class control_scene : public control_class
 {
     friend class control_pipeline;
 public:
-    typedef std::vector<control_class_t> controls_t;
+    // list is used for invalidation guarantees
+    typedef std::list<control_class_t> controls_t;
 private:
     control_pipeline& pipeline;
     control_scene* selected_scene;
@@ -36,7 +37,7 @@ private:
         const media_stream_t& to, const media_topology_t&);
     void activate(const control_set_t& last_set, control_set_t& new_set);
 
-    void switch_scene(bool is_video_control, int control_index);
+    void switch_scene(controls_t::const_iterator new_scene);
 
     control_scene(control_set_t& active_controls, control_pipeline&);
 public:
@@ -52,7 +53,11 @@ public:
 
     // iterator must be valid;
     // sets the control to disabled and erases it from this
-    void remove_control(bool is_video_control, const controls_t::iterator&);
+    void remove_control(bool is_video_control, controls_t::const_iterator);
+
+    // src control is added in front of the dst control
+    void reorder_controls(controls_t::const_iterator src, controls_t::const_iterator dst,
+        bool is_video_control = true);
 
     // new_scene must be contained in this scene
     void switch_scene(const control_scene& new_scene);
@@ -61,11 +66,9 @@ public:
     control_scene* get_selected_scene() const;
     void unselect_selected_scene();
 
-    const controls_t& get_video_controls() const {return this->video_controls;}
-    const controls_t& get_audio_controls() const {return this->audio_controls;}
+    const controls_t& get_video_controls() const { return this->video_controls; }
+    const controls_t& get_audio_controls() const { return this->audio_controls; }
 
-    // TODO: this should be private
-    control_class* find_control(bool is_control_video, int control_index) const;
     // returns audio_controls.end() if no control was found
     controls_t::iterator find_control_iterator(
         const std::wstring& control_name,
