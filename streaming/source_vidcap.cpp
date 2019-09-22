@@ -119,7 +119,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         CHECK_HR(hr = MFGetAttributeSize(source->output_type, MF_MT_FRAME_SIZE,
             &source->frame_width, &source->frame_height));
 
-        // reactive the current scene; it will update the control_vidcap with 
+        // reactivate the current scene; it will update the control_vidcap with 
         // a possible new frame size
         source->ctrl_pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
             {

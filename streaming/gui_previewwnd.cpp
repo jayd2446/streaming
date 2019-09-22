@@ -33,7 +33,7 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
         return false;
 
     control_scene* scene = this->ctrl_pipeline.root_scene->get_selected_scene();
-    if(scene->get_video_controls().empty())
+    if(!scene || scene->get_video_controls().empty())
         return false;
     auto start_it = scene->get_video_controls().begin();
     if(!this->ctrl_pipeline.get_selected_controls().empty())

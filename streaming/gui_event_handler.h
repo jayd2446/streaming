@@ -10,7 +10,7 @@ struct gui_event_handler
 {
     virtual ~gui_event_handler() {}
 
-    // currently it can be assumed that pipeline is locked while these events
+    // currently it can be assumed that the pipeline is locked while these events
     // are called
 
     // TODO: start recording etc events

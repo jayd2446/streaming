@@ -4,8 +4,6 @@
 #include "control_video.h"
 #include "gui_previewwnd.h"
 #include <Windows.h>
-#define _USE_MATH_DEFINES
-#include <math.h>
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
@@ -53,8 +51,8 @@ void sink_preview2::draw_sample(const media_component_args* args_)
 
     if(this->hwnd && this->texture_requests > 0)
     {
-        this->texture_requests--;
-        PostMessage(this->hwnd, GUI_PREVIEWWND_MESSAGE, 0, 0);
+        if(PostMessage(this->hwnd, GUI_PREVIEWWND_MESSAGE, 0, 0))
+            this->texture_requests--;
     }
 }
 
