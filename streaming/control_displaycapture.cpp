@@ -73,7 +73,7 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
         goto out;
 
     // try to find a control to reference in the new set
-    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class_t& control)
+    for(auto&& control : new_set)
     {
         if(this->is_identical_control(control))
         {
@@ -82,15 +82,14 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
             this->reference = displaycapture_control;
             component = displaycapture_control->component;
 
-            return true;
+            break;
         }
-        return false;
-    });
+    }
 
     if(!component)
     {
         // try to reuse the component stored in the last set's control
-        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class_t& control)
+        for(auto&& control : last_set)
         {
             if(this->is_identical_control(control))
             {
@@ -98,10 +97,9 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
                     (const control_displaycapture*)control.get();
                 component = displaycapture_control->component;
 
-                return true;
+                break;
             }
-            return false;
-        });
+        }
 
         if(!component)
         {

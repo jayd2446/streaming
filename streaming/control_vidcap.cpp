@@ -10,6 +10,7 @@ control_vidcap::control_vidcap(control_set_t& active_controls,
     videomixer_params(new stream_videomixer_controller),
     reference(NULL)
 {
+    this->apply_default_video_params();
 }
 
 void control_vidcap::build_video_topology(const media_stream_t& from,
@@ -50,15 +51,13 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
 {
     source_vidcap_t component;
 
-    bool new_component = false;
-
     this->stream = NULL;
     this->reference = NULL;
 
     if(this->disabled)
         goto out;
 
-    (void)std::find_if(new_set.begin(), new_set.end(), [&](const control_class_t& control)
+    for(auto&& control : new_set)
     {
         if(this->is_identical_control(control))
         {
@@ -66,24 +65,22 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
             this->reference = vidcap_control;
             component = vidcap_control->component;
 
-            return true;
+            break;
         }
-        return false;
-    });
+    }
 
     if(!component)
     {
-        (void)std::find_if(last_set.begin(), last_set.end(), [&](const control_class_t& control)
+        for(auto&& control : last_set)
         {
             if(this->is_identical_control(control))
             {
                 const control_vidcap* vidcap_control = (const control_vidcap*)control.get();
                 component = vidcap_control->component;
 
-                return true;
+                break;
             }
-            return false;
-        });
+        }
 
         if(!component)
         {
@@ -93,7 +90,6 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
                 this->params.symbolic_link);
 
             component = vidcap_source;
-            new_component = true;
         }
     }
 
@@ -104,14 +100,10 @@ out:
 
     if(this->component)
     {
-        if(new_component)
-            // set the default video params;
-            // this must be called after vidcap source has been initialized
-            this->apply_default_video_params();
-        else
-            // update the source transformation when the new control_vidcap activates;
-            // this allows components to reactivate the active scene and update their native size
-            this->control_video::apply_transformation(false);
+        // update the transformations when the new control_vidcap activates;
+        // this allows components to reactivate the active scene and update their native size
+        this->control_video::apply_transformation(false);
+        this->control_video::apply_transformation(true);
 
         this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
     }
@@ -191,7 +183,7 @@ void control_vidcap::apply_transformation(
         params.dest_rect = rect;
         params.dest_m = transformation;
         params.axis_aligned_clip = ((video_params.rotate / 90.f) ==
-            round(video_params.rotate / 90.f));
+            std::round(video_params.rotate / 90.f));
     }
     else
     {

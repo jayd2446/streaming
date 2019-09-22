@@ -47,7 +47,7 @@ void media_session::switch_topology_immediate(
     if(!new_message_generator)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
-    // the new topology will be actived
+    // the new topology will be activated
     new_message_generator->clock_start(time_point, message_generator);
 }
 
@@ -115,10 +115,6 @@ bool media_session::begin_request_sample(media_stream* stream, const request_pac
     // single thread
 
     assert_(!rp.topology);
-    // packet numbers must be consecutive and newer packet number must correspond
-    // to the newest topology;
-    // after the clock stop call, the stream won't be able to dispatch new requests
-    // because the topology isn't active anymore
 
     // this mutex ensures that the begin request sample call chain is atomic
     this->request_chain_lock.lock();

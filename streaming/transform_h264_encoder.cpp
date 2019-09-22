@@ -843,6 +843,20 @@ media_stream::result_t stream_h264_encoder::process_sample(
     // async processing doesn't really fit into this pipeline design;
     // components should request/pass samples independently from the mpeg_sink
 
+    /*
+    TODO:
+    add internal source frame buffer for h264 encoder:
+
+    * h264 encoder should add new frames to the raw internal queue and pass requests as null 
+    downstream; only if the internal buffer is full should the encoder stall by storing requests; 
+    requests are served from the encoded internal queue
+
+    * h264 encoder should keep encoding while the internal buffer is nonempty
+
+    internal buffer might alleviate occasional encoder stalls that cause frame drops
+
+    */
+
     // pass null requests downstream
     if(request.sample.already_served)
         this->transform->session->give_sample(this, NULL, request.rp);
