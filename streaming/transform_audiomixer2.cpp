@@ -127,6 +127,12 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     // TODO: when audio mixer is updated to work similarly to video mixer,
     // source_wasapi needs to add silent frames by itself
 
+    // workaround for the todo above:
+    // do not allow the audio buffer to grow indefinitely
+    constexpr frame_unit max_buffer_length = transform_aac_encoder::sample_rate;
+    first = std::max(end - max_buffer_length, first);
+
+    // begin mixing
     HRESULT hr = S_OK;
     const UINT32 out_block_align = 
         transform_aac_encoder::bit_depth / 8 * transform_aac_encoder::channels;
@@ -170,7 +176,8 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
         assert_(!item.arg->sample->frames.empty());
         for(auto&& consec_frames : item.arg->sample->frames)
         {
-            assert_(first <= consec_frames.pos);
+            // max buffer length is defined which makes this assertion false
+            /*assert_(first <= consec_frames.pos);*/
             assert_(end >= (consec_frames.pos + consec_frames.dur));
 
             has_frames = true;
@@ -178,27 +185,51 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
             if(!consec_frames.buffer)
                 continue;
 
-            in_bit_depth_t* in_data;
-            out_bit_depth_t* out_data = out_data_base;
-            CHECK_HR(hr = consec_frames.buffer->Lock((BYTE**)&in_data, 0, 0));
+            in_bit_depth_t* in_data_base;
+            /*out_bit_depth_t* out_data = out_data_base;*/
+            CHECK_HR(hr = consec_frames.buffer->Lock((BYTE**)&in_data_base, 0, 0));
                 
-            out_data += (UINT32)(consec_frames.pos - first) * transform_aac_encoder::channels;
-            for(UINT32 i = 0; 
-                i < (UINT32)consec_frames.dur * transform_aac_encoder::channels; 
+            for(frame_unit i = std::max(first, consec_frames.pos);
+                i < (consec_frames.pos + consec_frames.dur);
                 i++)
             {
-                static_assert(std::is_floating_point<transform_audiomixer2::bit_depth_t>::value, 
+                static_assert(std::is_floating_point<transform_audiomixer2::bit_depth_t>::value,
                     "float type expected");
 
-                int64_t temp = *out_data;
-                temp += (int64_t)(*in_data++ * 
-                    std::numeric_limits<transform_aac_encoder::bit_depth_t>::max());
+                out_bit_depth_t* out_data = out_data_base + 
+                    (UINT32)(i - first) * transform_aac_encoder::channels;
+                in_bit_depth_t* in_data = in_data_base +
+                    (UINT32)(i - consec_frames.pos) * transform_aac_encoder::channels;
 
-                // clamp
-                *out_data++ = (out_bit_depth_t)std::max(
-                    (int64_t)std::numeric_limits<out_bit_depth_t>::min(),
-                    std::min(temp, (int64_t)std::numeric_limits<out_bit_depth_t>::max()));
+                for(UINT32 j = 0; j < transform_aac_encoder::channels; j++)
+                {
+                    const int64_t temp = out_data[j] + (int64_t)(in_data[j] *
+                        std::numeric_limits<transform_aac_encoder::bit_depth_t>::max());
+
+                    // clamp
+                    out_data[j] = (out_bit_depth_t)std::max(
+                        (int64_t)std::numeric_limits<out_bit_depth_t>::min(),
+                        std::min(temp, (int64_t)std::numeric_limits<out_bit_depth_t>::max()));
+                }
             }
+
+            //out_data += (UINT32)(consec_frames.pos - first) * transform_aac_encoder::channels;
+            //for(UINT32 i = 0; 
+            //    i < (UINT32)consec_frames.dur * transform_aac_encoder::channels; 
+            //    i++)
+            //{
+            //    static_assert(std::is_floating_point<transform_audiomixer2::bit_depth_t>::value, 
+            //        "float type expected");
+
+            //    int64_t temp = *out_data;
+            //    temp += (int64_t)(*in_data++ * 
+            //        std::numeric_limits<transform_aac_encoder::bit_depth_t>::max());
+
+            //    // clamp
+            //    *out_data++ = (out_bit_depth_t)std::max(
+            //        (int64_t)std::numeric_limits<out_bit_depth_t>::min(),
+            //        std::min(temp, (int64_t)std::numeric_limits<out_bit_depth_t>::max()));
+            //}
 
             CHECK_HR(hr = consec_frames.buffer->Unlock());
         }

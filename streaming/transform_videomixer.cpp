@@ -211,7 +211,7 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
     // limit the processing videomixer does in a single take;
     // this greatly reduces the amount of vram being allocated when the pipeline is overloaded
-    constexpr size_t maximum_frame_count = 2;
+    constexpr size_t maximum_frame_count = 1;
     frame_unit allowed_frames[maximum_frame_count];
     for(size_t i = 0; i < maximum_frame_count; i++)
         allowed_frames[i] = -1;
@@ -241,7 +241,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         frames->initialize();
     }
 
-    // TODO: reserve should be used for this
     for(frame_unit i = 0; i < frame_count; i++)
         frames->frames.push_back(media_sample_video_frame(first + i));
 

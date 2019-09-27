@@ -11,7 +11,7 @@
 #pragma comment(lib, "D2d1.lib")
 #pragma comment(lib, "Dxgi.lib")
 
-#define MAX_TEXTURE_REQUESTS 2
+#define MAX_TEXTURE_REQUESTS 1
 
 class control_pipeline;
 typedef std::shared_ptr<control_pipeline> control_pipeline_t;

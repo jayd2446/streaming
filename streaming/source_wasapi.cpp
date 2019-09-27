@@ -290,7 +290,11 @@ done:
     if(FAILED(hr))
     {
         if(hr == AUDCLNT_E_DEVICE_INVALIDATED || hr == AUDCLNT_E_SERVICE_NOT_RUNNING)
+        {
+            if(!this->is_broken())
+                std::cout << "error code: " << std::hex << "0x" << hr << std::dec << std::endl;
             this->set_broken();
+        }
         else
             throw HR_EXCEPTION(hr);
     }

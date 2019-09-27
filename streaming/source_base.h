@@ -26,7 +26,7 @@ class source_base : public media_component
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
     typedef Args args_t;
-    struct payload_t {bool drain; std::optional<args_t> args;};
+    struct payload_t { bool drain; std::optional<args_t> args; };
     typedef stream_source_base<source_base> stream_source_base;
     typedef std::shared_ptr<stream_source_base> stream_source_base_t;
     // TODO: this should not be a typedef
@@ -67,6 +67,8 @@ protected:
 public:
     explicit source_base(const media_session_t& session);
     virtual ~source_base();
+
+    bool is_broken() const { return this->broken_flag; }
 
     stream_source_base_t create_stream(media_message_generator_t&& message_generator);
 };
