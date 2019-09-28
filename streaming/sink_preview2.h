@@ -38,7 +38,7 @@ public:
     media_stream_t create_stream();
 
     void clear_preview_wnd();
-    media_buffer_texture_t get_last_buffer() const { return this->last_buffer; }
+    media_buffer_texture_t get_last_buffer() const { return std::atomic_load(&this->last_buffer); }
 
     void set_state(bool render) { this->render = render; }
     void clear_request_count() { scoped_lock lock(this->mutex); this->texture_requests = MAX_TEXTURE_REQUESTS; }

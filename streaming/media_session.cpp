@@ -21,7 +21,7 @@ media_topology_t media_session::get_current_topology() const
 
 void media_session::switch_topology(const media_topology_t& topology)
 {
-    this->new_topology = topology;
+    std::atomic_store(&this->new_topology, topology);
 }
 
 void media_session::switch_topology_immediate(
