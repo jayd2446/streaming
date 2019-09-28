@@ -327,49 +327,59 @@ void stream_mixer<T>::process(typename request_queue::request_t& request)
         this->leftover[i].container.clear();
     }
 
-    // discard frames that are below the old cutoff point
-    for(auto&& item : packets.container)
-    {
-        in_arg_t discarded, modified;
-        if(item.arg)
-        {
-            const bool ret = 
-                this->move_frames(discarded, modified, item.arg, old_cutoff, true);
-            item.arg = modified;
+    // TODO: see if packets.container could be pooled
 
-            assert_((ret && !modified) || (!ret && modified));
-        }
-    }
-
-    // add frames to the output request that are between the old and the new cutoff point
-    for(auto&& item : packets.container)
-    {
-        in_arg_t new_arg, modified;
-        if(item.arg)
+    // only keep frames that are between the old and the new cutoff point and contain samples
+    packets.container.erase(std::remove_if(
+        packets.container.begin(),
+        packets.container.end(),
+        [&](packet_t& item)
         {
-            bool ret;
-            if(!(ret = this->move_frames(new_arg, modified, item.arg, this->cutoff, false)))
             {
-                item.arg = modified;
-                // assign the item to the leftover buffer since it was only partly moved
-                this->leftover[item.stream_index].container.push_back(item);
-            }
-            assert_((ret && !modified) || (!ret && modified));
-        }
+                in_arg_t discarded, modified;
+                if(item.arg)
+                {
+                    const bool ret =
+                        this->move_frames(discarded, modified, item.arg, old_cutoff, true);
+                    item.arg = modified;
 
-        // assign the processed arg to the request
-        item.arg = new_arg;
+                    assert_((ret && !modified) || (!ret && modified));
+                }
+            }
+            {
+                in_arg_t new_arg, modified;
+                if(item.arg)
+                {
+                    bool ret;
+                    if(!(ret = this->move_frames(new_arg, modified, item.arg, this->cutoff, false)))
+                    {
+                        item.arg = modified;
+                        // assign the item to the leftover buffer since it was only partly moved
+                        this->leftover[item.stream_index].container.push_back(item);
+                    }
+                    assert_((ret && !modified) || (!ret && modified));
+                }
+
+                if(new_arg && new_arg->sample)
+                {
+                    // assign the processed arg to the request
+                    item.arg = new_arg;
 
 #ifdef TRANSFORM_MIXER_APPLY_STREAM_CONTROLLER_IMMEDIATELY
-        // apply stream controller here;
-        // it overwrites the previous value set in request_sample
-        if(item.valid_user_params)
-        {
-            this->input_streams_props[item.stream_index].user_params_controller->get_params(
-                item.user_params);
-        }
+                    // apply stream controller here;
+                    // it overwrites the previous value set in request_sample
+                    if(item.valid_user_params)
+                        this->input_streams_props[item.stream_index].user_params_controller->get_params(
+                            item.user_params);
 #endif
-    }
+
+                    return false;
+                }
+                else
+                    // remove item
+                    return true;
+            }
+        }), packets.container.end());
 
 out:
     const frame_unit cutoff = this->cutoff;
