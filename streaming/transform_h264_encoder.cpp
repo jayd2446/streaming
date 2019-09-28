@@ -21,51 +21,20 @@
 DEFINE_GUID(media_sample_tracker_guid,
     0xd84fe03a, 0xcb44, 0x43ec, 0x10, 0xac, 0x94, 0x00, 0xb, 0xcc, 0xef, 0x38);
 
-// wraps a texture sample so that it can be used in an encoder that is not d3d aware
+// wraps a texture sample
 class media_buffer_wrapper : public IMFMediaBuffer, IUnknownImpl
 {
 private:
+    const bool use_system_memory;
+    // memory corruption occurs if media_buffer_wrapper outlives media_sample_tracker
     media_buffer_texture_t buffer;
-    D3D11_TEXTURE2D_DESC desc;
+    CComPtr<IMFMediaBuffer> media_buffer;
 public:
     explicit media_buffer_wrapper(const context_mutex_t& /*context_mutex*/,
         const media_buffer_texture_t& buffer,
-        const CComPtr<IMF2DBuffer>& buffer2d) :
-        buffer(buffer)
-    {
-        /*std::lock_guard<std::recursive_mutex> lock(*context_mutex);*/
-
-        this->buffer->texture->GetDesc(&this->desc);
-        assert_(this->desc.Format == DXGI_FORMAT_NV12);
-
-        HRESULT hr = S_OK;
-        DWORD len;
-
-        // the buffer needs to be copied to another buffer, because
-        // the context mutex needs to be locked for the whole duration of lock/unlock(=map/unmap);
-        // otherwise context corruption will occur even without the debugging layer warning about it
-
-        // it is simply assumed that the texture desc won't be different from what it
-        // was when the texture_buffer was firstly allocated
-        // (input type for the encoder implies that the desc won't change)
-        CHECK_HR(hr = buffer2d->GetContiguousLength(&len));
-        if(!this->buffer->texture_buffer)
-        {
-            this->buffer->texture_buffer_length = len;
-            this->buffer->texture_buffer.reset(
-                new BYTE[this->buffer->texture_buffer_length]);
-        }
-
-        assert_(len == this->buffer->texture_buffer_length);
-        CHECK_HR(hr = buffer2d->ContiguousCopyTo(
-            this->buffer->texture_buffer.get(),
-            this->buffer->texture_buffer_length));
-
-    done:
-        if(FAILED(hr))
-            throw HR_EXCEPTION(hr);
-    }
-    virtual ~media_buffer_wrapper()
+        const CComPtr<IMFMediaBuffer>& media_buffer,
+        bool use_system_memory = false) :
+        buffer(buffer), media_buffer(media_buffer), use_system_memory(use_system_memory)
     {
     }
 
@@ -73,61 +42,28 @@ public:
     ULONG STDMETHODCALLTYPE Release() {return IUnknownImpl::Release();}
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
     {
-        if(!ppv)
-            return E_POINTER;
-        if(riid == __uuidof(IUnknown))
-            *ppv = static_cast<IUnknown*>(static_cast<IMFMediaBuffer*>(this));
-        else if(riid == __uuidof(IMFMediaBuffer))
-            *ppv = static_cast<IMFMediaBuffer*>(this);
-        else
-        {
-            *ppv = NULL;
-            return E_NOINTERFACE;
-        }
-
-        this->AddRef();
-        return S_OK;
+        return this->media_buffer->QueryInterface(riid, ppv);
     }
 
     HRESULT STDMETHODCALLTYPE Lock(BYTE **ppbBuffer, DWORD *pcbMaxLength, DWORD *pcbCurrentLength)
     {
-        HRESULT hr = S_OK;
-
-        if(!ppbBuffer)
-            CHECK_HR(hr = E_POINTER);
-        if(pcbMaxLength)
-            CHECK_HR(hr = this->GetMaxLength(pcbMaxLength));
-        if(pcbCurrentLength)
-            CHECK_HR(hr = this->GetCurrentLength(pcbCurrentLength));
-
-        *ppbBuffer = this->buffer->texture_buffer.get();
-
-    done:
-        return hr;
+        return this->media_buffer->Lock(ppbBuffer, pcbMaxLength, pcbCurrentLength);
     }
     HRESULT STDMETHODCALLTYPE Unlock()
     {
-        return S_OK;
+        return this->media_buffer->Unlock();
     }
     HRESULT STDMETHODCALLTYPE GetCurrentLength(DWORD *pcbCurrentLength)
     {
-        HRESULT hr = S_OK;
-
-        if(!pcbCurrentLength)
-            CHECK_HR(hr = E_POINTER);
-
-        *pcbCurrentLength = this->buffer->texture_buffer_length;
-
-    done:
-        return hr;
+        return this->media_buffer->GetCurrentLength(pcbCurrentLength);
     }
-    HRESULT STDMETHODCALLTYPE SetCurrentLength(DWORD /*cbCurrentLength*/)
+    HRESULT STDMETHODCALLTYPE SetCurrentLength(DWORD cbCurrentLength)
     {
-        return E_NOTIMPL;
+        return this->media_buffer->SetCurrentLength(cbCurrentLength);
     }
     HRESULT STDMETHODCALLTYPE GetMaxLength(DWORD *pcbMaxLength)
     {
-        return this->GetCurrentLength(pcbMaxLength);
+        return this->media_buffer->GetMaxLength(pcbMaxLength);
     }
 };
 
@@ -136,9 +72,10 @@ public:
 class media_sample_tracker : public IUnknown, IUnknownImpl
 {
 public:
-    media_buffer_texture_t buffer;
+    CComPtr<media_buffer_wrapper> buffer_wrapper;
 
-    explicit media_sample_tracker(const media_buffer_texture_t& buffer) : buffer(buffer) {}
+    explicit media_sample_tracker(const CComPtr<media_buffer_wrapper>& buffer_wrapper) :
+        buffer_wrapper(buffer_wrapper) {}
     ULONG STDMETHODCALLTYPE AddRef() { return IUnknownImpl::AddRef(); }
     ULONG STDMETHODCALLTYPE Release() { return IUnknownImpl::Release(); }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv)
@@ -281,27 +218,17 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
     HRESULT hr = S_OK;
 
     CComPtr<IMFMediaBuffer> buffer;
+    CComPtr<media_buffer_wrapper> buffer_wrapper;
     CComPtr<IMFSample> sample;
     CComPtr<IUnknown> sample_tracker;
 
     // sample tracker should be used for each texture individually
 
     // create the input sample buffer
-    if(!this->use_system_memory)
-    {
-        CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
-            IID_ID3D11Texture2D, frame.buffer->texture, 0, FALSE, &buffer));
-    }
-    else
-    {
-        CComPtr<IMFMediaBuffer> dxgi_buffer;
-        CComPtr<IMF2DBuffer> buffer2d;
-
-        CHECK_HR(hr = MFCreateDXGISurfaceBuffer(
-            IID_ID3D11Texture2D, frame.buffer->texture, 0, FALSE, &dxgi_buffer));
-        CHECK_HR(hr = dxgi_buffer->QueryInterface(&buffer2d));
-        buffer.Attach(new media_buffer_wrapper(this->context_mutex, frame.buffer, buffer2d));
-    }
+    CHECK_HR(hr = MFCreateDXGISurfaceBuffer(IID_ID3D11Texture2D,
+        frame.buffer->texture, 0, FALSE, &buffer));
+    buffer_wrapper.Attach(new media_buffer_wrapper(this->context_mutex,
+        frame.buffer, buffer, this->use_system_memory));
 
     assert_(frame.dur == 1);
     const LONGLONG sample_duration = (LONGLONG)
@@ -319,7 +246,7 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
 
     // create sample
     CHECK_HR(hr = MFCreateSample(&sample));
-    CHECK_HR(hr = sample->AddBuffer(buffer));
+    CHECK_HR(hr = sample->AddBuffer(buffer_wrapper));
     CHECK_HR(hr = sample->SetSampleTime(sample_time));
     CHECK_HR(hr = sample->SetSampleDuration(sample_duration));
     // the amd encoder probably copies the discontinuity flag to output sample,
@@ -332,7 +259,7 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
     /*else
         CHECK_HR(hr = sample->SetUINT32(MFSampleExtension_Discontinuity, FALSE));*/
     // add the tracker to the sample
-    sample_tracker.Attach(new media_sample_tracker(frame.buffer));
+    sample_tracker.Attach(new media_sample_tracker(buffer_wrapper));
     CHECK_HR(hr = sample->SetUnknown(media_sample_tracker_guid, sample_tracker));
 
     // feed the encoder
@@ -616,7 +543,7 @@ void transform_h264_encoder::process_output_cb(void*)
         hr = sample->GetUnknown(media_sample_tracker_guid, __uuidof(IUnknown), (LPVOID*)&obj);
         if(SUCCEEDED(hr))
             // release the buffer so that it is available for reuse
-            static_cast<media_sample_tracker*>(obj.p)->buffer = NULL;
+            sample->SetUnknown(media_sample_tracker_guid, nullptr);
         else if(hr != MF_E_ATTRIBUTENOTFOUND)
             CHECK_HR(hr);
         hr = S_OK;

@@ -15,6 +15,8 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
+// if using intel encoder, the adapter must be set to intel aswell
+
 control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
     gui_thread_hwnd(gui_thread_hwnd),
     control_class(controls, event_provider),

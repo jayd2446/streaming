@@ -27,7 +27,6 @@ struct control_block_allocator
 
     // the state is tied to the pooled object
     std::shared_ptr<state_t> state;
-
     bool allocated;
 
     explicit control_block_allocator(const std::shared_ptr<state_t>& state);
