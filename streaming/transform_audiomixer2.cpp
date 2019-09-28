@@ -186,7 +186,6 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
                 continue;
 
             in_bit_depth_t* in_data_base;
-            /*out_bit_depth_t* out_data = out_data_base;*/
             CHECK_HR(hr = consec_frames.buffer->Lock((BYTE**)&in_data_base, 0, 0));
                 
             for(frame_unit i = std::max(first, consec_frames.pos);
@@ -212,24 +211,6 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
                         std::min(temp, (int64_t)std::numeric_limits<out_bit_depth_t>::max()));
                 }
             }
-
-            //out_data += (UINT32)(consec_frames.pos - first) * transform_aac_encoder::channels;
-            //for(UINT32 i = 0; 
-            //    i < (UINT32)consec_frames.dur * transform_aac_encoder::channels; 
-            //    i++)
-            //{
-            //    static_assert(std::is_floating_point<transform_audiomixer2::bit_depth_t>::value, 
-            //        "float type expected");
-
-            //    int64_t temp = *out_data;
-            //    temp += (int64_t)(*in_data++ * 
-            //        std::numeric_limits<transform_aac_encoder::bit_depth_t>::max());
-
-            //    // clamp
-            //    *out_data++ = (out_bit_depth_t)std::max(
-            //        (int64_t)std::numeric_limits<out_bit_depth_t>::min(),
-            //        std::min(temp, (int64_t)std::numeric_limits<out_bit_depth_t>::max()));
-            //}
 
             CHECK_HR(hr = consec_frames.buffer->Unlock());
         }

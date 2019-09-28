@@ -70,12 +70,7 @@ struct source_vidcap::source_reader_callback_t : public IMFSourceReaderCallback2
 void source_vidcap::source_reader_callback_t::on_error(const source_vidcap_t& source)
 {
     streaming::check_for_errors();
-
-    {
-        scoped_lock lock(source->source_helper_mutex);
-        /*source->source_helper.set_broken(true);*/
-    }
-    source->request_reinitialization(source->ctrl_pipeline);
+    source->set_broken();
 }
 
 HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD /*stream_index*/,

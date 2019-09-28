@@ -36,6 +36,9 @@ private:
     std::queue<media_topology_t> active_topology;
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
     std::atomic<bool> broken_flag;
+
+    // set_broken must be used instead
+    using media_component::request_reinitialization;
 protected:
     control_class_t ctrl_pipeline;
 

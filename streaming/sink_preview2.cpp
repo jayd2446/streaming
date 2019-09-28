@@ -43,7 +43,7 @@ void sink_preview2::draw_sample(const media_component_args* args_)
         {
             if(item.buffer && item.buffer->bitmap)
             {
-                std::atomic_store(&this->last_buffer, item.buffer);
+                this->last_buffer = item.buffer;
                 break;
             }
         }

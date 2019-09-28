@@ -14,7 +14,7 @@
 #undef min
 #undef max
 
-template<class BufferPool, typename T = int>
+template<class BufferPool, typename T = void>
 struct control_block_allocator
 {
     typedef BufferPool buffer_pool;
@@ -22,14 +22,8 @@ struct control_block_allocator
 
     typedef T value_type;
     typedef T* pointer;
-    typedef const T* const_pointer;
-    typedef T& reference;
-    typedef const T& const_reference;
     typedef std::size_t size_type;
-    typedef std::ptrdiff_t difference_type;
-    using propagate_on_container_move_assignment = std::true_type;
-    template< class U > struct rebind { typedef control_block_allocator<BufferPool, U> other; };
-    /*using is_always_equal = std::true_type;*/
+    template<class U> struct rebind { using other = control_block_allocator<BufferPool, U>; };
 
     // the state is tied to the pooled object
     std::shared_ptr<state_t> state;
@@ -40,19 +34,9 @@ struct control_block_allocator
     template<typename U>
     control_block_allocator(const control_block_allocator<BufferPool, U>&);
 
-    pointer address(reference x) const {return &x;}
-    const_pointer address(const_reference x) const {return &x;}
-    size_type max_size() const {return std::numeric_limits<size_type>::max() / sizeof(value_type);}
-    void construct(pointer p, const_reference val) {new((void*)p) T(val);}
-    template<class U, class... Args>
-    void construct(U* p, Args&&... args) {::new((void*)p) U(std::forward<Args>(args)...);}
-    void destroy(pointer p) {((T*)p)->~T();}
-    template<class U>
-    void destroy(U* p) {p->~U();}
-
-    pointer allocate(size_type n, const void* hint = 0);
+    pointer allocate(size_type n);
     // frees the memory of the control_block_t if pool has been disposed
-    void deallocate(T* p, std::size_t n);
+    void deallocate(T* p, size_type n);
 };
 
 template<class PooledBuffer>
@@ -149,8 +133,7 @@ control_block_allocator<T, U>::control_block_allocator(const control_block_alloc
 }
 
 template<class T, typename U>
-typename control_block_allocator<T, U>::pointer control_block_allocator<T, U>::allocate(size_type n,
-    const void* /*hint*/)
+typename control_block_allocator<T, U>::pointer control_block_allocator<T, U>::allocate(size_type n)
 {
     // a check to ensure that the shared ptr doesn't allocate more internal data than the
     // control block
@@ -172,7 +155,7 @@ typename control_block_allocator<T, U>::pointer control_block_allocator<T, U>::a
 }
 
 template<class T, typename U>
-void control_block_allocator<T, U>::deallocate(U* p, std::size_t /*n*/)
+void control_block_allocator<T, U>::deallocate(U* p, size_type /*n*/)
 {
     // the passed allocator is used to allocate the control block,
     // but a new allocator is constructed from the passed args later on
