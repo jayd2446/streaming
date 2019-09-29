@@ -14,52 +14,30 @@
 #undef min
 #undef max
 
-template<class BufferPool, typename T = void>
-struct control_block_allocator
-{
-    typedef BufferPool buffer_pool;
-    typedef typename buffer_pool::state_t state_t;
-
-    typedef T value_type;
-    typedef T* pointer;
-    typedef std::size_t size_type;
-    template<class U> struct rebind { using other = control_block_allocator<BufferPool, U>; };
-
-    // the state is tied to the pooled object
-    std::shared_ptr<state_t> state;
-    bool allocated;
-
-    explicit control_block_allocator(const std::shared_ptr<state_t>& state);
-    template<typename U>
-    control_block_allocator(const control_block_allocator<BufferPool, U>&);
-
-    pointer allocate(size_type n);
-    // frees the memory of the control_block_t if pool has been disposed
-    void deallocate(T* p, size_type n);
-};
-
 template<class PooledBuffer>
 class buffer_pool : public enable_shared_from_this
 {
     friend typename PooledBuffer;
+    template<class T, class U>
+    friend struct control_block_allocator;
 public:
-    struct state_t
+    struct control_block_desc_t
     {
-        std::shared_ptr<buffer_pool> pool;
-        bool allocated;
         void* control_block_ptr;
         size_t control_block_len;
+        bool in_use;
 
-        state_t(const std::shared_ptr<buffer_pool>& pool) : pool(pool),
-            control_block_ptr(NULL), control_block_len(0), allocated(false) {}
+        control_block_desc_t() : control_block_ptr(nullptr), control_block_len(0), in_use(false) {}
     };
 
     typedef std::unique_lock<std::recursive_mutex> scoped_lock;
     typedef PooledBuffer pooled_buffer_t;
     typedef std::stack<std::shared_ptr<pooled_buffer_t>> buffer_pool_t;
+    typedef std::stack<std::shared_ptr<control_block_desc_t>> control_block_pool_t;
 private:
     volatile bool disposed;
     buffer_pool_t container;
+    control_block_pool_t control_block_descs;
 public:
     buffer_pool();
 
@@ -91,25 +69,57 @@ public:
     virtual ~buffer_poolable() {}
 };
 
-template<typename Poolable>
-class buffer_pooled : public Poolable
+template<class Poolable>
+class buffer_pooled final : public Poolable
 {
-    friend class buffer_pool<buffer_pooled>;
     static_assert(std::is_base_of<buffer_poolable, Poolable>::value,
         "template parameter must inherit from poolable");
 public:
     typedef Poolable buffer_raw_t;
     typedef std::shared_ptr<Poolable> buffer_t;
     typedef buffer_pool<buffer_pooled> buffer_pool;
-    typedef typename buffer_pool::state_t state_t;
 private:
     std::shared_ptr<buffer_pool> pool;
-    std::shared_ptr<state_t> state;
-
     void deleter(buffer_raw_t*);
 public:
     explicit buffer_pooled(const std::shared_ptr<buffer_pool>& pool);
     buffer_t create_pooled_buffer();
+};
+
+template<class T, class BufferPool>
+struct control_block_allocator
+{
+    typedef BufferPool buffer_pool;
+    typedef typename buffer_pool::control_block_desc_t control_block_desc_t;
+    typedef T value_type;
+    typedef T* pointer;
+    typedef std::size_t size_type;
+
+    std::shared_ptr<buffer_pool> pool;
+    std::shared_ptr<control_block_desc_t> control_block_desc;
+    bool allocated;
+
+    explicit control_block_allocator(const std::shared_ptr<buffer_pool>& pool);
+    template<typename U>
+    control_block_allocator(const control_block_allocator<U, BufferPool>&);
+
+    /*template<class T, class... Args>
+    void construct(T* p, Args&&... args)
+    {
+        if constexpr (!std::is_base_of_v<buffer_poolable, T>)
+            ::new (static_cast<void*>(p)) T(std::forward<Args>(args)...);
+    }
+
+    template<class T>
+    void destroy(T* p)
+    {
+        if constexpr (!std::is_base_of_v<buffer_poolable, T>)
+            p->~T();
+    }*/
+
+    pointer allocate(size_type n);
+    // frees the memory of the control_block_t if pool has been disposed
+    void deallocate(T* p, size_type n);
 };
 
 
@@ -118,54 +128,72 @@ public:
 /////////////////////////////////////////////////////////////////
 
 
-template<class T, typename U>
-control_block_allocator<T, U>::control_block_allocator(const std::shared_ptr<state_t>& state) : 
-    state(state), allocated(false)
+template<class T, class U>
+control_block_allocator<T, U>::control_block_allocator(const std::shared_ptr<buffer_pool>& pool) :
+    pool(pool)
+{
+    // buffer pool lock is assumed
+    if(this->pool->control_block_descs.empty())
+        this->control_block_desc.reset(new control_block_desc_t);
+    else
+    {
+        this->control_block_desc = this->pool->control_block_descs.top();
+        this->pool->control_block_descs.pop();
+    }
+}
+
+template<class T, class U>
+template<class V>
+control_block_allocator<T, U>::control_block_allocator(const control_block_allocator<V, U>& other) :
+    pool(other.pool), control_block_desc(other.control_block_desc)
 {
 }
 
-template<class T, typename U>
-template<typename V>
-control_block_allocator<T, U>::control_block_allocator(const control_block_allocator<T, V>& other) :
-    state(other.state), allocated(false)
-{
-}
-
-template<class T, typename U>
+template<class T, class U>
 typename control_block_allocator<T, U>::pointer control_block_allocator<T, U>::allocate(size_type n)
 {
+    // buffer pool lock is assumed
+
     // a check to ensure that the shared ptr doesn't allocate more internal data than the
     // control block
-    if(this->allocated)
+    if(this->control_block_desc->in_use)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
-    // allocate new memory only if the control block is null
-    if(this->state->control_block_ptr == NULL)
+    // allocate new memory only if the control block isn't allocated already
+    if(!this->control_block_desc->control_block_ptr)
     {
-        this->state->control_block_len = n * sizeof(U);
-        this->state->control_block_ptr = ::operator new(this->state->control_block_len);
-        this->allocated = true;
+        this->control_block_desc->control_block_len = n * sizeof(T);
+        this->control_block_desc->control_block_ptr =
+            ::operator new(this->control_block_desc->control_block_len);
     }
-    else if(this->state->control_block_len != (n * sizeof(U)))
+
+    if(this->control_block_desc->control_block_len != (n * sizeof(T)))
         throw HR_EXCEPTION(E_UNEXPECTED);
 
-    this->state->allocated = true;
-    return (pointer)this->state->control_block_ptr;
+    this->control_block_desc->in_use = true;
+
+    return (pointer)this->control_block_desc->control_block_ptr;
 }
 
-template<class T, typename U>
-void control_block_allocator<T, U>::deallocate(U* p, size_type /*n*/)
+template<class T, class U>
+void control_block_allocator<T, U>::deallocate(T* p, size_type /*n*/)
 {
+    // the shared pointer deallocates only the control block because it
+    // has a custom deleter aswell
+
     // the passed allocator is used to allocate the control block,
     // but a new allocator is constructed from the passed args later on
 
-    typename buffer_pool::scoped_lock lock(this->state->pool->mutex);
-    if(this->state->pool->is_disposed())
-    {
-        assert_(this->state->allocated);
-        assert_(p == this->state->control_block_ptr); p;
+    typename buffer_pool::scoped_lock lock(this->pool->mutex);
 
-        FREE_CONTROL_BLOCK(this->state->control_block_ptr);
+    assert_(p == this->control_block_desc->control_block_ptr); p;
+
+    if(this->pool->is_disposed())
+        FREE_CONTROL_BLOCK(this->control_block_desc->control_block_ptr);
+    else
+    {
+        this->control_block_desc->in_use = false;
+        this->pool->control_block_descs.push(this->control_block_desc);
     }
 }
 
@@ -207,13 +235,12 @@ void buffer_pool<T>::dispose()
     assert_(!this->disposed);
 
     this->disposed = true;
-    // free the control block allocations of pooled objects
-    while(!this->container.empty())
+    this->container = buffer_pool_t();
+    while(!this->control_block_descs.empty())
     {
-        assert_(this->container.top()->state->allocated);
-        FREE_CONTROL_BLOCK(this->container.top()->state->control_block_ptr);
-
-        this->container.pop();
+        assert_(!this->control_block_descs.top()->in_use);
+        FREE_CONTROL_BLOCK(this->control_block_descs.top()->control_block_ptr);
+        this->control_block_descs.pop();
     }
 }
 
@@ -223,14 +250,12 @@ void buffer_pool<T>::dispose()
 /////////////////////////////////////////////////////////////////
 
 
-template<typename T>
-buffer_pooled<T>::buffer_pooled(const std::shared_ptr<buffer_pool>& pool) :
-    pool(pool),
-    state(new state_t(pool))
+template<class T>
+buffer_pooled<T>::buffer_pooled(const std::shared_ptr<buffer_pool>& pool) : pool(pool)
 {
 }
 
-template<typename T>
+template<class T>
 typename buffer_pooled<T>::buffer_t buffer_pooled<T>::create_pooled_buffer()
 {
     // media_buffer_pooled will stay alive at least as long as the wrapped buffer is alive
@@ -241,10 +266,10 @@ typename buffer_pooled<T>::buffer_t buffer_pooled<T>::create_pooled_buffer()
     // the custom allocator won't work if the shared ptr allocates dynamic memory
     // more than one time;
     // it shouldn't though, because that would be detrimental to performance
-    return buffer_t(this, deleter_f, control_block_allocator<buffer_pool>(this->state));
+    return buffer_t(this, deleter_f, control_block_allocator<buffer_pooled, buffer_pool>(this->pool));
 }
 
-template<typename T>
+template<class T>
 void buffer_pooled<T>::deleter(buffer_raw_t* buffer)
 {
     assert_(buffer == this); buffer;
@@ -254,7 +279,5 @@ void buffer_pooled<T>::deleter(buffer_raw_t* buffer)
     buffer_pool::scoped_lock lock(this->pool->mutex);
     buffer->uninitialize();
     if(!this->pool->is_disposed())
-    {
         this->pool->container.push(this->shared_from_this<buffer_pooled>());
-    }
 }
