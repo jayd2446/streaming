@@ -111,7 +111,8 @@ bool stream_audiomixer2::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_
 void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     frame_unit first, frame_unit end)
 {
-    assert_(!packets.container.empty());
+    // packets.container might be empty
+
     assert_(!out_arg);
 
     // arg in packets can be null when frame_count == 0 or

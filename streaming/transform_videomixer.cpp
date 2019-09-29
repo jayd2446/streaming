@@ -198,7 +198,8 @@ bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t
 void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     frame_unit first, frame_unit end)
 {
-    assert_(!packets.container.empty());
+    // packets.container might be empty
+
     assert_(!out_arg);
 
     // arg in packets can be null when frame_count == 0 or
