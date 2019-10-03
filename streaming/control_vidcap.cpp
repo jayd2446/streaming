@@ -84,9 +84,11 @@ void control_vidcap::activate(const control_set_t& last_set, control_set_t& new_
 
         if(!component)
         {
-            source_vidcap_t vidcap_source(new source_vidcap(this->pipeline.session));
+            source_vidcap_t vidcap_source(
+                new source_vidcap(this->pipeline.session, this->pipeline.context_mutex));
             vidcap_source->initialize(this->pipeline.shared_from_this<control_pipeline>(),
                 this->pipeline.d3d11dev,
+                this->pipeline.devctx,
                 this->params.symbolic_link);
 
             component = vidcap_source;

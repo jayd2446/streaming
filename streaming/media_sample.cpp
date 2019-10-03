@@ -115,7 +115,7 @@ void media_buffer_texture::uninitialize()
     HRESULT hr = S_OK;
     if(this->texture && this->managed_by_this)
     {
-        assert_(!this->mf_sample);
+        /*assert_(!this->mf_sample);*/
 
         CComPtr<IDXGIResource> resource;
         CComPtr<IDXGIDevice2> device;
@@ -129,7 +129,7 @@ void media_buffer_texture::uninitialize()
     else
     {
         this->texture = NULL;
-        this->mf_sample = NULL;
+        /*this->mf_sample = NULL;*/
     }
 
     this->managed_by_this = true;

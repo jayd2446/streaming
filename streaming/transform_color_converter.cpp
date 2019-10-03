@@ -130,6 +130,7 @@ void stream_color_converter::initialize_buffer(const media_buffer_texture_t& buf
     // create output texture with nv12 color format
     // nv12 format is 1 byte
     // TODO: figure out the real size of nv12 format
+    // TODO: decide if init_data is necessary
     static BYTE init_data[transform_h264_encoder::frame_width * transform_h264_encoder::frame_height *
     sizeof(DWORD)]
         = {0};

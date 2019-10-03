@@ -64,7 +64,8 @@ public:
     DWORD texture_buffer_length;
     std::unique_ptr<BYTE[]> texture_buffer;
 
-    CComPtr<IMFSample> mf_sample;
+    // TODO: remove this; references to mf_sample are commented out in media_sample.cpp
+    /*CComPtr<IMFSample> mf_sample;*/
     // TODO: this bitmap should be set in displaycapture aswell so that videomixer
     // doesn't need to create it for every input texture
     CComPtr<ID2D1Bitmap1> bitmap;

@@ -2,6 +2,8 @@
 #include "transform_h264_encoder.h"
 #include "transform_videomixer.h"
 #include "assert.h"
+#include <limits>
+#include <iostream>
 
 #undef max
 #undef min
@@ -133,6 +135,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         CComPtr<ID3D11Texture2D> texture;
         media_clock_t clock = source->session->get_clock();
         media_sample_video_mixer_frame frame;
+        D3D11_TEXTURE2D_DESC desc;
 
         if(!clock)
         {
@@ -143,23 +146,39 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         CHECK_HR(hr = sample->GetBufferByIndex(0, &buffer));
         CHECK_HR(hr = buffer->QueryInterface(&dxgi_buffer));
         CHECK_HR(hr = dxgi_buffer->GetResource(__uuidof(ID3D11Texture2D), (LPVOID*)&texture));
+        texture->GetDesc(&desc);
 
         CHECK_HR(hr = sample->GetSampleTime(&timestamp));
 
-        // make frame
-        frame.pos = convert_to_frame_unit(
-            clock->system_time_to_clock_time(timestamp),
-            transform_h264_encoder::frame_rate_num,
-            transform_h264_encoder::frame_rate_den);
-        frame.dur = 1;
-        {
-            buffer_pool_texture_t::scoped_lock lock(source->buffer_pool_texture->mutex);
-            frame.buffer = source->buffer_pool_texture->acquire_buffer();
-            lock.unlock();
+        // TODO: use this in source_wasapi aswell
 
-            frame.buffer->initialize(texture);
-            // store the reference of the sample so that mf won't reuse it too soon
-            frame.buffer->mf_sample = sample;
+        // make frame
+        const time_unit real_timestamp = clock->system_time_to_clock_time(timestamp),
+            calculated_timestamp = convert_to_time_unit(source->next_frame_pos,
+                source->fps_num, source->fps_den),
+            frame_interval = convert_to_time_unit(1, 
+            (frame_unit)source->fps_num, (frame_unit)source->fps_den);
+
+        // reset the time base if not set or the timestamps have drifted too far apart
+        if(source->time_base < 0 || std::abs(real_timestamp - calculated_timestamp) > frame_interval)
+        {
+            std::cout << "source_vidcap time base reset" << std::endl;
+            source->time_base = real_timestamp;
+            source->next_frame_pos = convert_to_frame_unit(source->time_base, 
+                (frame_unit)source->fps_num, (frame_unit)source->fps_den);
+        }
+
+        frame.pos = source->next_frame_pos++;
+        frame.dur = 1;
+        frame.buffer = source->acquire_buffer(desc);
+
+        // texture must be copied from sample so that media foundation can work correctly;
+        // media foundation has a limit for pooled samples and if it is reached
+        // media foundation begins to stall
+        {
+            using scoped_lock = std::lock_guard<std::recursive_mutex>;
+            scoped_lock lock(*source->context_mutex);
+            source->d3d11devctx->CopyResource(frame.buffer->texture, texture);
         }
 
         frame.params.source_rect.top = frame.params.source_rect.left = 0.f;
@@ -186,10 +205,18 @@ done:
     return S_OK;
 }
 
-source_vidcap::source_vidcap(const media_session_t& session) :
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+source_vidcap::source_vidcap(const media_session_t& session, context_mutex_t context_mutex) :
     source_base(session),
+    context_mutex(context_mutex),
     buffer_pool_texture(new buffer_pool_texture_t),
-    frame_width(0), frame_height(0)
+    frame_width(0), frame_height(0),
+    time_base(-1), next_frame_pos(-1)
 {
 }
 
@@ -197,6 +224,33 @@ source_vidcap::~source_vidcap()
 {
     buffer_pool_texture_t::scoped_lock lock(this->buffer_pool_texture->mutex);
     this->buffer_pool_texture->dispose();
+}
+
+void source_vidcap::initialize_buffer(const media_buffer_texture_t& buffer,
+    const D3D11_TEXTURE2D_DESC& desc)
+{
+    D3D11_TEXTURE2D_DESC desc_ = desc;
+    desc_.MipLevels = 1;
+    desc_.ArraySize = 1;
+    desc_.SampleDesc.Count = 1;
+    desc_.SampleDesc.Quality = 0;
+    desc_.CPUAccessFlags = 0;
+    desc_.MiscFlags = 0;
+    desc_.Usage = D3D11_USAGE_DEFAULT;
+    desc_.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc_.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+    buffer->initialize(this->d3d11dev, desc_, NULL);
+}
+
+media_buffer_texture_t source_vidcap::acquire_buffer(const D3D11_TEXTURE2D_DESC& desc)
+{
+    buffer_pool_texture_t::scoped_lock lock(this->buffer_pool_texture->mutex);
+    media_buffer_texture_t buffer = this->buffer_pool_texture->acquire_buffer();
+    lock.unlock();
+
+    this->initialize_buffer(buffer, desc);
+    return buffer;
 }
 
 source_vidcap::stream_source_base_t source_vidcap::create_derived_stream()
@@ -248,6 +302,7 @@ done:
 
 void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     const CComPtr<ID3D11Device>& d3d11dev,
+    const CComPtr<ID3D11DeviceContext>& d3d11devctx,
     const std::wstring& symbolic_link)
 {
     HRESULT hr = S_OK;
@@ -259,6 +314,7 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
         transform_h264_encoder::frame_rate_den);
 
     this->d3d11dev = d3d11dev;
+    this->d3d11devctx = d3d11devctx;
     this->symbolic_link = symbolic_link;
 
     CComPtr<IMFAttributes> attributes;
@@ -281,9 +337,9 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     CHECK_HR(hr = this->source_reader_attributes->SetUnknown(
         MF_SOURCE_READER_D3D_MANAGER, this->devmngr));
     CHECK_HR(hr = this->source_reader_attributes->SetUINT32(
-        MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE));
-    CHECK_HR(hr = this->source_reader_attributes->SetUINT32(
         MF_READWRITE_DISABLE_CONVERTERS, FALSE));
+    CHECK_HR(hr = this->source_reader_attributes->SetUINT32(
+        MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE));
     this->source_reader_callback.Attach(
         new source_reader_callback_t(this->shared_from_this<source_vidcap>()));
     CHECK_HR(hr = this->source_reader_attributes->SetUnknown(MF_SOURCE_READER_ASYNC_CALLBACK,
@@ -320,6 +376,9 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     CHECK_HR(hr = MFGetAttributeRatio(this->output_type, MF_MT_FRAME_RATE,
         &this->fps_num, &this->fps_den));
 
+    assert_(this->fps_num == transform_h264_encoder::frame_rate_num);
+    assert_(this->fps_den == transform_h264_encoder::frame_rate_den);
+
     // new capture is queued on component start, so that
     // the last_captured_frame_end variable isn't accessed before assigned
 
@@ -345,8 +404,7 @@ void stream_vidcap::on_component_start(time_unit t)
     HRESULT hr = S_OK;
 
     this->source->source_helper.initialize(convert_to_frame_unit(t,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den));
+        this->source->fps_num, this->source->fps_den));
 
     CHECK_HR(hr = this->source->queue_new_capture());
 
