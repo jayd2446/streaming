@@ -2,7 +2,6 @@
 #include "transform_h264_encoder.h"
 #include "transform_videomixer.h"
 #include "assert.h"
-#include <limits>
 #include <iostream>
 
 #undef max
@@ -159,12 +158,12 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
             frame_interval = convert_to_time_unit(1, 
             (frame_unit)source->fps_num, (frame_unit)source->fps_den);
 
-        // reset the time base if not set or the timestamps have drifted too far apart
-        if(source->time_base < 0 || std::abs(real_timestamp - calculated_timestamp) > frame_interval)
+        // reset the next frame pos if not set or the timestamps have drifted too far apart
+        if(source->next_frame_pos < 0 || 
+            std::abs(real_timestamp - calculated_timestamp) > frame_interval)
         {
             std::cout << "source_vidcap time base reset" << std::endl;
-            source->time_base = real_timestamp;
-            source->next_frame_pos = convert_to_frame_unit(source->time_base, 
+            source->next_frame_pos = convert_to_frame_unit(real_timestamp,
                 (frame_unit)source->fps_num, (frame_unit)source->fps_den);
         }
 
@@ -215,8 +214,7 @@ source_vidcap::source_vidcap(const media_session_t& session, context_mutex_t con
     source_base(session),
     context_mutex(context_mutex),
     buffer_pool_texture(new buffer_pool_texture_t),
-    frame_width(0), frame_height(0),
-    time_base(-1), next_frame_pos(-1)
+    frame_width(0), frame_height(0), next_frame_pos(-1)
 {
 }
 

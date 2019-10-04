@@ -35,8 +35,6 @@ private:
     CComPtr<source_reader_callback_t> source_reader_callback;
     context_mutex_t context_mutex;
 
-    // time base is the timestamp from where next_frame_pos initially was initialized
-    time_unit time_base;
     frame_unit next_frame_pos;
 
     UINT32 reset_token;
