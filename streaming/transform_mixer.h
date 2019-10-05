@@ -465,7 +465,7 @@ typename stream_mixer<T>::result_t stream_mixer<T>::request_sample(
         typename request_queue::request_t request;
         request.rp = rp;
         request.stream = this;
-        this->requests.push(request);
+        this->requests.push(std::move(request));
     }
     typename request_queue::request_t* request = this->requests.get(rp.packet_number);
     assert_(request->sample.second.container.empty());

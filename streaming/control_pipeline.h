@@ -25,6 +25,7 @@
 #include <memory>
 #include <vector>
 
+// TODO: longer buffering increases processing usage
 #define BUFFERING_DEFAULT_VIDEO_LATENCY (SECOND_IN_TIME_UNIT / 2) // 100ms default buffering
 #define BUFFERING_DEFAULT_AUDIO_LATENCY (SECOND_IN_TIME_UNIT / 2)
 

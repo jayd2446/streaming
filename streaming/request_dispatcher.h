@@ -16,9 +16,9 @@ class request_dispatcher final : public enable_shared_from_this
 {
 public:
     struct state_object;
-    typedef async_callback<request_dispatcher> async_callback_t;
-    typedef Request request_t;
-    using state_object_t = std::shared_ptr <state_object>;
+    using async_callback_t = async_callback<request_dispatcher>;
+    using request_t = Request;
+    using state_object_t = std::shared_ptr<state_object>;
     using state_object_pooled = buffer_pooled<state_object>;
     using buffer_pool_state_object_t = buffer_pool<state_object_pooled>;
 private:

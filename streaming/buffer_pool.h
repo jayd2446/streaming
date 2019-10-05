@@ -58,7 +58,7 @@ public:
     bool is_disposed() const {return this->disposed;}
 };
 
-class buffer_poolable : public enable_shared_from_this
+class buffer_poolable
 {
     // classes derived from this must implement initialize and uninitialize
 private:
@@ -72,10 +72,12 @@ public:
 };
 
 template<class Poolable>
-class buffer_pooled final : public Poolable
+class buffer_pooled final : public Poolable, public enable_shared_from_this
 {
-    static_assert(std::is_base_of<buffer_poolable, Poolable>::value,
+    static_assert(std::is_base_of_v<buffer_poolable, Poolable>,
         "template parameter must inherit from poolable");
+    static_assert(!std::is_base_of_v<enable_shared_from_this, Poolable>,
+        "pooled buffers do not work with enable_shared_from_this");
 public:
     typedef Poolable buffer_raw_t;
     typedef std::shared_ptr<Poolable> buffer_t;
@@ -276,10 +278,13 @@ void buffer_pooled<T>::deleter(buffer_raw_t* buffer)
 {
     assert_(buffer == this); buffer;
 
+    // locking the pool mutex before uninitializing can lock the whole pipeline for
+    // unnecessarily long time
+    buffer->uninitialize();
+
     // move the buffer back to sample pool if the pool isn't disposed yet;
     // otherwise, this object will be destroyed after the std bind releases the last reference
     buffer_pool::scoped_lock lock(this->pool->mutex);
-    buffer->uninitialize();
     if(!this->pool->is_disposed())
         this->pool->container.push(this->shared_from_this<buffer_pooled>());
 }

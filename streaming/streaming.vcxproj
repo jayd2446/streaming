@@ -414,6 +414,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <DisableSpecificWarnings>4458;4456</DisableSpecificWarnings>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
