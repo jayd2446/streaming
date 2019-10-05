@@ -7,6 +7,7 @@ class IUnknownImpl
 {
 protected:
     volatile long RefCount;
+    virtual void release_this() { delete this; }
 public:
     IUnknownImpl() : RefCount(1) {}
     virtual ~IUnknownImpl() {assert_(this->RefCount == 0);}
@@ -17,7 +18,7 @@ public:
         assert_(this->RefCount > 0);
         ULONG count = InterlockedDecrement(&this->RefCount);
         if(count == 0)
-            delete this;
+            this->release_this();
         return count;
     }
 };

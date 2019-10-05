@@ -231,12 +231,14 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
         frame.buffer, buffer, this->use_system_memory));
 
     assert_(frame.dur == 1);
-    const LONGLONG sample_duration = (LONGLONG)
-        (SECOND_IN_TIME_UNIT / ((double)frame_rate_num / frame_rate_den));
 
     time_unit sample_time = convert_to_time_unit(frame.pos,
         transform_h264_encoder::frame_rate_num,
         transform_h264_encoder::frame_rate_den);
+    const time_unit sample_duration = convert_to_time_unit(1,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
+
     sample_time -= this->time_shift;
     if(sample_time < 0)
     {

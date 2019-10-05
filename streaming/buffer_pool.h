@@ -11,6 +11,8 @@
 
 #define FREE_CONTROL_BLOCK(ptr) ::operator delete(ptr)
 
+// TODO: rename to object pool
+
 #undef min
 #undef max
 
@@ -62,7 +64,7 @@ class buffer_poolable : public enable_shared_from_this
 private:
     bool initialized;
 protected:
-    virtual void initialize() {this->initialized = true;}
+    void initialize() {this->initialized = true;}
     virtual void uninitialize() {assert_(this->initialized); this->initialized = false;}
 public:
     buffer_poolable() : initialized(false) {}
