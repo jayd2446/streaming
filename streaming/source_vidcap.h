@@ -42,10 +42,14 @@ private:
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<IMFDXGIDeviceManager> devmngr;
 
+    std::atomic<bool> reset_size;
+    volatile bool is_capture_initialized, is_helper_initialized;
+    std::mutex queue_new_capture_mutex;
+
     // mutable
+    mutable std::mutex size_mutex;
     UINT32 frame_width, frame_height;
-    // immutable
-    UINT32 fps_num, fps_den;
+
     CComPtr<IMFMediaType> output_type;
     CComPtr<IMFMediaSource> device;
     /*
@@ -65,12 +69,13 @@ private:
     void dispatch(request_t&);
 
     HRESULT queue_new_capture();
+    void initialize_async();
 public:
     explicit source_vidcap(const media_session_t& session, context_mutex_t);
     ~source_vidcap();
 
     void get_size(UINT32& width, UINT32& height) const
-    {width = this->frame_width; height = this->frame_height;}
+    { scoped_lock lock(this->size_mutex); width = this->frame_width; height = this->frame_height; }
 
     void initialize(const control_class_t&, 
         const CComPtr<ID3D11Device>&,

@@ -2,6 +2,7 @@
 #include "transform_h264_encoder.h"
 #include "transform_videomixer.h"
 #include "assert.h"
+#include <thread>
 #include <iostream>
 
 #undef max
@@ -87,6 +88,15 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
     CHECK_HR(hr);
 
+    if(source->reset_size.exchange(false))
+    {
+        // resize
+        source->ctrl_pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+            {
+                pipeline->activate();
+            });
+    }
+
     // TODO: https://docs.microsoft.com/en-us/windows/desktop/medfound/handling-video-device-loss
 
     //  this is assumed to be singlethreaded
@@ -112,8 +122,11 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         CHECK_HR(hr = source->source_reader->GetCurrentMediaType(
             (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
             &source->output_type));
-        CHECK_HR(hr = MFGetAttributeSize(source->output_type, MF_MT_FRAME_SIZE,
-            &source->frame_width, &source->frame_height));
+        {
+            scoped_lock lock(source->size_mutex);
+            CHECK_HR(hr = MFGetAttributeSize(source->output_type, MF_MT_FRAME_SIZE,
+                &source->frame_width, &source->frame_height));
+        }
 
         // reactivate the current scene; it will update the control_vidcap with 
         // a possible new frame size
@@ -149,14 +162,14 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
         CHECK_HR(hr = sample->GetSampleTime(&timestamp));
 
-        // TODO: use this in source_wasapi aswell
+        // TODO: use this in source_wasapi aswell(maybe)
 
         // make frame
+        const UINT32 fps_num = transform_h264_encoder::frame_rate_num,
+            fps_den = transform_h264_encoder::frame_rate_den;
         const time_unit real_timestamp = clock->system_time_to_clock_time(timestamp),
-            calculated_timestamp = convert_to_time_unit(source->next_frame_pos,
-                source->fps_num, source->fps_den),
-            frame_interval = convert_to_time_unit(1, 
-            (frame_unit)source->fps_num, (frame_unit)source->fps_den);
+            calculated_timestamp = convert_to_time_unit(source->next_frame_pos, fps_num, fps_den),
+            frame_interval = convert_to_time_unit(1, (frame_unit)fps_num, (frame_unit)fps_den);
 
         // reset the next frame pos if not set or the timestamps have drifted too far apart
         if(source->next_frame_pos < 0 || 
@@ -164,7 +177,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         {
             std::cout << "source_vidcap time base reset" << std::endl;
             source->next_frame_pos = convert_to_frame_unit(real_timestamp,
-                (frame_unit)source->fps_num, (frame_unit)source->fps_den);
+                (frame_unit)fps_num, (frame_unit)fps_den);
         }
 
         frame.pos = source->next_frame_pos++;
@@ -214,7 +227,9 @@ source_vidcap::source_vidcap(const media_session_t& session, context_mutex_t con
     source_base(session),
     context_mutex(context_mutex),
     buffer_pool_texture(new buffer_pool_texture_t),
-    frame_width(0), frame_height(0), next_frame_pos(-1)
+    frame_width(0), frame_height(0), next_frame_pos(-1),
+    is_capture_initialized(false), is_helper_initialized(false),
+    reset_size(false)
 {
 }
 
@@ -289,7 +304,13 @@ void source_vidcap::dispatch(request_t& request)
 
 HRESULT source_vidcap::queue_new_capture()
 {
-    HRESULT hr = S_OK;
+    // queue_new_capture is called from on_component_start and initialize_async;
+    // readsample itself is only called once
+
+    if(!this->is_capture_initialized || !this->is_helper_initialized)
+        return S_OK;
+
+    HRESULT hr;
     CHECK_HR(hr = this->source_reader->ReadSample(
         (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
         0, NULL, NULL, NULL, NULL));
@@ -298,22 +319,10 @@ done:
     return hr;
 }
 
-void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
-    const CComPtr<ID3D11Device>& d3d11dev,
-    const CComPtr<ID3D11DeviceContext>& d3d11devctx,
-    const std::wstring& symbolic_link)
+void source_vidcap::initialize_async()
 {
     HRESULT hr = S_OK;
-
-    assert_(!this->device);
-
-    this->source_base::initialize(ctrl_pipeline,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
-
-    this->d3d11dev = d3d11dev;
-    this->d3d11devctx = d3d11devctx;
-    this->symbolic_link = symbolic_link;
+    UINT32 fps_num, fps_den;
 
     CComPtr<IMFAttributes> attributes;
     CComPtr<IMFMediaType> output_type;
@@ -369,20 +378,49 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     CHECK_HR(hr = this->source_reader->GetCurrentMediaType(
         (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
         &this->output_type));
-    CHECK_HR(hr = MFGetAttributeSize(this->output_type, MF_MT_FRAME_SIZE,
-        &this->frame_width, &this->frame_height));
-    CHECK_HR(hr = MFGetAttributeRatio(this->output_type, MF_MT_FRAME_RATE,
-        &this->fps_num, &this->fps_den));
+    {
+        scoped_lock lock(this->size_mutex);
+        CHECK_HR(hr = MFGetAttributeSize(this->output_type, MF_MT_FRAME_SIZE,
+            &this->frame_width, &this->frame_height));
+    }
+    CHECK_HR(hr = MFGetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, &fps_num, &fps_den));
 
-    assert_(this->fps_num == transform_h264_encoder::frame_rate_num);
-    assert_(this->fps_den == transform_h264_encoder::frame_rate_den);
+    assert_(fps_num == transform_h264_encoder::frame_rate_num);
+    assert_(fps_den == transform_h264_encoder::frame_rate_den);
 
-    // new capture is queued on component start, so that
-    // the last_captured_frame_end variable isn't accessed before assigned
+    // request a resize
+    this->reset_size = true;
+
+    // synchronization needs to be done so that the readsample isn't called twice
+    {
+        source_vidcap::scoped_lock lock(this->queue_new_capture_mutex);
+        this->is_capture_initialized = true;
+        CHECK_HR(hr = this->queue_new_capture());
+    }
+
+    // TODO: failure should be signalled to control_vidcap in some way
 
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
+}
+
+void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
+    const CComPtr<ID3D11Device>& d3d11dev,
+    const CComPtr<ID3D11DeviceContext>& d3d11devctx,
+    const std::wstring& symbolic_link)
+{
+    assert_(!this->device);
+
+    this->source_base::initialize(ctrl_pipeline,
+        transform_h264_encoder::frame_rate_num,
+        transform_h264_encoder::frame_rate_den);
+
+    this->d3d11dev = d3d11dev;
+    this->d3d11devctx = d3d11devctx;
+    this->symbolic_link = symbolic_link;
+
+    std::thread(&source_vidcap::initialize_async, this->shared_from_this<source_vidcap>()).detach();
 }
 
 
@@ -399,12 +437,15 @@ stream_vidcap::stream_vidcap(const source_vidcap_t& source) :
 
 void stream_vidcap::on_component_start(time_unit t)
 {
-    HRESULT hr = S_OK;
-
     this->source->source_helper.initialize(convert_to_frame_unit(t,
-        this->source->fps_num, this->source->fps_den));
+        transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den));
 
-    CHECK_HR(hr = this->source->queue_new_capture());
+    HRESULT hr;
+    {
+        source_vidcap::scoped_lock lock(this->source->queue_new_capture_mutex);
+        this->source->is_helper_initialized = true;
+        CHECK_HR(hr = this->source->queue_new_capture());
+    }
 
 done:
     if(FAILED(hr) && hr != MF_E_SHUTDOWN)

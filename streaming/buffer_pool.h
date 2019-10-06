@@ -46,7 +46,7 @@ public:
     // mutex must be locked when using buffer_pool methods
     std::recursive_mutex mutex;
 
-    // the buffer might be uninitialized
+    // the buffer is uninitialized
     typename pooled_buffer_t::buffer_t acquire_buffer();
     bool is_empty() const {return this->container.empty();}
 
