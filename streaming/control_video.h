@@ -66,16 +66,20 @@ public:
     void apply_transformation(bool dest_params = true)
     {this->apply_transformation(this->get_transformation(dest_params), dest_params);}
 
+    bool is_degenerate(bool dest_params = true) const;
+
     void move(FLOAT x, FLOAT y,
         bool absolute_mode = true,
         bool axis_aligned = true,
         bool dest_params = true);
+    // returns instantly if is degenerate
     void scale(FLOAT x, FLOAT y, 
         int scale_type,
         bool axis_aligned = true,
         bool dest_params = true);
     void rotate(FLOAT rotation, bool absolute_mode = false, bool dest_params = true);
-    // aligns the source rect to dest rect without changing aspect ratio
+    // aligns the source rect to dest rect without changing aspect ratio;
+    // returns instantly if either source or the dest rect is a degenerate
     void align_source_rect();
 
     // TODO: scale directions and sizing point representations can be unified

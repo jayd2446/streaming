@@ -189,6 +189,7 @@ void gui_sourcedlg::on_scene_activate(control_scene* activated_scene, bool deact
 
 void gui_sourcedlg::on_activate(control_class* activated_control, bool deactivated)
 {
+    // clear the source tree on ctrl pipeline deactivation
     if(deactivated && activated_control == this->ctrl_pipeline.get())
         this->set_source_tree(NULL);
 }

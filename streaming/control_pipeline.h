@@ -35,7 +35,7 @@
 
 typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
 
-class control_pipeline : public control_class
+class control_pipeline final : public control_class
 {
     friend class control_scene;
 private:
@@ -64,7 +64,7 @@ private:
     // the lifetimes are managed
     std::vector<control_class*> selected_controls;
 
-    void activate(const control_set_t& last_set, control_set_t& new_set);
+    void activate(const control_set_t& last_set, control_set_t& new_set) override;
 
     void activate_components();
     void deactivate_components();
@@ -93,6 +93,8 @@ public:
 
     enum selection_type { ADD, SET, CLEAR };
     // control class must not be null, unless cleared
+    // TODO: unset not possible;
+    // multiselection is currently not possible
     void set_selected_control(control_class*, selection_type type = SET);
     const std::vector<control_class*>& get_selected_controls() const { return this->selected_controls; }
 

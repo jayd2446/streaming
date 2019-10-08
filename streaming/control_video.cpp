@@ -101,6 +101,16 @@ control_video::video_params_t control_video::get_video_params(D2D1::Matrix3x2F&&
     return params;
 }
 
+bool control_video::is_degenerate(bool dest_params) const
+{
+    const D2D1_RECT_F rect = this->get_rectangle(dest_params);
+    const auto width = std::abs(rect.right - rect.left),
+        height = std::abs(rect.bottom - rect.top);
+
+    return (width < std::numeric_limits<decltype(width)>::epsilon() ||
+        height < std::numeric_limits<decltype(height)>::epsilon());
+}
+
 void control_video::move(FLOAT x, FLOAT y, bool absolute_mode, bool axis_aligned, bool dest_params)
 {
     const video_params_t old_params = this->get_video_params(dest_params);
@@ -126,6 +136,9 @@ void control_video::move(FLOAT x, FLOAT y, bool absolute_mode, bool axis_aligned
 // TODO: rename to stretch
 void control_video::scale(FLOAT x, FLOAT y, int scale_type, bool axis_aligned, bool dest_params)
 {
+    if(this->is_degenerate(dest_params))
+        return;
+
     const video_params_t old_params = this->get_video_params(dest_params);
     video_params_t params = old_params;
     using namespace D2D1;
@@ -266,6 +279,9 @@ void control_video::rotate(FLOAT rotation, bool absolute_mode, bool dest_params)
 
 void control_video::align_source_rect()
 {
+    if(this->is_degenerate(true) || this->is_degenerate(false))
+        return;
+
     const video_params_t old_params = this->get_video_params(false),
         old_params_dst = this->get_video_params(true);
     video_params_t params = old_params;

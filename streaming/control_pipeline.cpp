@@ -104,10 +104,6 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
     // catch all unhandled initialization exceptions
     try
     {
-        // selected items need to be cleared every time the active control set changes,
-        // otherwise the selected items might become invalid
-        this->set_selected_control(NULL, CLEAR);
-
         if(this->disabled)
         {
            // this also breaks the possible circular dependency between control pipeline

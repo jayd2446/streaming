@@ -425,6 +425,13 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
 
     video_control->highlight_sizing_points(this->scale_flags);
 
+    if(video_control->is_degenerate())
+    {
+        // scaling not possible
+        this->scale_flags = 0;
+        this->scaling = false;
+    }
+
     if(this->dragging)
     {
     dragging:

@@ -11,6 +11,15 @@ control_scene::control_scene(control_set_t& active_controls, control_pipeline& p
 {
 }
 
+control_scene::~control_scene()
+{
+    // remove controls individually so that the events are fired
+    while(!this->get_video_controls().empty())
+        this->remove_control(true, this->get_video_controls().begin());
+    while(!this->get_audio_controls().empty())
+        this->remove_control(false, this->get_audio_controls().begin());
+}
+
 void control_scene::build_video_topology(const media_stream_t& from,
     const media_stream_t& to, const media_topology_t& topology)
 {
@@ -233,6 +242,10 @@ void control_scene::remove_control(bool is_video_control, controls_t::const_iter
 
     is_video_control ? this->video_controls.erase(it) : this->audio_controls.erase(it);
 
+    // TODO: remove the control from the pipeline selection if it exists
+    // control_scene currently just deselects all
+    this->pipeline.set_selected_control(nullptr, control_pipeline::CLEAR);
+
     // trigger event
     this->event_provider.for_each([control_class](gui_event_handler* e)
         { e->on_control_added(control_class.get(), true); });
@@ -268,6 +281,9 @@ void control_scene::switch_scene(controls_t::const_iterator new_scene)
 
     if(new_control == old_control)
         return;
+
+    // deselect old items
+    this->pipeline.set_selected_control(nullptr, control_pipeline::CLEAR);
 
     this->selected_scene = static_cast<control_scene*>(new_control);
 

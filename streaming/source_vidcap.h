@@ -20,7 +20,7 @@
 // (control class will handle the creation of the dialog and the preview pipeline);
 // that preview dialog can be generalized to a properties window
 
-class source_vidcap : public source_base<media_component_videomixer_args>
+class source_vidcap final : public source_base<media_component_videomixer_args>
 {
     friend class stream_vidcap;
     struct source_reader_callback_t;
@@ -63,10 +63,10 @@ private:
     void initialize_buffer(const media_buffer_texture_t&, const D3D11_TEXTURE2D_DESC&);
     media_buffer_texture_t acquire_buffer(const D3D11_TEXTURE2D_DESC&);
 
-    stream_source_base_t create_derived_stream();
-    bool get_samples_end(time_unit request_time, frame_unit& end);
-    void make_request(request_t&, frame_unit frame_end);
-    void dispatch(request_t&);
+    stream_source_base_t create_derived_stream() override;
+    bool get_samples_end(time_unit request_time, frame_unit& end) override;
+    void make_request(request_t&, frame_unit frame_end) override;
+    void dispatch(request_t&) override;
 
     HRESULT queue_new_capture();
     void initialize_async();
@@ -85,11 +85,11 @@ public:
 
 typedef std::shared_ptr<source_vidcap> source_vidcap_t;
 
-class stream_vidcap : public stream_source_base<source_base<media_component_videomixer_args>>
+class stream_vidcap final : public stream_source_base<source_base<media_component_videomixer_args>>
 {
 private:
     source_vidcap_t source;
-    void on_component_start(time_unit);
+    void on_component_start(time_unit) override;
 public:
     explicit stream_vidcap(const source_vidcap_t&);
 };

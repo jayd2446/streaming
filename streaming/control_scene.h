@@ -17,7 +17,7 @@ in the parent scene
 
 class control_pipeline;
 
-class control_scene : public control_class
+class control_scene final : public control_class
 {
     friend class control_pipeline;
 public:
@@ -41,6 +41,8 @@ private:
 
     control_scene(control_set_t& active_controls, control_pipeline&);
 public:
+    ~control_scene();
+
     // the controls must be configured before they can be activated,
     // otherwise they will throw;
     // the added controls must be explicitly activated;
@@ -52,7 +54,8 @@ public:
     control_scene* add_scene(const std::wstring& name, bool add_front = false);
 
     // iterator must be valid;
-    // sets the control to disabled and erases it from this
+    // sets the control to disabled and erases it from this;
+    // also removes the selection from control_pipeline if it exists
     void remove_control(bool is_video_control, controls_t::const_iterator);
 
     // src control is added in front of the dst control

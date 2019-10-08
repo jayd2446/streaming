@@ -173,7 +173,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
         // reset the next frame pos if not set or the timestamps have drifted too far apart
         if(source->next_frame_pos < 0 || 
-            std::abs(real_timestamp - calculated_timestamp) > frame_interval)
+            std::abs(real_timestamp - calculated_timestamp) > (frame_interval / 2))
         {
             std::cout << "source_vidcap time base reset" << std::endl;
             source->next_frame_pos = convert_to_frame_unit(real_timestamp,
@@ -227,7 +227,8 @@ source_vidcap::source_vidcap(const media_session_t& session, context_mutex_t con
     source_base(session),
     context_mutex(context_mutex),
     buffer_pool_texture(new buffer_pool_texture_t),
-    frame_width(0), frame_height(0), next_frame_pos(-1),
+    frame_width(0), frame_height(0), 
+    next_frame_pos(-1),
     is_capture_initialized(false), is_helper_initialized(false),
     reset_size(false)
 {
