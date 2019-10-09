@@ -60,6 +60,8 @@ private:
     CButton btn_addsource, btn_removesource;
     CTreeViewCtrlEx wnd_sourcetree;
     bool do_not_reselect;
+    control_scene* current_active_scene;
+    bool update_source_list_on_scene_activate;
 
     // gui_event_handler
     void on_scene_activate(control_scene* activated_scene, bool deactivated) override;

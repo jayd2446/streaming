@@ -171,7 +171,9 @@ LRESULT gui_scenedlg::OnLbnSelchangeScenelist(WORD /*wNotifyCode*/, WORD /*wID*/
 gui_sourcedlg::gui_sourcedlg(const control_pipeline_t& ctrl_pipeline) :
     ctrl_pipeline(ctrl_pipeline),
     video_counter(0), audio_counter(0),
-    do_not_reselect(false)
+    do_not_reselect(false),
+    current_active_scene(nullptr),
+    update_source_list_on_scene_activate(false)
 {
     this->ctrl_pipeline->event_provider.register_event_handler(*this);
 }
@@ -183,8 +185,15 @@ gui_sourcedlg::~gui_sourcedlg()
 
 void gui_sourcedlg::on_scene_activate(control_scene* activated_scene, bool deactivated)
 {
-    if(activated_scene == this->ctrl_pipeline->root_scene->get_selected_scene() && !deactivated)
-        this->set_source_tree(activated_scene);
+    if(activated_scene == this->ctrl_pipeline->root_scene->get_selected_scene() && !deactivated &&
+        this->current_active_scene != activated_scene || 
+        (!deactivated && this->update_source_list_on_scene_activate))
+    {
+        // set the source tree only if switched to a new scene or if an explicit update is requested
+        this->update_source_list_on_scene_activate = false;
+        this->current_active_scene = activated_scene;
+        this->set_source_tree(this->current_active_scene);
+    }
 }
 
 void gui_sourcedlg::on_activate(control_class* activated_control, bool deactivated)
@@ -194,10 +203,16 @@ void gui_sourcedlg::on_activate(control_class* activated_control, bool deactivat
         this->set_source_tree(NULL);
 }
 
-void gui_sourcedlg::on_control_added(control_class*, bool /*removed*/)
+void gui_sourcedlg::on_control_added(control_class* control, bool removed)
 {
-    // currently scene is reactivated after controls have been added/removed
-    /*this->set_source_tree(this->ctrl_pipeline->root_scene->get_selected_scene());*/
+    if(!dynamic_cast<control_scene*>(control))
+    {
+        this->set_source_tree(this->current_active_scene);
+
+        if(!removed)
+            // select the new item
+            this->ctrl_pipeline->set_selected_control(control);
+    }
 }
 
 void gui_sourcedlg::on_control_selection_changed(bool cleared)
@@ -207,7 +222,11 @@ void gui_sourcedlg::on_control_selection_changed(bool cleared)
 
 void gui_sourcedlg::set_source_tree(const control_scene* scene)
 {
+    this->do_not_reselect = true;
     this->wnd_sourcetree.DeleteAllItems();
+    this->do_not_reselect = false;
+
+    this->ctrl_pipeline->set_selected_control(nullptr, control_pipeline::CLEAR);
 
     if(!scene)
         return;
@@ -304,7 +323,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
             // add the displaycapture and set its params
             std::wostringstream sts;
             sts << L"displaycapture" << this->video_counter;
-            control_displaycapture& displaycapture = *scene->add_displaycapture(std::move(sts.str()));
+            control_displaycapture& displaycapture = *scene->add_displaycapture(sts.str());
             this->video_counter++;
 
             displaycapture.set_displaycapture_params(dlg.displaycaptures[dlg.cursel]);
@@ -315,7 +334,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
         {
             std::wostringstream sts;
             sts << L"vidcap" << this->video_counter;
-            control_vidcap* vidcap = scene->add_vidcap(std::move(sts.str()));
+            control_vidcap* vidcap = scene->add_vidcap(sts.str());
             this->video_counter++;
 
             // TODO: the vidcap control should probably host a dialog where the parameters
@@ -331,7 +350,7 @@ LRESULT gui_sourcedlg::OnBnClickedAddsrc(WORD /*wNotifyCode*/, WORD /*wID*/, HWN
 
             std::wostringstream sts;
             sts << L"wasapi" << this->audio_counter;
-            control_wasapi& wasapi = *scene->add_wasapi(std::move(sts.str()));
+            control_wasapi& wasapi = *scene->add_wasapi(sts.str());
             this->audio_counter++;
 
             wasapi.set_wasapi_params(dlg.audios[index]);
@@ -432,7 +451,15 @@ LRESULT gui_sourcedlg::OnBnClickedSrcup(WORD /*wNotifyCode*/, WORD /*wID*/, HWND
             {
                 auto jt = it;
                 active_scene->reorder_controls(it, --jt);
+
+                // update the source list and reselect the old selection
+                this->update_source_list_on_scene_activate = true;
+                control_class* selected_control =
+                    this->ctrl_pipeline->get_selected_controls().empty() ? nullptr :
+                    this->ctrl_pipeline->get_selected_controls()[0];
                 ((control_class*)this->ctrl_pipeline.get())->activate();
+                if(selected_control)
+                    this->ctrl_pipeline->set_selected_control(selected_control);
             }
         }
     }
@@ -462,7 +489,15 @@ LRESULT gui_sourcedlg::OnBnClickedSrcdown(WORD /*wNotifyCode*/, WORD /*wID*/, HW
             {
                 auto jt = it;
                 active_scene->reorder_controls(it, ++(++jt));
+
+                // update the source list and reselect the old selection
+                this->update_source_list_on_scene_activate = true;
+                control_class* selected_control =
+                    this->ctrl_pipeline->get_selected_controls().empty() ? nullptr :
+                    this->ctrl_pipeline->get_selected_controls()[0];
                 ((control_class*)this->ctrl_pipeline.get())->activate();
+                if(selected_control)
+                    this->ctrl_pipeline->set_selected_control(selected_control);
             }
         }
     }
@@ -475,6 +510,7 @@ LRESULT gui_sourcedlg::OnBnClickedSrcdown(WORD /*wNotifyCode*/, WORD /*wID*/, HW
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
+
 
 
 gui_controldlg::gui_controldlg(const control_pipeline_t& ctrl_pipeline) :

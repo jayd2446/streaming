@@ -27,7 +27,8 @@ reactivate itself if the component needs to be reinitialized
 // void activate walks the parent tree and the root control reactivates the whole tree
 
 // TODO: control class needs explicit referencing;
-// explicit referencing simply uses the parameters of the referenced control class
+// explicit referencing simply uses the parameters of the referenced control class;
+// explicit referencing allows controls that share their state
 
 class control_class;
 typedef std::shared_ptr<control_class> control_class_t;
@@ -68,8 +69,10 @@ protected:
 
     control_class(control_set_t& active_controls, gui_event_provider& event_provider);
 public:
-    // name uniquely identifies a control
     std::wstring name;
+
+    control_class(const control_class&) = delete;
+    control_class& operator=(const control_class&) = delete;
 
     // used by control classes to produce events and by gui classes to consume them
     gui_event_provider& event_provider;
@@ -81,12 +84,6 @@ public:
     // returns whether the function was run;
     // no-op if control_pipeline has been deactivated
     virtual bool run_in_gui_thread(callable_f) { assert_(false); return false; }
-
-    // TODO: the encapsulated component must be dismissed if the reactivation needs reinitialization
-
-    // many control attribute changes need the reactivate call;
-    // each attribute change that needs a reactivation call should set its encapsulated components
-    // to null;
 
     // (re)activates the whole tree and builds the topology
     void activate();
