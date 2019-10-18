@@ -290,16 +290,16 @@ void control_pipeline::activate_components()
     else if(!this->recording)
         this->mp4_sink.second = NULL;
 
-    // create mpeg sink(the main/real pull sink)
-    if(!this->mpeg_sink)
+    // create video sink(the main/real pull sink)
+    if(!this->video_sink)
     {
-        sink_video_t mpeg_sink(new sink_video(this->session, this->audio_session));
-        mpeg_sink->initialize();
+        sink_video_t video_sink(new sink_video(this->session, this->audio_session));
+        video_sink->initialize();
 
-        this->mpeg_sink = mpeg_sink;
+        this->video_sink = video_sink;
     }
 
-    // create audio sink(controlled by mpeg sink)
+    // create audio sink(controlled by video sink)
     if(!this->audio_sink)
     {
         sink_audio_t audio_sink(new sink_audio(this->audio_session));
@@ -339,18 +339,18 @@ void control_pipeline::deactivate_components()
         this->stop_recording();
 
     // stop the playback by switching to empty topologies
-    if(this->mpeg_sink)
+    if(this->video_sink)
     {
         this->video_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
         this->audio_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
-        this->mpeg_sink->switch_topologies(this->video_topology, this->audio_topology);
+        this->video_sink->switch_topologies(this->video_topology, this->audio_topology);
     }
 
     this->videomixer_transform = NULL;
     this->h264_encoder_transform = NULL;
     this->color_converter_transform = NULL;
     this->mp4_sink = sink_mp4_t(NULL, NULL);
-    this->mpeg_sink = NULL;
+    this->video_sink = NULL;
     this->aac_encoder_transform = NULL;
     this->audiomixer_transform = NULL;
     this->audio_sink = NULL;
@@ -377,10 +377,10 @@ void control_pipeline::build_and_switch_topology()
     this->audio_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
 
     stream_audio_t audio_stream = this->audio_sink->create_stream(this->audio_topology->get_message_generator());
-    stream_mpeg2_t mpeg_stream = this->mpeg_sink->create_stream(
+    stream_video_t video_stream = this->video_sink->create_stream(
         this->video_topology->get_message_generator(), audio_stream);
 
-    mpeg_stream->set_pull_rate(
+    video_stream->set_pull_rate(
         transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
 
     // set the topology
@@ -391,7 +391,7 @@ void control_pipeline::build_and_switch_topology()
 
     // connect the sources to mixers
     this->root_scene->build_video_topology(
-        mpeg_stream, videomixer_stream, this->video_topology);
+        video_stream, videomixer_stream, this->video_topology);
     this->root_scene->build_audio_topology(
         audio_stream, audiomixer_stream, this->audio_topology);
 
@@ -401,7 +401,7 @@ void control_pipeline::build_and_switch_topology()
     media_stream_t audio_buffering_stream = this->audio_buffering_source->create_stream(
         this->audio_topology->get_message_generator());
 
-    video_buffering_stream->connect_streams(mpeg_stream, this->video_topology);
+    video_buffering_stream->connect_streams(video_stream, this->video_topology);
     audio_buffering_stream->connect_streams(audio_stream, this->audio_topology);
 
     videomixer_stream->connect_streams(video_buffering_stream, NULL, this->video_topology);
@@ -410,7 +410,7 @@ void control_pipeline::build_and_switch_topology()
     if(!this->recording)
     {
         this->preview_control->build_video_topology(
-            videomixer_stream, mpeg_stream, this->video_topology);
+            videomixer_stream, video_stream, this->video_topology);
         audio_stream->connect_streams(audiomixer_stream, this->audio_topology);
     }
     else
@@ -426,7 +426,7 @@ void control_pipeline::build_and_switch_topology()
             this->mp4_sink.second->create_stream(this->audio_topology->get_message_generator());
 
         // TODO: encoder stream is redundant
-        mpeg_stream->encoder_stream = 
+        video_stream->encoder_stream = 
             std::dynamic_pointer_cast<stream_h264_encoder>(encoder_stream_video);
 
         this->preview_control->build_video_topology(
@@ -434,22 +434,22 @@ void control_pipeline::build_and_switch_topology()
         /*color_converter_stream->connect_streams(preview_stream, this->video_topology);*/
         encoder_stream_video->connect_streams(color_converter_stream, this->video_topology);
         mp4_stream_video->connect_streams(encoder_stream_video, this->video_topology);
-        mpeg_stream->connect_streams(mp4_stream_video, this->video_topology);
+        video_stream->connect_streams(mp4_stream_video, this->video_topology);
 
         encoder_stream_audio->connect_streams(audiomixer_stream, this->audio_topology);
         mp4_stream_audio->connect_streams(encoder_stream_audio, this->audio_topology);
         audio_stream->connect_streams(mp4_stream_audio, this->audio_topology);
     }
 
-    // mpeg sink ensures atomic topology starting/switching for audio and video
-    if(!this->mpeg_sink->is_started())
+    // video sink ensures atomic topology starting/switching for audio and video
+    if(!this->video_sink->is_started())
     {
         // start the media session with the topology;
         // it's ok to start with time point of 0 because the time source starts at 0
-        this->mpeg_sink->start_topologies(0, this->video_topology, this->audio_topology);
+        this->video_sink->start_topologies(0, this->video_topology, this->audio_topology);
     }
     else
-        this->mpeg_sink->switch_topologies(this->video_topology, this->audio_topology);
+        this->video_sink->switch_topologies(this->video_topology, this->audio_topology);
 
     }
     catch(streaming::exception e)

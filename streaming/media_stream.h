@@ -55,7 +55,7 @@ public:
     // samples if there are any;
     // implements input stream functionality;
     // NOTE: request_sample shouldn't lock anything, because otherwise a deadlock might occur;
-    // source's request sample must dispatch to a work queue, because mpeg_sink
+    // source's request sample must dispatch to a work queue, because video_sink
     // holds a topology switch mutex, which can cause a deadlock with pipeline mutex;
     virtual result_t request_sample(const request_packet&, const media_stream* previous_stream) = 0;
     // processes the new sample and optionally calls media_session::give_sample;

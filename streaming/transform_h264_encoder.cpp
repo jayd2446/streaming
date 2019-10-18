@@ -770,7 +770,7 @@ media_stream::result_t stream_h264_encoder::process_sample(
     // requests should be served while the buffer is not full;
     // packet numbers are also reassigned;
     // async processing doesn't really fit into this pipeline design;
-    // components should request/pass samples independently from the mpeg_sink
+    // components should request/pass samples independently from the video_sink
 
     /*
     TODO:

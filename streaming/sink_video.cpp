@@ -61,10 +61,10 @@ void sink_video::start_topologies(
     this->started = true;
 }
 
-stream_mpeg2_t sink_video::create_stream(
+stream_video_t sink_video::create_stream(
     media_message_generator_t&& message_generator, const stream_audio_t& audio_stream)
 {
-    stream_mpeg2_t stream(
+    stream_video_t stream(
         new stream_video(this->shared_from_this<sink_video>(), audio_stream));
     stream->register_listener(message_generator);
 
@@ -107,7 +107,7 @@ void stream_video::on_component_stop(time_unit)
 
 void stream_video::on_stream_start(time_unit t)
 {
-    // stream mpeg2 shouldn't run in higher priority because it will oversaturate the
+    // stream video shouldn't run in higher priority because it will oversaturate the
     // lower priority work queue
     /*this->set_schedule_cb_work_queue(capture_work_queue_id);*/
 
@@ -255,7 +255,7 @@ void stream_video::dispatch_request(const request_packet& incomplete_rp, bool no
         this->discontinuity = true;
         this->unavailable++;
 
-        std::cout << "--SAMPLE REQUEST DROPPED IN MPEG_SINK--";
+        std::cout << "--SAMPLE REQUEST DROPPED IN VIDEO_SINK--";
         if(this->encoder_stream && this->encoder_stream->get_transform()->is_encoder_overloading())
             std::cout << " (encoder overloading)";
         std::cout << std::endl;

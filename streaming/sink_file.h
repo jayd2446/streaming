@@ -117,7 +117,7 @@ bool sink_file<T>::on_serve(typename request_queue::request_t& request)
             this->file_output->write_sample(this->video, frame.sample);
         }
 
-        // currently it is assumed that the sink file is connected directly to the mpeg_sink
+        // currently it is assumed that the sink file is connected directly to the video_sink
         this->session->give_sample(request.stream, &(*request.sample), request.rp);
     }
 

@@ -16,7 +16,7 @@
 class sink_video;
 class stream_video;
 typedef std::shared_ptr<sink_video> sink_video_t;
-typedef std::shared_ptr<stream_video> stream_mpeg2_t;
+typedef std::shared_ptr<stream_video> stream_video_t;
 
 class sink_video final : public media_sink
 {
@@ -48,7 +48,7 @@ public:
         const media_topology_t& video_topology,
         const media_topology_t& audio_topology);
 
-    stream_mpeg2_t create_stream(media_message_generator_t&&, const stream_audio_t&);
+    stream_video_t create_stream(media_message_generator_t&&, const stream_audio_t&);
 
     bool is_started() const {return this->started;}
 };
