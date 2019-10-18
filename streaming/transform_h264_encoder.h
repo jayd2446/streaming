@@ -43,7 +43,7 @@ public:
     typedef request_queue::request_t request_t;
 
     static const UINT32 frame_width = 1920, frame_height = 1080;
-    static const UINT32 frame_rate_num = 60;
+    static const UINT32 frame_rate_num = 10;
     static const UINT32 frame_rate_den = 1;
     static const UINT32 avg_bitrate = 10000/*4500*/ * 1000;
     // 0: low quality, 100: high quality

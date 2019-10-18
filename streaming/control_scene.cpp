@@ -157,8 +157,8 @@ control_displaycapture* control_scene::add_displaycapture(const std::wstring& na
 
     // trigger event
     if(ptr)
-        this->event_provider.for_each([ptr](gui_event_handler* e)
-            { e->on_control_added(ptr, false); });
+        this->event_provider.for_each([ptr, this](gui_event_handler* e)
+            { e->on_control_added(ptr, false, this); });
 
     return ptr;
 }
@@ -181,8 +181,8 @@ control_wasapi* control_scene::add_wasapi(const std::wstring& name, bool add_fro
 
     // trigger event
     if(ptr)
-        this->event_provider.for_each([ptr](gui_event_handler* e)
-            { e->on_control_added(ptr, false); });
+        this->event_provider.for_each([ptr, this](gui_event_handler* e)
+            { e->on_control_added(ptr, false, this); });
 
     return ptr;
 }
@@ -205,8 +205,8 @@ control_vidcap* control_scene::add_vidcap(const std::wstring& name, bool add_fro
 
     // trigger event
     if(ptr)
-        this->event_provider.for_each([ptr](gui_event_handler* e)
-            { e->on_control_added(ptr, false); });
+        this->event_provider.for_each([ptr, this](gui_event_handler* e)
+            { e->on_control_added(ptr, false, this); });
 
     return ptr;
 }
@@ -229,8 +229,8 @@ control_scene* control_scene::add_scene(const std::wstring& name, bool add_front
 
     // trigger event
     if(ptr)
-        this->event_provider.for_each([ptr](gui_event_handler* e)
-            { e->on_control_added(ptr, false); });
+        this->event_provider.for_each([ptr, this](gui_event_handler* e)
+            { e->on_control_added(ptr, false, this); });
 
     return ptr;
 }
@@ -247,8 +247,8 @@ void control_scene::remove_control(bool is_video_control, controls_t::const_iter
     this->pipeline.set_selected_control(nullptr, control_pipeline::CLEAR);
 
     // trigger event
-    this->event_provider.for_each([control_class](gui_event_handler* e)
-        { e->on_control_added(control_class.get(), true); });
+    this->event_provider.for_each([control_class, this](gui_event_handler* e)
+        { e->on_control_added(control_class.get(), true, this); });
 }
 
 void control_scene::reorder_controls(controls_t::const_iterator src,

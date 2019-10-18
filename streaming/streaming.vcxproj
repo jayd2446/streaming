@@ -476,7 +476,7 @@
     <ClCompile Include="media_topology.cpp" />
     <ClCompile Include="output_file.cpp" />
     <ClCompile Include="sink_audio.cpp" />
-    <ClCompile Include="sink_mpeg2.cpp" />
+    <ClCompile Include="sink_video.cpp" />
     <ClCompile Include="sink_preview2.cpp" />
     <ClCompile Include="source_displaycapture.cpp" />
     <ClCompile Include="source_vidcap.cpp" />
@@ -536,7 +536,7 @@
     <ClInclude Include="resource.h" />
     <ClInclude Include="sink_audio.h" />
     <ClInclude Include="sink_file.h" />
-    <ClInclude Include="sink_mpeg2.h" />
+    <ClInclude Include="sink_video.h" />
     <ClInclude Include="sink_preview2.h" />
     <ClInclude Include="source_base.h" />
     <ClInclude Include="source_buffering.h" />

@@ -10,7 +10,7 @@
 #include "transform_color_converter.h"
 #include "transform_videomixer.h"
 #include "transform_audiomixer2.h"
-#include "sink_mpeg2.h"
+#include "sink_video.h"
 #include "sink_audio.h"
 #include "sink_file.h"
 #include "source_buffering.h"
@@ -52,7 +52,7 @@ private:
     transform_aac_encoder_t aac_encoder_transform;
     transform_audiomixer2_t audiomixer_transform;
     sink_mp4_t mp4_sink;
-    sink_mpeg2_t mpeg_sink;
+    sink_video_t mpeg_sink;
     sink_audio_t audio_sink;
     source_buffering_video_t video_buffering_source;
     source_buffering_audio_t audio_buffering_source;

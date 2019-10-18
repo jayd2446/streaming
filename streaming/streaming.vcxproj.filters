@@ -48,9 +48,6 @@
     <ClCompile Include="sink_audio.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sink_mpeg2.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="gui_newdlg.cpp">
       <Filter>gui</Filter>
     </ClCompile>
@@ -135,6 +132,9 @@
     <ClCompile Include="control_preview.cpp">
       <Filter>control</Filter>
     </ClCompile>
+    <ClCompile Include="sink_video.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -180,9 +180,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="sink_audio.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="sink_mpeg2.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="assert.h">
@@ -292,6 +289,9 @@
     </ClInclude>
     <ClInclude Include="control_preview.h">
       <Filter>control</Filter>
+    </ClInclude>
+    <ClInclude Include="sink_video.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

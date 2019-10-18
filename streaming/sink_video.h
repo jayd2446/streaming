@@ -13,17 +13,17 @@
 #include <chrono>
 #include <atomic>
 
-class sink_mpeg2;
-class stream_mpeg2;
-typedef std::shared_ptr<sink_mpeg2> sink_mpeg2_t;
-typedef std::shared_ptr<stream_mpeg2> stream_mpeg2_t;
+class sink_video;
+class stream_video;
+typedef std::shared_ptr<sink_video> sink_video_t;
+typedef std::shared_ptr<stream_video> stream_mpeg2_t;
 
-class sink_mpeg2 : public media_sink
+class sink_video final : public media_sink
 {
-    friend class stream_mpeg2;
+    friend class stream_video;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    typedef async_callback<sink_mpeg2> async_callback_t;
+    typedef async_callback<sink_video> async_callback_t;
 private:
     std::recursive_mutex topology_switch_mutex;
     bool started;
@@ -31,13 +31,15 @@ private:
     media_session_t audio_session;
     media_topology_t pending_audio_topology;
 public:
-    sink_mpeg2(const media_session_t& session, const media_session_t& audio_session);
-    ~sink_mpeg2();
+    sink_video(const media_session_t& session, const media_session_t& audio_session);
+    ~sink_video();
 
     // TODO: initialize fps
     void initialize();
 
-    // these functions make sure that the both topologies are switched at the same time
+    time_unit get_audio_pull_periodicity() const;
+
+    // these functions make sure that both topologies are switched at the same time
     void switch_topologies(
         const media_topology_t& video_topology,
         const media_topology_t& audio_topology);
@@ -51,14 +53,12 @@ public:
     bool is_started() const {return this->started;}
 };
 
-class stream_mpeg2 : public media_stream_message_listener, public media_clock_sink
+class stream_video final : public media_stream_message_listener, public media_clock_sink
 {
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
-    /*struct empty {};
-    typedef request_queue<empty> request_queue;*/
 private:
-    sink_mpeg2_t sink;
+    sink_video_t sink;
     bool requesting;
     bool discontinuity;
 
@@ -66,13 +66,14 @@ private:
     bool stopping;
     time_unit stop_point;
 
+    time_unit video_next_due_time;
+
     stream_audio_t audio_sink_stream;
 
-    // TODO: this probably should be moved to sink_mpeg, so that topology switching doesn't
+    // TODO: this probably should be moved to sink_video, so that topology switching doesn't
     // reset the request limit
     std::atomic_int requests;
     int max_requests;
-    /*request_queue requests_queue;*/
 
     // for debug
     int unavailable;
@@ -92,8 +93,8 @@ private:
 public:
     stream_h264_encoder_t encoder_stream;
 
-    stream_mpeg2(const sink_mpeg2_t& sink, const stream_audio_t&);
-    ~stream_mpeg2();
+    stream_video(const sink_video_t& sink, const stream_audio_t&);
+    ~stream_video();
 
     // media_clock_sink
     bool get_clock(media_clock_t&);

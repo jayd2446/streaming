@@ -18,7 +18,7 @@ class stream_videomixer;
 typedef std::shared_ptr<stream_videomixer> stream_videomixer_t;
 
 // controls how the stream should process the input sample
-class stream_videomixer_controller
+class stream_videomixer_controller final
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
@@ -40,6 +40,7 @@ public:
 
 typedef std::shared_ptr<stream_videomixer_controller> stream_videomixer_controller_t;
 
+// TODO: media_sample_video_frame should have a virtual destructor
 class media_sample_video_mixer_frame : public media_sample_video_frame
 {
 public:
@@ -54,6 +55,7 @@ typedef buffer_pooled<media_sample_video_mixer_frames> media_sample_video_mixer_
 typedef std::shared_ptr<media_sample_video_mixer_frames_pooled> 
 media_sample_video_mixer_frames_pooled_t;
 
+// TODO: media_component_frame_args should have a virtual destructor
 class media_component_videomixer_args : public media_component_frame_args
 {
 public:
@@ -69,7 +71,7 @@ typedef transform_mixer<media_component_videomixer_args_t, stream_videomixer_con
 typedef stream_mixer<transform_videomixer_base> stream_videomixer_base;
 typedef std::shared_ptr<stream_videomixer_base> stream_videomixer_base_t;
 
-class transform_videomixer : public transform_videomixer_base
+class transform_videomixer final : public transform_videomixer_base
 {
     friend class stream_videomixer;
 private:
@@ -113,7 +115,7 @@ public:
 
 typedef std::shared_ptr<transform_videomixer> transform_videomixer_t;
 
-class stream_videomixer : public stream_videomixer_base
+class stream_videomixer final : public stream_videomixer_base
 {
 private:
     typedef transform_videomixer::device_context_resources_t device_context_resources_t;

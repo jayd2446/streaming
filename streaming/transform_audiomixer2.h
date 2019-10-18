@@ -58,7 +58,7 @@ typedef transform_mixer<media_component_audiomixer_args_t, stream_audiomixer2_co
 typedef stream_mixer<transform_audiomixer2_base> stream_audiomixer2_base;
 typedef std::shared_ptr<stream_audiomixer2_base> stream_audiomixer2_base_t;
 
-class transform_audiomixer2 : public transform_audiomixer2_base
+class transform_audiomixer2 final : public transform_audiomixer2_base
 {
     friend class stream_audiomixer2;
 public:
@@ -85,7 +85,7 @@ public:
 
 typedef std::shared_ptr<transform_audiomixer2> transform_audiomixer2_t;
 
-class stream_audiomixer2 : public stream_audiomixer2_base
+class stream_audiomixer2 final : public stream_audiomixer2_base
 {
 private:
     transform_audiomixer2_t transform;

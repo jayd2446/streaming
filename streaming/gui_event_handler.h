@@ -20,11 +20,9 @@ struct gui_event_handler
     virtual void on_scene_activate(control_scene*, bool /*deactivated*/) {}
     // control_scene triggers this;
     // added in this context means adding a control to a scene
-    // TODO: add the control scene as an argument
-    virtual void on_control_added(control_class*, bool /*removed*/) {}
+    virtual void on_control_added(control_class*, bool /*removed*/, control_scene* /*scene*/) {}
     // control_pipeline triggers this
-    // TODO: cleared arg is redundant
-    virtual void on_control_selection_changed(bool /*cleared*/) {}
+    virtual void on_control_selection_changed() {}
 };
 
 class gui_event_provider final

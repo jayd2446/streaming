@@ -31,7 +31,7 @@ public:
 
 class stream_audio : public media_stream_message_listener
 {
-    friend class stream_mpeg2;
+    friend class stream_video;
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:

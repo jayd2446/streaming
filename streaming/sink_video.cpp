@@ -1,4 +1,5 @@
-#include "sink_mpeg2.h"
+#include "sink_video.h"
+#include "transform_aac_encoder.h"
 #include <iostream>
 #include <Mferror.h>
 
@@ -10,22 +11,30 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-sink_mpeg2::sink_mpeg2(const media_session_t& session, const media_session_t& audio_session) : 
+#define AUDIO_BUNDLING_THRESHOLD (SECOND_IN_TIME_UNIT / 50) // 20ms
+
+sink_video::sink_video(const media_session_t& session, const media_session_t& audio_session) : 
     media_sink(session),
     audio_session(audio_session),
     started(false)
 {
 }
 
-sink_mpeg2::~sink_mpeg2()
+sink_video::~sink_video()
 {
 }
 
-void sink_mpeg2::initialize()
+void sink_video::initialize()
 {
 }
 
-void sink_mpeg2::switch_topologies(
+time_unit sink_video::get_audio_pull_periodicity() const
+{
+    // audio pull periodicity is the length of one aac encoder packet
+    return convert_to_time_unit(1024, transform_aac_encoder::sample_rate, 1);
+}
+
+void sink_video::switch_topologies(
     const media_topology_t& video_topology,
     const media_topology_t& audio_topology)
 {
@@ -37,7 +46,7 @@ void sink_mpeg2::switch_topologies(
     this->pending_audio_topology = audio_topology;
 }
 
-void sink_mpeg2::start_topologies(
+void sink_video::start_topologies(
     time_unit t,
     const media_topology_t& video_topology,
     const media_topology_t& audio_topology)
@@ -52,11 +61,11 @@ void sink_mpeg2::start_topologies(
     this->started = true;
 }
 
-stream_mpeg2_t sink_mpeg2::create_stream(
+stream_mpeg2_t sink_video::create_stream(
     media_message_generator_t&& message_generator, const stream_audio_t& audio_stream)
 {
     stream_mpeg2_t stream(
-        new stream_mpeg2(this->shared_from_this<sink_mpeg2>(), audio_stream));
+        new stream_video(this->shared_from_this<sink_video>(), audio_stream));
     stream->register_listener(message_generator);
 
     return stream;
@@ -70,46 +79,46 @@ stream_mpeg2_t sink_mpeg2::create_stream(
 
 //extern DWORD capture_work_queue_id;
 
-stream_mpeg2::stream_mpeg2(
-    const sink_mpeg2_t& sink, const stream_audio_t& audio_sink_stream) : 
-    sink(sink), unavailable(0), /*running(false),*/
+stream_video::stream_video(
+    const sink_video_t& sink, const stream_audio_t& audio_sink_stream) : 
+    sink(sink), unavailable(0),
     media_stream_message_listener(sink.get()),
     audio_sink_stream(audio_sink_stream),
     stop_point(std::numeric_limits<time_unit>::min()),
     stopping(false),
     discontinuity(false),
     requesting(false),
-    requests(0), max_requests(DEFAULT_MAX_REQUESTS)
+    requests(0), max_requests(DEFAULT_MAX_REQUESTS),
+    video_next_due_time(-1)
 {
 }
 
-stream_mpeg2::~stream_mpeg2()
+stream_video::~stream_video()
 {
 }
 
-void stream_mpeg2::on_component_start(time_unit)
+void stream_video::on_component_start(time_unit)
 {
 }
 
-void stream_mpeg2::on_component_stop(time_unit)
+void stream_video::on_component_stop(time_unit)
 {
 }
 
-void stream_mpeg2::on_stream_start(time_unit t)
+void stream_video::on_stream_start(time_unit t)
 {
     // stream mpeg2 shouldn't run in higher priority because it will oversaturate the
     // lower priority work queue
     /*this->set_schedule_cb_work_queue(capture_work_queue_id);*/
 
     this->requesting = true;
-
+    this->video_next_due_time = t;
     this->topology = this->sink->session->get_current_topology();
 
-    /*this->running = true;*/
     this->schedule_new(t);
 }
 
-void stream_mpeg2::on_stream_stop(time_unit t)
+void stream_video::on_stream_stop(time_unit t)
 {
     /*this->requesting = false;*/
     this->stopping = true;
@@ -124,10 +133,13 @@ void stream_mpeg2::on_stream_stop(time_unit t)
     this->sink->pending_audio_topology = NULL;
 }
 
-void stream_mpeg2::scheduled_callback(time_unit due_time)
+void stream_video::scheduled_callback(time_unit due_time)
 {
     // this lock makes sure that the video and audio topology are switched at the same time
     scoped_lock lock(this->sink->topology_switch_mutex);
+
+    // video might not be pulled as often as audio
+    const bool is_video_request = (due_time == this->video_next_due_time);
 
     request_packet incomplete_rp;
     if(!this->stopping)
@@ -145,33 +157,11 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
 
     // the call order must be this way so that consecutive packet numbers
     // match consecutive request times
-    if(this->requesting)
+    if(this->requesting && is_video_request)
         this->dispatch_request(incomplete_rp);
-    // TODO: performance might be increased if audio is processed in batches of
-    // aac encoder frame granularity;
-    // it might increase the performance of the algorithms as well as it decreases
-    // the overhead of the pipeline;
-    // TODO: restore the audio pipeline periodicity
+
     if(this->audio_sink_stream->requesting)
         this->audio_sink_stream->dispatch_request(incomplete_rp);
-    /*if(this->processing)
-        this->dispatch_process();
-    if(this->audio_sink_stream->processing)
-        this->audio_sink_stream->dispatch_process();*/
-
-    /*if(this->requesting)
-    {
-        using namespace std::chrono;
-        time_unit_t t2(this->last_due_time), t(due_time);
-        const sink_audio::periodicity_t periodicity =
-            duration_cast<sink_audio::periodicity_t>(t - t2);
-
-        if(periodicity.count())
-        {
-            this->last_due_time = due_time;
-            this->audio_sink_stream->request_sample(incomplete_rp);
-        }
-    }*/
 
     // schedule new until both pipelines have stopped requesting
     if(this->requesting || this->audio_sink_stream->requesting)
@@ -189,34 +179,61 @@ void stream_mpeg2::scheduled_callback(time_unit due_time)
         this->audio_sink_stream->topology = NULL;
 }
 
-bool stream_mpeg2::get_clock(media_clock_t& clock)
+bool stream_video::get_clock(media_clock_t& clock)
 {
     /*assert_(this->topology);*/
     clock = this->sink->session->get_clock();
     return !!clock;
 }
 
-void stream_mpeg2::schedule_new(time_unit due_time)
+void stream_video::schedule_new(time_unit due_time)
 {
     media_clock_t t;
     const bool ret = this->get_clock(t);
-    assert_(ret);
+    assert_(ret); ret;
 
-    time_unit scheduled_time = this->get_next_due_time(due_time);
-    while(!this->schedule_new_callback<stream_mpeg2>(scheduled_time))
+    // update video due time
+    if(due_time == this->video_next_due_time)
+        this->video_next_due_time = this->get_next_due_time(due_time);
+
+    for(;;)
     {
-        this->discontinuity = true;
+        time_unit scheduled_time;
 
-        const time_unit current_time = t->get_current_time();
-        scheduled_time = current_time;
+        // try bundling the audio due time to video due time
+        if((this->video_next_due_time - due_time) < AUDIO_BUNDLING_THRESHOLD)
+        {
+            assert_(this->video_next_due_time > due_time);
+            scheduled_time = this->video_next_due_time;
+        }
+        else if(std::abs(
+            due_time + this->sink->get_audio_pull_periodicity() - this->video_next_due_time) <
+            AUDIO_BUNDLING_THRESHOLD)
+            scheduled_time = this->video_next_due_time;
+        else
+            // bundling not possible
+            scheduled_time = due_time + this->sink->get_audio_pull_periodicity();
 
-        // at least one frame request was late
-        std::cout << "--------------------------------------------------------------------------------------------" << std::endl;
-        scheduled_time = this->get_next_due_time(scheduled_time);
+        if(!this->schedule_new_callback<stream_video>(scheduled_time))
+        {
+            // TODO: discontinuity flag must be separate for audio and video
+            this->discontinuity = true;
+
+            // at least one frame request was late
+            std::cout << "---------------------------------------------------------------"
+                "-----------------------------" << std::endl;
+
+            const time_unit current_time = t->get_current_time();
+            this->video_next_due_time = this->get_next_due_time(current_time);
+            due_time = current_time;
+        }
+        else
+            // scheduled successfully
+            break;
     }
 }
 
-void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no_drop)
+void stream_video::dispatch_request(const request_packet& incomplete_rp, bool no_drop)
 {
     assert_(this->unavailable <= 240);
 
@@ -247,7 +264,7 @@ void stream_mpeg2::dispatch_request(const request_packet& incomplete_rp, bool no
     }
 }
 
-media_stream::result_t stream_mpeg2::request_sample(const request_packet& rp, const media_stream*)
+media_stream::result_t stream_video::request_sample(const request_packet& rp, const media_stream*)
 {
     if(rp.flags & FLAG_LAST_PACKET)
     {
@@ -262,7 +279,7 @@ media_stream::result_t stream_mpeg2::request_sample(const request_packet& rp, co
     return OK;
 }
 
-media_stream::result_t stream_mpeg2::process_sample(
+media_stream::result_t stream_video::process_sample(
     const media_component_args*, const request_packet&, const media_stream*)
 {
     // TODO: request count should be dropped only after the request packet has been destroyed

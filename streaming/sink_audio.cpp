@@ -69,30 +69,6 @@ void stream_audio::dispatch_request(const request_packet& incomplete_rp, bool no
 
         std::cout << "--SAMPLE REQUEST DROPPED IN AUDIO_SINK--" << std::endl;
     }
-
-    /*assert_(this->unavailable <= 240);
-    assert_(this->running);
-
-    const int j = no_drop ? 0 : 1;
-
-    scoped_lock lock(this->worker_streams_mutex);
-    for(auto it = this->worker_streams.begin(); it != (this->worker_streams.end() - j); it++)
-    {
-        if((*it)->is_available())
-        {
-            this->unavailable = 0;
-
-            result_t res = (*it)->request_sample(rp, this);
-            if(res == FATAL_ERROR)
-                std::cout << "couldn't dispatch request on stream audio" << std::endl;
-
-            return;
-        }
-    }
-
-    assert_(!no_drop);
-    std::cout << "--SAMPLE REQUEST DROPPED IN AUDIO_SINK--" << std::endl;
-    this->unavailable++;*/
 }
 
 media_stream::result_t stream_audio::request_sample(const request_packet& rp, const media_stream*)

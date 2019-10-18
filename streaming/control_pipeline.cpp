@@ -154,7 +154,7 @@ void control_pipeline::activate_components()
     {
         this->time_source.reset(new media_clock);
         this->time_source->set_current_time(0);
-        // time source must be started early because the audio processor might use the time source
+        // time source must be started early because components might use the time source
         // before the topology is started
         this->time_source->start();
     }
@@ -293,7 +293,7 @@ void control_pipeline::activate_components()
     // create mpeg sink(the main/real pull sink)
     if(!this->mpeg_sink)
     {
-        sink_mpeg2_t mpeg_sink(new sink_mpeg2(this->session, this->audio_session));
+        sink_video_t mpeg_sink(new sink_video(this->session, this->audio_session));
         mpeg_sink->initialize();
 
         this->mpeg_sink = mpeg_sink;
@@ -468,8 +468,7 @@ void control_pipeline::set_selected_control(control_class* control, selection_ty
         this->selected_controls.push_back(control);
 
     // trigger
-    this->event_provider.for_each(
-        [type](gui_event_handler* e) { e->on_control_selection_changed(type == CLEAR); });
+    this->event_provider.for_each([](gui_event_handler* e) { e->on_control_selection_changed(); });
 }
 
 void control_pipeline::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)

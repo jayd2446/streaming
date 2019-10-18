@@ -36,7 +36,7 @@ void gui_scenedlg::on_scene_activate(control_scene* activated_scene, bool deacti
         this->wnd_scenelist.SetCurSel(i);
 }
 
-void gui_scenedlg::on_control_added(control_class* new_control, bool removed)
+void gui_scenedlg::on_control_added(control_class* new_control, bool removed, control_scene* /*scene*/)
 {
     control_scene* new_scene = dynamic_cast<control_scene*>(new_control);
     if(!removed && new_scene)
@@ -203,7 +203,7 @@ void gui_sourcedlg::on_activate(control_class* activated_control, bool deactivat
         this->set_source_tree(NULL);
 }
 
-void gui_sourcedlg::on_control_added(control_class* control, bool removed)
+void gui_sourcedlg::on_control_added(control_class* control, bool removed, control_scene* /*scene*/)
 {
     if(!dynamic_cast<control_scene*>(control))
     {
@@ -215,9 +215,10 @@ void gui_sourcedlg::on_control_added(control_class* control, bool removed)
     }
 }
 
-void gui_sourcedlg::on_control_selection_changed(bool cleared)
+void gui_sourcedlg::on_control_selection_changed()
 {
-    this->set_selected_item(cleared ? NULL : this->ctrl_pipeline->get_selected_controls()[0]);
+    this->set_selected_item(this->ctrl_pipeline->get_selected_controls().empty() ? nullptr : 
+        this->ctrl_pipeline->get_selected_controls()[0]);
 }
 
 void gui_sourcedlg::set_source_tree(const control_scene* scene)

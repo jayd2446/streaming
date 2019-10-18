@@ -5,7 +5,7 @@
 #include "control_pipeline.h"
 #include <string>
 
-class gui_scenedlg :
+class gui_scenedlg final :
     public gui_event_handler,
     public CDialogImpl<gui_scenedlg>,
     public CDialogResize<gui_scenedlg>
@@ -18,7 +18,7 @@ private:
 
     // gui_event_handler
     void on_scene_activate(control_scene* activated_scene, bool deactivated) override;
-    void on_control_added(control_class*, bool removed) override;
+    void on_control_added(control_class*, bool removed, control_scene* scene) override;
 public:
     enum {IDD = IDD_SCENEDLG};
 
@@ -48,7 +48,7 @@ public:
     LRESULT OnLbnSelchangeScenelist(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };
 
-class gui_sourcedlg :
+class gui_sourcedlg final :
     public gui_event_handler,
     public CDialogImpl<gui_sourcedlg>,
     public CDialogResize<gui_sourcedlg>
@@ -66,8 +66,8 @@ private:
     // gui_event_handler
     void on_scene_activate(control_scene* activated_scene, bool deactivated) override;
     void on_activate(control_class*, bool deactivated) override;
-    void on_control_added(control_class*, bool removed) override;
-    void on_control_selection_changed(bool cleared) override;
+    void on_control_added(control_class*, bool removed, control_scene* scene) override;
+    void on_control_selection_changed() override;
 
     void set_selected_item(CTreeItem item);
     void set_source_tree(const control_scene*);
