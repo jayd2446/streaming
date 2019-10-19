@@ -78,6 +78,11 @@ out:
         this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
 }
 
+void control_preview::get_canvas_size(UINT32& width, UINT32& height) const
+{
+    this->pipeline.videomixer_transform->get_canvas_size(width, height);
+}
+
 void control_preview::initialize_window(HWND parent)
 {
     assert_(this->wnd_preview.m_hWnd == NULL);

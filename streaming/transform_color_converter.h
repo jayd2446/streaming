@@ -9,8 +9,9 @@
 #include <mutex>
 #include <stack>
 
-// color space converter;
-// also provides a pool for samples that are submitted to the encoder
+// color space converter
+
+// TODO: allow upscaling and downscaling of the source texture
 
 class transform_color_converter : public media_component
 {

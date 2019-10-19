@@ -46,7 +46,6 @@ private:
     media_clock_t time_source;
     media_topology_t video_topology, audio_topology;
     // these components are present in every scene
-    transform_videomixer_t videomixer_transform;
     transform_h264_encoder_t h264_encoder_transform;
     transform_color_converter_t color_converter_transform;
     transform_aac_encoder_t aac_encoder_transform;
@@ -56,6 +55,10 @@ private:
     sink_audio_t audio_sink;
     source_buffering_video_t video_buffering_source;
     source_buffering_audio_t audio_buffering_source;
+
+    frame_unit configured_fps_num, configured_fps_den;
+    // TODO:
+    /*frame_unit configured_sample_rate;*/
 
     // active controls must not have duplicate elements
     control_set_t controls;
@@ -80,6 +83,8 @@ public:
     CComPtr<ID2D1Device> d2d1dev;
     context_mutex_t context_mutex;
     media_session_t session, audio_session;
+    // TODO: this should be in control_preview
+    transform_videomixer_t videomixer_transform;
     // TODO: set root_scene and preview_control to private;
     // TODO: make sure that these controls are always available
     std::shared_ptr<control_scene> root_scene;
@@ -99,6 +104,10 @@ public:
     const std::vector<control_class*>& get_selected_controls() const { return this->selected_controls; }
 
     bool is_recording() const {return this->recording;}
+
+    void get_session_frame_rate(frame_unit& num, frame_unit& den) const;
+
+    // void apply_new_settings
 
     //void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
     //// TODO: this should return control preview instead of the component

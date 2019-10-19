@@ -1,7 +1,7 @@
 #pragma once
-#include "transform_h264_encoder.h"
 #include "transform_videomixer.h"
 #include <queue>
+#include <utility>
 
 // provides common functionality for video sources, such as keeping sample buffering within
 // the limits and duplicating skipped frames
@@ -20,6 +20,7 @@ private:
     std::queue<media_sample_video_mixer_frame> captured_frames;
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     media_sample_video_mixer_frame last_served_frame;
+    std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
 
     bool fully_initialized, broken;
 
@@ -31,7 +32,7 @@ public:
     ~video_source_helper();
 
     // this should be called before any other functions
-    void initialize(frame_unit start);
+    void initialize(frame_unit start, frame_unit frame_rate_num, frame_unit frame_rate_den);
 
     bool get_samples_end(time_unit request_time, frame_unit& end) const;
     // frame duration must be 1

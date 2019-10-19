@@ -34,7 +34,6 @@ public:
 private:
     std::mutex active_topology_mutex;
     std::queue<media_topology_t> active_topology;
-    std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
     std::atomic<bool> broken_flag;
 
     // set_broken must be used instead
@@ -43,8 +42,7 @@ protected:
     control_class_t ctrl_pipeline;
 
     // derived class must call this
-    void initialize(const control_class_t& ctrl_pipeline,
-        frame_unit frame_rate_num, frame_unit frame_rate_den);
+    void initialize(const control_class_t& ctrl_pipeline);
 
     virtual stream_source_base_t create_derived_stream() = 0;
     // sets the end of samples to 'end',
@@ -140,12 +138,9 @@ void source_base<T>::set_broken()
 }
 
 template<typename T>
-void source_base<T>::initialize(const control_class_t& ctrl_pipeline,
-    frame_unit frame_rate_num, frame_unit frame_rate_den)
+void source_base<T>::initialize(const control_class_t& ctrl_pipeline)
 {
     this->ctrl_pipeline = ctrl_pipeline;
-    this->framerate.first = frame_rate_num;
-    this->framerate.second = frame_rate_den;
 }
 
 template<typename T>
@@ -181,8 +176,8 @@ bool stream_source_base<T>::get_samples_end(time_unit request_time, frame_unit& 
     {
         // source_base serves frame skips when the source is broken
         end = convert_to_frame_unit(request_time,
-            this->source->framerate.first,
-            this->source->framerate.second);
+            this->source->session->frame_rate_num,
+            this->source->session->frame_rate_den);
         return true;
     }
     else
@@ -219,7 +214,8 @@ bool stream_source_base<T>::is_drainable_or_drained(time_unit t)
         {
             frame_unit samples_end;
             const frame_unit request_end = convert_to_frame_unit(t,
-                this->source->framerate.first, this->source->framerate.second);
+                this->source->session->frame_rate_num,
+                this->source->session->frame_rate_den);
             const bool valid_end = this->get_samples_end(t, samples_end);
             // drain can be finished when the source has samples up to the drain point
             if(valid_end && (samples_end >= request_end))
@@ -251,7 +247,8 @@ bool stream_source_base<T>::on_serve(typename request_queue::request_t& request)
     {
         frame_unit samples_end;
         const frame_unit request_end = convert_to_frame_unit(request.rp.request_time,
-            this->source->framerate.first, this->source->framerate.second);
+            this->source->session->frame_rate_num,
+            this->source->session->frame_rate_den);
         const bool valid_end = this->get_samples_end(request.rp.request_time, samples_end);
 
         /*assert_(!request.sample->drain || (request.sample->drain && valid_end));*/

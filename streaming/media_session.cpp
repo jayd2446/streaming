@@ -5,10 +5,14 @@
 #include <iostream>
 #include "assert.h"
 
-media_session::media_session(const media_clock_t& time_source) :
+media_session::media_session(const media_clock_t& time_source,
+    frame_unit frame_rate_num, frame_unit frame_rate_den) :
     time_source(time_source),
-    request_chain_lock(request_chain_mutex, std::defer_lock)
+    request_chain_lock(request_chain_mutex, std::defer_lock),
+    frame_rate_num(frame_rate_num), frame_rate_den(frame_rate_den)
 {
+    if(this->frame_rate_num <= 0 || this->frame_rate_den <= 0)
+        throw HR_EXCEPTION(E_UNEXPECTED);
 }
 
 media_topology_t media_session::get_current_topology() const

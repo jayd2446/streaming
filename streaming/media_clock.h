@@ -62,7 +62,7 @@ private:
     time_unit scheduled_time;
 
     time_unit pull_interval;
-    time_unit fps_num, fps_den;
+    frame_unit fps_num, fps_den;
     time_unit fps_den_in_time_unit;
     time_unit get_remainder(time_unit t) const;
 
@@ -85,7 +85,7 @@ public:
     media_clock_sink();
     virtual ~media_clock_sink();
 
-    void set_pull_rate(int64_t fps_num, int64_t fps_den);
+    void set_pull_rate(frame_unit fps_num, frame_unit fps_den);
     time_unit get_pull_interval() const {return this->pull_interval;}
     time_unit get_next_due_time(time_unit) const;
 

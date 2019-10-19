@@ -360,7 +360,7 @@ void source_wasapi::initialize(const control_class_t& ctrl_pipeline,
 {
     HRESULT hr = S_OK;
 
-    this->source_base::initialize(ctrl_pipeline, transform_aac_encoder::sample_rate, 1);
+    this->source_base::initialize(ctrl_pipeline);
 
     CComPtr<IMMDeviceEnumerator> enumerator;
     CComPtr<IMMDevice> device;

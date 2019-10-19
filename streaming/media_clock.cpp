@@ -156,7 +156,7 @@ void media_clock_sink::scheduled_callback(time_unit)
     assert_(false);
 }
 
-void media_clock_sink::set_pull_rate(int64_t fps_num, int64_t fps_den)
+void media_clock_sink::set_pull_rate(frame_unit fps_num, frame_unit fps_den)
 {
     this->fps_den = fps_den;
     this->fps_num = fps_num;

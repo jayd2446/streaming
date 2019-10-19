@@ -70,9 +70,6 @@ public:
         std::vector<packet_t> container;
     };
     typedef std::pair<unsigned short /*samples received*/, args_t> request_t;
-private:
-    bool initialized;
-    std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
 protected:
     // derived class must call this
     void initialize(frame_unit frame_rate_num, frame_unit frame_rate_den);
@@ -179,16 +176,8 @@ public:
 
 template<class T, class U, class V>
 transform_mixer<T, U, V>::transform_mixer(const media_session_t& session) :
-    media_component(session), initialized(false)
+    media_component(session)
 {
-}
-
-template<class T, class U, class V>
-void transform_mixer<T, U, V>::initialize(frame_unit frame_rate_num, frame_unit frame_rate_den)
-{
-    this->initialized = true;
-    this->framerate.first = frame_rate_num;
-    this->framerate.second = frame_rate_den;
 }
 
 template<class T, class U, class V>
@@ -219,7 +208,6 @@ stream_mixer<T>::stream_mixer(const transform_mixer_t& transform) :
 template<class T>
 void stream_mixer<T>::on_stream_start(time_unit t)
 {
-    assert_(this->transform->initialized);
     this->cutoff = this->convert_to_frame_unit(t);
 
     // initialize the leftover buffer
@@ -236,10 +224,9 @@ void stream_mixer<T>::on_stream_stop(time_unit t)
 template<class T>
 frame_unit stream_mixer<T>::convert_to_frame_unit(time_unit t) const
 {
-    assert_(this->transform->initialized);
-
-    return ::convert_to_frame_unit(t, 
-        this->transform->framerate.first, this->transform->framerate.second);
+    return ::convert_to_frame_unit(t,
+        this->transform->session->frame_rate_num,
+        this->transform->session->frame_rate_den);
 }
 
 template<class T>

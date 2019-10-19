@@ -15,7 +15,7 @@
 
 class media_stream;
 
-class media_session : public enable_shared_from_this
+class media_session final : public enable_shared_from_this
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
@@ -32,8 +32,10 @@ private:
     // throws if the topology doesn't include an event generator
     void switch_topology_immediate(const media_topology_t& new_topology, time_unit time_point);
 public:
-    explicit media_session(const media_clock_t&);
+    const frame_unit frame_rate_num, frame_rate_den;
 
+    media_session(const media_clock_t&, frame_unit frame_rate_num, frame_unit frame_rate_den);
+    
     // the function throws if it is called from other function than on_stream_start/on_stream_stop
     // and the component counterparts or request_sample
     // (throws if the request_chain_lock is not held)

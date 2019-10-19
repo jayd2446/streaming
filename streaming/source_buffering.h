@@ -9,7 +9,7 @@
 // forces transform_mixer to buffer samples by serving samples by a predefined latency;
 // it is used to make sure that a topology switch to sources with different latencies
 // won't cause frame drops;
-// it also stabilizes the processing interval of samples in composition and encoding stages
+// it also stabilizes the processing interval of samples in mixing and encoding stages
 
 template<class OutArgs>
 class stream_buffering;
@@ -24,7 +24,6 @@ public:
     typedef std::shared_ptr<stream_buffering> stream_buffering_t;
     typedef typename source_base<OutArgs>::stream_source_base_t stream_source_base_t;
 private:
-    std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
     time_unit latency;
 
     stream_source_base_t create_derived_stream();
@@ -34,8 +33,7 @@ private:
 public:
     explicit source_buffering(const media_session_t& session);
 
-    void initialize(const control_class_t&,
-        frame_unit frame_rate_num, frame_unit frame_rate_den, time_unit latency);
+    void initialize(const control_class_t&, time_unit latency);
 };
 
 typedef source_buffering<media_component_audiomixer_args> source_buffering_audio;
@@ -73,14 +71,9 @@ source_buffering<T>::source_buffering(const media_session_t& session) : source_b
 }
 
 template<class T>
-void source_buffering<T>::initialize(const control_class_t& ctrl_pipeline,
-    frame_unit frame_rate_num, frame_unit frame_rate_den,
-    time_unit latency)
+void source_buffering<T>::initialize(const control_class_t& ctrl_pipeline, time_unit latency)
 {
-    this->source_base<T>::initialize(ctrl_pipeline, frame_rate_num, frame_rate_den);
-
-    this->framerate.first = frame_rate_num;
-    this->framerate.second = frame_rate_den;
+    this->source_base<T>::initialize(ctrl_pipeline);
     this->latency = latency;
 }
 
@@ -95,7 +88,7 @@ bool source_buffering<T>::get_samples_end(time_unit /*request_time*/, frame_unit
 {
     media_clock_t clock = this->session->get_clock();
     end = convert_to_frame_unit(clock->get_current_time() - this->latency,
-        this->framerate.first, this->framerate.second);
+        this->session->frame_rate_num, this->session->frame_rate_den);
     return true;
 }
 

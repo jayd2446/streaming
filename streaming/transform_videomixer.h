@@ -2,7 +2,6 @@
 
 #include "transform_mixer.h"
 #include "control_class.h"
-#include "transform_h264_encoder.h"
 #include <d3d11.h>
 #include <d2d1_1.h>
 #include <dxgi1_2.h>
@@ -83,13 +82,10 @@ public:
     typedef buffer_pool<media_sample_video_frames_pooled> buffer_pool_video_frames_t;
     typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_mixer_frames_t;
     typedef buffer_pool<device_context_resources_pooled> buffer_pool;
-
-    // TODO: canvas size should probably be a float
-    static const UINT32 canvas_width = transform_h264_encoder::frame_width;
-    static const UINT32 canvas_height = transform_h264_encoder::frame_height;
 private:
     control_class_t ctrl_pipeline;
     context_mutex_t context_mutex;
+    UINT32 canvas_width, canvas_height;
 
     std::shared_ptr<buffer_pool> texture_pool;
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
@@ -105,8 +101,12 @@ public:
     transform_videomixer(const media_session_t& session, context_mutex_t context_mutex);
     ~transform_videomixer();
 
+    void get_canvas_size(UINT32& width, UINT32& height) const
+    { width = this->canvas_width; height = this->canvas_height; }
+
     void initialize(
         const control_class_t&,
+        UINT32 canvas_width, UINT32 canvas_height,
         const CComPtr<ID2D1Factory1>&,
         const CComPtr<ID2D1Device>&,
         const CComPtr<ID3D11Device>&,

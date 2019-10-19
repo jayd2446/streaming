@@ -32,12 +32,14 @@ void video_source_helper::add_padding_frames(
     }
 }
 
-void video_source_helper::initialize(frame_unit start)
+void video_source_helper::initialize(frame_unit start,
+    frame_unit frame_rate_num, frame_unit frame_rate_den)
 {
     media_sample_video_mixer_frame first_frame;
     first_frame.pos = start - 1;
     first_frame.dur = 1;
     this->last_served_frame = first_frame;
+    this->framerate = {frame_rate_num, frame_rate_den};
 }
 
 bool video_source_helper::get_samples_end(time_unit request_time, frame_unit& end) const
@@ -45,8 +47,8 @@ bool video_source_helper::get_samples_end(time_unit request_time, frame_unit& en
     if(this->broken || !this->fully_initialized)
     {
         end = convert_to_frame_unit(request_time,
-            transform_h264_encoder::frame_rate_num,
-            transform_h264_encoder::frame_rate_den);
+            this->framerate.first,
+            this->framerate.second);
         return true;
     }
     else if(this->captured_frames.empty())

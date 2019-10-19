@@ -329,9 +329,11 @@ D2D1_POINT_2F control_video::get_clamping_vector(const control_preview& preview_
     if(clamped_sizing_point > 7)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
+    UINT32 canvas_width, canvas_height;
+    preview_control.get_canvas_size(canvas_width, canvas_height);
+
     using namespace D2D1;
-    const D2D1_RECT_F clamp_edges = RectF(0.f, 0.f, (FLOAT)transform_videomixer::canvas_width,
-        (FLOAT)transform_videomixer::canvas_height);
+    const D2D1_RECT_F clamp_edges = RectF(0.f, 0.f, (FLOAT)canvas_width, (FLOAT)canvas_height);
     const D2D1_POINT_2F clamp_boundary = this->client_to_canvas(preview_control,
         this->clamp_boundary, this->clamp_boundary, true);
     D2D1_POINT_2F clamping_vector = Point2F();
@@ -393,11 +395,14 @@ D2D1_POINT_2F control_video::get_clamping_vector(const control_preview& preview_
 D2D1_POINT_2F control_video::client_to_canvas(
     const control_preview& preview_control, LONG x, LONG y, bool scale_only) const
 {
+    UINT32 canvas_width, canvas_height;
+    preview_control.get_canvas_size(canvas_width, canvas_height);
+
     using namespace D2D1;
     const D2D1_RECT_F&& preview_rect = preview_control.get_preview_rect();
-    const FLOAT canvas_client_ratio_x = (FLOAT)transform_videomixer::canvas_width /
+    const FLOAT canvas_client_ratio_x = (FLOAT)canvas_width / 
         (preview_rect.right - preview_rect.left);
-    const FLOAT canvas_client_ratio_y = (FLOAT)transform_videomixer::canvas_height /
+    const FLOAT canvas_client_ratio_y = (FLOAT)canvas_height /
         (preview_rect.bottom - preview_rect.top);
     const Matrix3x2F client_to_canvas = Matrix3x2F::Translation(
         scale_only ? 0 : -preview_rect.left, scale_only ? 0 : -preview_rect.top) * 
@@ -417,12 +422,13 @@ void control_video::get_sizing_points(const control_preview* preview_control,
 
     if(preview_control)
     {
+        UINT32 canvas_width, canvas_height;
+        preview_control->get_canvas_size(canvas_width, canvas_height);
+
         const D2D1_RECT_F&& preview_rect = preview_control->get_preview_rect();
         canvas_to_client = Matrix3x2F::Scale(
-            (preview_rect.right - preview_rect.left) /
-            (FLOAT)transform_videomixer::canvas_width,
-            (preview_rect.right - preview_rect.left) /
-            (FLOAT)transform_videomixer::canvas_width) *
+            (preview_rect.right - preview_rect.left) / (FLOAT)canvas_width,
+            (preview_rect.right - preview_rect.left) / (FLOAT)canvas_width) *
             Matrix3x2F::Translation(preview_rect.left, preview_rect.top);
     }
 

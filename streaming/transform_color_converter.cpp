@@ -44,12 +44,12 @@ HRESULT transform_color_converter::initialize(
     // check the supported capabilities of the video processor
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc;
     desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
-    desc.InputFrameRate.Numerator = transform_h264_encoder::frame_rate_num;
-    desc.InputFrameRate.Denominator = transform_h264_encoder::frame_rate_den;
+    desc.InputFrameRate.Numerator = (UINT)this->session->frame_rate_num;
+    desc.InputFrameRate.Denominator = (UINT)this->session->frame_rate_den;
     desc.InputWidth = transform_h264_encoder::frame_width;
     desc.InputHeight = transform_h264_encoder::frame_height;
-    desc.OutputFrameRate.Numerator = transform_h264_encoder::frame_rate_num;
-    desc.OutputFrameRate.Denominator = transform_h264_encoder::frame_rate_den;
+    desc.OutputFrameRate.Numerator = (UINT)this->session->frame_rate_num;
+    desc.OutputFrameRate.Denominator = (UINT)this->session->frame_rate_den;
     desc.OutputWidth = transform_h264_encoder::frame_width;
     desc.OutputHeight = transform_h264_encoder::frame_height;
     desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;

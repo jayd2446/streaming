@@ -36,7 +36,6 @@ transform_audiomixer2::~transform_audiomixer2()
 
 void transform_audiomixer2::initialize()
 {
-    transform_audiomixer2_base::initialize(transform_aac_encoder::sample_rate, 1);
 }
 
 transform_audiomixer2::stream_mixer_t transform_audiomixer2::create_derived_stream()

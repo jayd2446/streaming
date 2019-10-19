@@ -45,19 +45,19 @@ transform_videomixer::~transform_videomixer()
 
 void transform_videomixer::initialize(
     const control_class_t& ctrl_pipeline,
+    UINT32 canvas_width, UINT32 canvas_height,
     const CComPtr<ID2D1Factory1>& d2d1factory,
     const CComPtr<ID2D1Device>& d2d1dev,
     const CComPtr<ID3D11Device>& d3d11dev,
     const CComPtr<ID3D11DeviceContext>& devctx)
 {
-    transform_videomixer_base::initialize(transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
-
     this->ctrl_pipeline = ctrl_pipeline;
     this->d3d11dev = d3d11dev;
     this->d3d11devctx = devctx;
     this->d2d1factory = d2d1factory;
     this->d2d1dev = d2d1dev;
+    this->canvas_width = canvas_width;
+    this->canvas_height = canvas_height;
 }
 
 transform_videomixer::stream_mixer_t transform_videomixer::create_derived_stream()
@@ -81,8 +81,8 @@ stream_videomixer::stream_videomixer(const transform_videomixer_t& transform) :
 void stream_videomixer::initialize_texture(const media_buffer_texture_t& texture)
 {
     D3D11_TEXTURE2D_DESC desc;
-    desc.Width = transform_h264_encoder::frame_width;
-    desc.Height = transform_h264_encoder::frame_height;
+    desc.Width = this->transform->canvas_width;
+    desc.Height = this->transform->canvas_height;
     desc.MipLevels = 1;
     desc.ArraySize = 1;
     desc.SampleDesc.Count = 1;

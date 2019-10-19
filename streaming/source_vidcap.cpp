@@ -1,5 +1,4 @@
 #include "source_vidcap.h"
-#include "transform_h264_encoder.h"
 #include "transform_videomixer.h"
 #include "assert.h"
 #include <thread>
@@ -165,19 +164,18 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         // TODO: use this in source_wasapi aswell(maybe)
 
         // make frame
-        const UINT32 fps_num = transform_h264_encoder::frame_rate_num,
-            fps_den = transform_h264_encoder::frame_rate_den;
+        const frame_unit fps_num = source->session->frame_rate_num, 
+            fps_den = source->session->frame_rate_den;
         const time_unit real_timestamp = clock->system_time_to_clock_time(timestamp),
             calculated_timestamp = convert_to_time_unit(source->next_frame_pos, fps_num, fps_den),
-            frame_interval = convert_to_time_unit(1, (frame_unit)fps_num, (frame_unit)fps_den);
+            frame_interval = convert_to_time_unit(1, fps_num, fps_den);
 
         // reset the next frame pos if not set or the timestamps have drifted too far apart
         if(source->next_frame_pos < 0 || 
             std::abs(real_timestamp - calculated_timestamp) > (frame_interval / 2))
         {
             std::cout << "source_vidcap time base reset" << std::endl;
-            source->next_frame_pos = convert_to_frame_unit(real_timestamp,
-                (frame_unit)fps_num, (frame_unit)fps_den);
+            source->next_frame_pos = convert_to_frame_unit(real_timestamp, fps_num, fps_den);
         }
 
         frame.pos = source->next_frame_pos++;
@@ -367,8 +365,8 @@ void source_vidcap::initialize_async()
     CHECK_HR(hr = output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));
     // set the frame rate converter
     CHECK_HR(hr = MFSetAttributeRatio(output_type, MF_MT_FRAME_RATE,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den));
+        (UINT32)this->session->frame_rate_num,
+        (UINT32)this->session->frame_rate_den));
     // TODO: decide if should set frame size
     CHECK_HR(hr = output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     CHECK_HR(hr = MFSetAttributeRatio(output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
@@ -386,8 +384,8 @@ void source_vidcap::initialize_async()
     }
     CHECK_HR(hr = MFGetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, &fps_num, &fps_den));
 
-    assert_(fps_num == transform_h264_encoder::frame_rate_num);
-    assert_(fps_den == transform_h264_encoder::frame_rate_den);
+    assert_(fps_num == (UINT32)this->session->frame_rate_num);
+    assert_(fps_den == (UINT32)this->session->frame_rate_den);
 
     // request a resize
     this->reset_size = true;
@@ -413,9 +411,7 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
 {
     assert_(!this->device);
 
-    this->source_base::initialize(ctrl_pipeline,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+    this->source_base::initialize(ctrl_pipeline);
 
     this->d3d11dev = d3d11dev;
     this->d3d11devctx = d3d11devctx;
@@ -439,7 +435,10 @@ stream_vidcap::stream_vidcap(const source_vidcap_t& source) :
 void stream_vidcap::on_component_start(time_unit t)
 {
     this->source->source_helper.initialize(convert_to_frame_unit(t,
-        transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den));
+        this->source->session->frame_rate_num,
+        this->source->session->frame_rate_den),
+        this->source->session->frame_rate_num,
+        this->source->session->frame_rate_den);
 
     HRESULT hr;
     {

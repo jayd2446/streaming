@@ -1,6 +1,4 @@
 #include "source_empty.h"
-#include "transform_aac_encoder.h"
-#include "transform_h264_encoder.h"
 #include <Mferror.h>
 
 source_empty_audio::source_empty_audio(const media_session_t& session) :
@@ -17,7 +15,7 @@ source_empty_audio::~source_empty_audio()
 
 void source_empty_audio::initialize(const control_class_t& ctrl_pipeline)
 {
-    this->source_base::initialize(ctrl_pipeline, transform_aac_encoder::sample_rate, 1);
+    this->source_base::initialize(ctrl_pipeline);
 }
 
 source_empty_audio::stream_source_base_t source_empty_audio::create_derived_stream()
@@ -27,7 +25,8 @@ source_empty_audio::stream_source_base_t source_empty_audio::create_derived_stre
 
 bool source_empty_audio::get_samples_end(time_unit request_time, frame_unit& end)
 {
-    end = convert_to_frame_unit(request_time, transform_aac_encoder::sample_rate, 1);
+    end = convert_to_frame_unit(request_time, 
+        this->session->frame_rate_num, this->session->frame_rate_den);
     return true;
 }
 
@@ -84,7 +83,7 @@ stream_empty_audio::stream_empty_audio(const source_empty_audio_t& source) :
 void stream_empty_audio::on_component_start(time_unit t)
 {
     this->source->last_frame_end = convert_to_frame_unit(t,
-        transform_aac_encoder::sample_rate, 1);
+        this->source->session->frame_rate_num, this->source->session->frame_rate_den);
 }
 
 
@@ -107,9 +106,7 @@ source_empty_video::~source_empty_video()
 
 void source_empty_video::initialize(const control_class_t& ctrl_pipeline)
 {
-    this->source_base::initialize(ctrl_pipeline,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+    this->source_base::initialize(ctrl_pipeline);
 }
 
 source_empty_video::stream_source_base_t source_empty_video::create_derived_stream()
@@ -120,8 +117,7 @@ source_empty_video::stream_source_base_t source_empty_video::create_derived_stre
 bool source_empty_video::get_samples_end(time_unit request_time, frame_unit& end)
 {
     end = convert_to_frame_unit(request_time,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+        this->session->frame_rate_num, this->session->frame_rate_den);
     return true;
 }
 
@@ -177,6 +173,5 @@ stream_empty_video::stream_empty_video(const source_empty_video_t& source) :
 void stream_empty_video::on_component_start(time_unit t)
 {
     this->source->last_frame_end = convert_to_frame_unit(t,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+        this->source->session->frame_rate_num, this->source->session->frame_rate_den);
 }

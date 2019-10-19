@@ -146,7 +146,8 @@ HRESULT transform_h264_encoder::set_input_stream_type()
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235));*/
     /*CHECK_HR(hr = input_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_ARGB32));*/
 
-    CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, frame_rate_num, frame_rate_den));
+    CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, 
+        (UINT32)this->session->frame_rate_num, (UINT32)this->session->frame_rate_den));
     CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
@@ -165,7 +166,8 @@ HRESULT transform_h264_encoder::set_output_stream_type()
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AVG_BITRATE, avg_bitrate));
-    CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, frame_rate_num, frame_rate_den));
+    CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, 
+        this->frame_rate_num, this->frame_rate_den));
     CHECK_HR(hr = MFSetAttributeSize(this->output_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     // intel mft only supports main profile
@@ -233,11 +235,9 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
     assert_(frame.dur == 1);
 
     time_unit sample_time = convert_to_time_unit(frame.pos,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+        this->session->frame_rate_num, this->session->frame_rate_den);
     const time_unit sample_duration = convert_to_time_unit(1,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+        this->session->frame_rate_num, this->session->frame_rate_den);
 
     sample_time -= this->time_shift;
     if(sample_time < 0)
@@ -365,8 +365,7 @@ bool transform_h264_encoder::on_serve(request_queue::request_t& request)
     if(video_frame.buffer)
     {
         const time_unit timestamp = convert_to_time_unit(video_frame.pos,
-            transform_h264_encoder::frame_rate_num,
-            transform_h264_encoder::frame_rate_den);
+            this->session->frame_rate_num, this->session->frame_rate_den);
         if(timestamp <= this->last_time_stamp && timestamp >= 0)
         {
             std::cout << "timestamp error in transform_h264_encoder::processing_cb" << std::endl;
@@ -576,13 +575,17 @@ done:
 }
 
 void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
-    const CComPtr<ID3D11Device>& d3d11dev, bool software)
+    const CComPtr<ID3D11Device>& d3d11dev, 
+    UINT32 frame_rate_num, UINT32 frame_rate_den,
+    bool software)
 {
     HRESULT hr = S_OK;
 
     this->ctrl_pipeline = ctrl_pipeline;
     this->use_system_memory = !d3d11dev || software;
     this->software = software;
+    this->frame_rate_num = frame_rate_num;
+    this->frame_rate_den = frame_rate_den;
 
     CComPtr<IMFAttributes> attributes;
     UINT count = 0;

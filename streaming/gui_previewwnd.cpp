@@ -506,6 +506,12 @@ LRESULT gui_previewwnd::OnPreviewWndMessage(UINT /*uMsg*/, WPARAM /*wParam*/,
     if(!preview_window)
         return 0;
 
+    UINT32 canvas_width, canvas_height;
+    this->ctrl_pipeline.preview_control->get_canvas_size(canvas_width, canvas_height);
+
+    // TODO: multiple ongoing sessions will trigger onpreviewwndmessage multiple times;
+    // preview fps should probably be independent of the session fps
+
     HRESULT hr = S_OK;
     bool has_video_control = false;
     int highlighted_points = 0;
@@ -533,9 +539,7 @@ out:
     D2D1_RECT_F preview_rect = this->get_preview_rect();
     bool invert;
 
-    Matrix3x2F canvas_to_preview =
-        Matrix3x2F::Scale((FLOAT)transform_videomixer::canvas_width,
-        (FLOAT)transform_videomixer::canvas_height);
+    Matrix3x2F canvas_to_preview = Matrix3x2F::Scale((FLOAT)canvas_width, (FLOAT)canvas_height);
     invert = canvas_to_preview.Invert();
     canvas_to_preview = canvas_to_preview *
         Matrix3x2F::Scale(preview_rect.right - preview_rect.left,
@@ -558,8 +562,7 @@ out:
         this->d2d1devctx->SetTransform(canvas_to_preview);
         if(bitmap)
             this->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f,
-            (FLOAT)transform_videomixer::canvas_width,
-                (FLOAT)transform_videomixer::canvas_height));
+            (FLOAT)canvas_width, (FLOAT)canvas_height));
 
         if(has_video_control)
         {
@@ -688,8 +691,11 @@ done:
 
 D2D1_RECT_F gui_previewwnd::get_preview_rect() const
 {
-    const FLOAT canvas_w = (FLOAT)transform_videomixer::canvas_width;
-    const FLOAT canvas_h = (FLOAT)transform_videomixer::canvas_height;
+    UINT32 canvas_width, canvas_height;
+    this->ctrl_pipeline.preview_control->get_canvas_size(canvas_width, canvas_height);
+
+    const FLOAT canvas_w = (FLOAT)canvas_width;
+    const FLOAT canvas_h = (FLOAT)canvas_height;
     const FLOAT preview_w = (FLOAT)(this->width - gui_previewwnd::padding_width * 2);
     const FLOAT preview_h = (FLOAT)(this->height - gui_previewwnd::padding_height * 2);
 

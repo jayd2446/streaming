@@ -79,6 +79,9 @@ control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
     CHECK_HR(hr = this->dxgidev->GetGPUThreadPriority(&old_priority));
     CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(3));*/
 
+    this->configured_fps_num = 10;
+    this->configured_fps_den = 1;
+
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
@@ -159,19 +162,26 @@ void control_pipeline::activate_components()
         this->time_source->start();
     }
     if(!this->session)
-        this->session.reset(new media_session(this->time_source));
+        this->session.reset(new media_session(this->time_source,
+            this->configured_fps_num,
+            this->configured_fps_den));
     if(!this->audio_session)
-        this->audio_session.reset(new media_session(this->time_source));
+        this->audio_session.reset(new media_session(this->time_source,
+            transform_aac_encoder::sample_rate, 1));
+
+    // must be called after resetting the video session
+    frame_unit fps_num, fps_den;
+    this->get_session_frame_rate(fps_num, fps_den);
 
     // create videoprocessor transform
     if(!this->videomixer_transform ||
         this->videomixer_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
     {
-        transform_videomixer_t videomixer_transform(
-            new transform_videomixer(this->session, this->context_mutex));
+        transform_videomixer_t videomixer_transform(new transform_videomixer(this->session,
+            this->context_mutex));
         videomixer_transform->initialize(this->shared_from_this<control_class>(),
-            this->d2d1factory, this->d2d1dev,
-            this->d3d11dev, this->devctx);
+            transform_h264_encoder::frame_width, transform_h264_encoder::frame_height,
+            this->d2d1factory, this->d2d1dev, this->d3d11dev, this->devctx);
 
         this->videomixer_transform = videomixer_transform;
     }
@@ -190,7 +200,7 @@ void control_pipeline::activate_components()
             h264_encoder_transform.reset(new transform_h264_encoder(
                 this->session, this->context_mutex));
             h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                this->d3d11dev, false);
+                this->d3d11dev, (UINT32)fps_num, (UINT32)fps_den, false);
         }
         catch(std::exception)
         {
@@ -202,7 +212,7 @@ void control_pipeline::activate_components()
                 h264_encoder_transform.reset(new transform_h264_encoder(
                     this->session, this->context_mutex));
                 h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                    NULL);
+                    NULL, (UINT32)fps_num, (UINT32)fps_den);
             }
             catch(std::exception)
             {
@@ -211,7 +221,7 @@ void control_pipeline::activate_components()
                 h264_encoder_transform.reset(new transform_h264_encoder(
                     this->session, this->context_mutex));
                 h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                    NULL, true);
+                    NULL, (UINT32)fps_num, (UINT32)fps_den, true);
             }
         }
 
@@ -314,8 +324,7 @@ void control_pipeline::activate_components()
     {
         source_buffering_video_t video_buffering_source(new source_buffering_video(this->session));
         video_buffering_source->initialize(this->shared_from_this<control_pipeline>(),
-            transform_h264_encoder::frame_rate_num,
-            transform_h264_encoder::frame_rate_den, BUFFERING_DEFAULT_VIDEO_LATENCY);
+            BUFFERING_DEFAULT_VIDEO_LATENCY);
 
         this->video_buffering_source = video_buffering_source;
     }
@@ -326,7 +335,6 @@ void control_pipeline::activate_components()
     {
         source_buffering_audio_t audio_buffering_source(new source_buffering_audio(this->audio_session));
         audio_buffering_source->initialize(this->shared_from_this<control_pipeline>(),
-            transform_aac_encoder::sample_rate, 1,
             BUFFERING_DEFAULT_AUDIO_LATENCY);
 
         this->audio_buffering_source = audio_buffering_source;
@@ -380,8 +388,9 @@ void control_pipeline::build_and_switch_topology()
     stream_video_t video_stream = this->video_sink->create_stream(
         this->video_topology->get_message_generator(), audio_stream);
 
-    video_stream->set_pull_rate(
-        transform_h264_encoder::frame_rate_num, transform_h264_encoder::frame_rate_den);
+    frame_unit fps_num, fps_den;
+    this->get_session_frame_rate(fps_num, fps_den);
+    video_stream->set_pull_rate(fps_num, fps_den);
 
     // set the topology
     stream_audiomixer2_base_t audiomixer_stream =
@@ -469,6 +478,12 @@ void control_pipeline::set_selected_control(control_class* control, selection_ty
 
     // trigger
     this->event_provider.for_each([](gui_event_handler* e) { e->on_control_selection_changed(); });
+}
+
+void control_pipeline::get_session_frame_rate(frame_unit& num, frame_unit& den) const
+{
+    num = this->session->frame_rate_num;
+    den = this->session->frame_rate_den;
 }
 
 void control_pipeline::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)

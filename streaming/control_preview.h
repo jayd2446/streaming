@@ -23,8 +23,10 @@ public:
 
     // can be null
     const sink_preview2_t& get_component() const { return this->component; }
-    // in preview window coordinates
+    // in preview window coordinates;
+    // (canvas rect)
     D2D1_RECT_F get_preview_rect() const { return this->wnd_preview.get_preview_rect(); }
+    void get_canvas_size(UINT32& width, UINT32& height) const;
 
     // initializes wnd_preview
     void initialize_window(HWND parent);

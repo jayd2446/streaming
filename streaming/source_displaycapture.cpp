@@ -1,6 +1,5 @@
 #include "source_displaycapture.h"
 #include "control_pipeline.h"
-#include "transform_h264_encoder.h"
 #include <iostream>
 #include <d2d1.h>
 #include <Mferror.h>
@@ -72,8 +71,8 @@ bool source_displaycapture::get_samples_end(time_unit request_time, frame_unit& 
 
     // displaycapture just pretends that it has samples up to the request point
     end = convert_to_frame_unit(request_time,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+        this->session->frame_rate_num,
+        this->session->frame_rate_den);
 
     return true;
 }
@@ -424,9 +423,7 @@ void source_displaycapture::initialize(
 {
     HRESULT hr = S_OK;
 
-    this->source_base::initialize(ctrl_pipeline,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+    this->source_base::initialize(ctrl_pipeline);
 
     this->ctrl_pipeline = ctrl_pipeline;
     this->d3d11dev2 = this->d3d11dev = d3d11dev;
@@ -453,9 +450,7 @@ void source_displaycapture::initialize(
 {
     HRESULT hr = S_OK;
 
-    this->source_base::initialize(ctrl_pipeline,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den);
+    this->source_base::initialize(ctrl_pipeline);
 
     CComPtr<IDXGIAdapter1> dxgiadapter;
     D3D_FEATURE_LEVEL feature_level;
@@ -566,11 +561,15 @@ stream_displaycapture::stream_displaycapture(const source_displaycapture_t& sour
 void stream_displaycapture::on_component_start(time_unit t)
 {
     this->source->source_helper.initialize(convert_to_frame_unit(t,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den));
+        this->source->session->frame_rate_num,
+        this->source->session->frame_rate_den),
+        this->source->session->frame_rate_num,
+        this->source->session->frame_rate_den);
     this->source->source_pointer_helper.initialize(convert_to_frame_unit(t,
-        transform_h264_encoder::frame_rate_num,
-        transform_h264_encoder::frame_rate_den));
+        this->source->session->frame_rate_num,
+        this->source->session->frame_rate_den),
+        this->source->session->frame_rate_num,
+        this->source->session->frame_rate_den);
 }
 
 
