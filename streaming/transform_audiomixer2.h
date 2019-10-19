@@ -75,6 +75,8 @@ private:
     std::shared_ptr<buffer_pool_audio_frames_t> buffer_pool_audio_frames;
     std::shared_ptr<buffer_pool_audio_mixer_frames_t> buffer_pool_audio_mixer_frames;
 
+    // one second
+    frame_unit get_maximum_buffer_size() const { return this->session->frame_rate_num; }
     stream_mixer_t create_derived_stream();
 public:
     explicit transform_audiomixer2(const media_session_t& session);

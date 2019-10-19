@@ -33,9 +33,6 @@ public:
     typedef request_queue_handler::request_queue request_queue;
     typedef request_queue::request_t request_t;
 
-    // sample rate must be a predefined value;
-    // the possible values are assumed to be known at compile time
-    static const UINT32 sample_rate = 44100;
     static const UINT32 channels = 2;
     enum bitrate_t
     {

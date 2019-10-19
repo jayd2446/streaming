@@ -129,8 +129,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
 
     // workaround for the todo above:
     // do not allow the audio buffer to grow indefinitely
-    constexpr frame_unit max_buffer_length = transform_aac_encoder::sample_rate;
-    first = std::max(end - max_buffer_length, first);
+    first = std::max(end - this->transform->get_maximum_buffer_size(), first);
 
     // begin mixing
     HRESULT hr = S_OK;

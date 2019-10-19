@@ -212,7 +212,7 @@ void source_wasapi::capture_cb(void*)
             // set new base
             this->set_new_frame_base = false;
             this->next_frame_position =
-                (frame_unit)((double)transform_aac_encoder::sample_rate /
+                (frame_unit)((double)this->session->frame_rate_num /
                     this->samples_per_second * this->native_frame_base);
 
             drain = true;
@@ -274,7 +274,8 @@ void source_wasapi::capture_cb(void*)
 
             // keep the buffer within the limits
             if(this->captured_audio->move_frames_to(
-                NULL, this->captured_audio->end - maximum_buffer_size, this->resampled_block_align))
+                NULL, this->captured_audio->end - this->get_maximum_buffer_size(), 
+                this->resampled_block_align))
             {
                 std::cout << "source_wasapi buffer limit reached, excess frames discarded" << std::endl;
             }
@@ -420,7 +421,7 @@ void source_wasapi::initialize(const control_class_t& ctrl_pipeline,
     // TODO: exception thrown here causes memory leak
     // initialize resampler
     this->resampler.initialize(
-        transform_aac_encoder::sample_rate, transform_aac_encoder::channels,
+        (UINT32)this->session->frame_rate_num, transform_aac_encoder::channels,
         transform_audiomixer2::bit_depth,
         this->samples_per_second, this->channels, sizeof(bit_depth_t) * 8);
 
@@ -432,9 +433,6 @@ void source_wasapi::initialize(const control_class_t& ctrl_pipeline,
 
     // new capture is queued on component start, so that
     // the last_captured_frame_end variable isn't accessed before assigned
-
-    /*std::cout << "sleeping..." << std::endl;
-    Sleep(500);*/
 
 done:
     if(engine_format)
@@ -460,7 +458,8 @@ void stream_wasapi::on_component_start(time_unit t)
     HRESULT hr = S_OK;
 
     this->source->last_captured_frame_end = convert_to_frame_unit(t,
-        transform_aac_encoder::sample_rate, 1);
+        this->source->session->frame_rate_num, 
+        this->source->session->frame_rate_den);
 
     CHECK_HR(hr = this->source->queue_new_capture());
 

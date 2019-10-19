@@ -13,8 +13,6 @@
 #include <mutex>
 #include <atomic>
 
-// TODO: h264 encoder should have an internal queue
-
 // h264 encoder
 class stream_h264_encoder;
 typedef std::shared_ptr<stream_h264_encoder> stream_h264_encoder_t;

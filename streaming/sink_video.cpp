@@ -31,7 +31,9 @@ void sink_video::initialize()
 time_unit sink_video::get_audio_pull_periodicity() const
 {
     // audio pull periodicity is the length of one aac encoder packet
-    return convert_to_time_unit(1024, transform_aac_encoder::sample_rate, 1);
+    // audio_session::frame_rate_num equals to sample rate
+    return convert_to_time_unit(1024, 
+        this->audio_session->frame_rate_num, this->audio_session->frame_rate_den);
 }
 
 void sink_video::switch_topologies(

@@ -81,6 +81,7 @@ control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
 
     this->configured_fps_num = 10;
     this->configured_fps_den = 1;
+    this->configured_sample_rate = 44100;
 
 done:
     if(FAILED(hr))
@@ -167,7 +168,7 @@ void control_pipeline::activate_components()
             this->configured_fps_den));
     if(!this->audio_session)
         this->audio_session.reset(new media_session(this->time_source,
-            transform_aac_encoder::sample_rate, 1));
+            this->configured_sample_rate, 1));
 
     // must be called after resetting the video session
     frame_unit fps_num, fps_den;
@@ -381,10 +382,13 @@ void control_pipeline::build_and_switch_topology()
     if(this->disabled)
         return;
 
-    this->video_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
-    this->audio_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
+    this->video_topology.reset(
+        new media_topology(media_message_generator_t(new media_message_generator)));
+    this->audio_topology.reset(
+        new media_topology(media_message_generator_t(new media_message_generator)));
 
-    stream_audio_t audio_stream = this->audio_sink->create_stream(this->audio_topology->get_message_generator());
+    stream_audio_t audio_stream = 
+        this->audio_sink->create_stream(this->audio_topology->get_message_generator());
     stream_video_t video_stream = this->video_sink->create_stream(
         this->video_topology->get_message_generator(), audio_stream);
 

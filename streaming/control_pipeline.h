@@ -57,8 +57,8 @@ private:
     source_buffering_audio_t audio_buffering_source;
 
     frame_unit configured_fps_num, configured_fps_den;
-    // TODO:
-    /*frame_unit configured_sample_rate;*/
+    // allowed values: 44100 and 48000
+    frame_unit configured_sample_rate;
 
     // active controls must not have duplicate elements
     control_set_t controls;
@@ -106,6 +106,7 @@ public:
     bool is_recording() const {return this->recording;}
 
     void get_session_frame_rate(frame_unit& num, frame_unit& den) const;
+    frame_unit get_session_sample_rate() const { return this->audio_session->frame_rate_num; }
 
     // void apply_new_settings
 

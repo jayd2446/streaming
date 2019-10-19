@@ -136,8 +136,9 @@ bool transform_aac_encoder::encode(const media_sample_audio_frames* in_frames,
 
             frame_pos = elem.pos;
             frame_dur = elem.dur;
-            time = (LONGLONG)(convert_to_time_unit(frame_pos, sample_rate, 1) - this->time_shift);
-            dur = (LONGLONG)convert_to_time_unit(frame_dur, sample_rate, 1);
+            time = (LONGLONG)(convert_to_time_unit(
+                frame_pos, this->session->frame_rate_num, 1) - this->time_shift);
+            dur = (LONGLONG)convert_to_time_unit(frame_dur, this->session->frame_rate_num, 1);
 
             if(time < 0)
             {
@@ -282,7 +283,8 @@ void transform_aac_encoder::initialize(bitrate_t bitrate)
     CHECK_HR(hr = this->input_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
     CHECK_HR(hr = this->input_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM));
     CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, sizeof(bit_depth_t) * 8));
-    CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate));
+    CHECK_HR(hr = this->input_type->SetUINT32(
+        MF_MT_AUDIO_SAMPLES_PER_SECOND, (UINT32)this->session->frame_rate_num));
     CHECK_HR(hr = this->input_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channels));
 
     // set output type
@@ -290,7 +292,8 @@ void transform_aac_encoder::initialize(bitrate_t bitrate)
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_AAC));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, sizeof(bit_depth_t) * 8));
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, sample_rate));
+    CHECK_HR(hr = this->output_type->SetUINT32(
+        MF_MT_AUDIO_SAMPLES_PER_SECOND, (UINT32)this->session->frame_rate_num));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channels));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, bitrate));
 

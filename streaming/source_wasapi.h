@@ -25,7 +25,6 @@ public:
     // wasapi is always 32 bit float in shared mode
     typedef float bit_depth_t;
     static const INT64 capture_interval_ms = 40;
-    static const frame_unit maximum_buffer_size = transform_aac_encoder::sample_rate;
 private:
     audio_resampler resampler;
 
@@ -54,6 +53,9 @@ private:
     CComPtr<async_callback_t> capture_callback;
     MFWORKITEM_KEY capture_work_key;
     DWORD work_queue_id;
+
+    // one second
+    frame_unit get_maximum_buffer_size() const { return this->session->frame_rate_num; }
 
     // source_base
     stream_source_base_t create_derived_stream();
