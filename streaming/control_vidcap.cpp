@@ -213,5 +213,8 @@ bool control_vidcap::is_identical_control(const control_class_t& control) const
     if(vidcap_control->component->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE)
         return false;
 
+    if(vidcap_control->component->session != this->pipeline.session)
+        return false;
+
     return (vidcap_control->params.symbolic_link == this->params.symbolic_link);
 }

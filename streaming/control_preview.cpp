@@ -9,7 +9,8 @@ control_preview::control_preview(control_set_t& active_controls, control_pipelin
     control_class(active_controls, pipeline.event_provider),
     wnd_preview(pipeline),
     pipeline(pipeline),
-    parent(NULL)
+    parent(NULL),
+    fps(DEFAULT_PREVIEW_FPS)
 {
 }
 
@@ -34,12 +35,7 @@ void control_preview::activate(const control_set_t& last_set, control_set_t& new
     sink_preview2_t component;
 
     if(this->disabled)
-    {
-        if(this->component)
-            this->component->clear_preview_wnd();
-
         goto out;
-    }
 
     // try to reuse the component stored in the last set's control
     {
@@ -60,8 +56,10 @@ void control_preview::activate(const control_set_t& last_set, control_set_t& new
             assert_(this->wnd_preview.m_hWnd != NULL);
 
             sink_preview2_t preview_sink(new sink_preview2(this->pipeline.session));
-            preview_sink->initialize(
-                this->pipeline.shared_from_this<control_pipeline>(), this->wnd_preview);
+            preview_sink->initialize(this->pipeline.shared_from_this<control_pipeline>());
+
+            // start the timer
+            this->set_state(true);
 
             component = preview_sink;
         }
@@ -75,12 +73,25 @@ out:
     if(this->component)
         this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
     else
+    {
+        // stop the timer
+        this->set_state(false);
         this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
+    }
 }
 
 void control_preview::get_canvas_size(UINT32& width, UINT32& height) const
 {
     this->pipeline.videomixer_transform->get_canvas_size(width, height);
+}
+
+void control_preview::set_state(bool render)
+{
+    // halt the timer
+    if(!render)
+        this->wnd_preview.set_timer(USER_TIMER_MAXIMUM);
+    else
+        this->set_fps(this->fps);
 }
 
 void control_preview::initialize_window(HWND parent)
@@ -92,13 +103,13 @@ void control_preview::initialize_window(HWND parent)
     this->wnd_preview.Create(this->parent, CWindow::rcDefault, NULL, WS_CHILD);
 }
 
-void control_preview::set_state(bool render)
-{
-    if(this->component)
-        this->component->set_state(render);
-}
-
 bool control_preview::is_identical_control(const control_class_t& control) const
 {
+    const control_preview* preview_control = dynamic_cast<const control_preview*>(control.get());
+
+    if(preview_control && preview_control->component && 
+        preview_control->component->session != this->pipeline.session)
+        return false;
+
     return (control.get() == this);
 }

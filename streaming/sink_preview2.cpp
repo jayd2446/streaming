@@ -10,26 +10,17 @@
 #undef max
 #undef min
 
-sink_preview2::sink_preview2(const media_session_t& session) : 
-    media_sink(session),
-    texture_requests(MAX_TEXTURE_REQUESTS),
-    render(true)
+sink_preview2::sink_preview2(const media_session_t& session) : media_sink(session)
 {
 }
 
-void sink_preview2::initialize(const control_pipeline_t& ctrl_pipeline, HWND hwnd)
+void sink_preview2::initialize(const control_pipeline_t& ctrl_pipeline)
 {
     this->ctrl_pipeline = ctrl_pipeline;
-    this->hwnd = hwnd;
 }
 
-void sink_preview2::draw_sample(const media_component_args* args_)
+void sink_preview2::update_preview_sample(const media_component_args* args_)
 {
-    if(!this->render)
-        return;
-
-    scoped_lock lock(this->mutex);
-
     // videomixer outputs h264 encoder args;
     // sink preview just previews the last frame that is send to encoder;
     // it is assumed that there is at least one frame if the args isn't empty
@@ -48,23 +39,11 @@ void sink_preview2::draw_sample(const media_component_args* args_)
             }
         }
     }
-
-    if(this->hwnd && this->texture_requests > 0)
-    {
-        if(PostMessage(this->hwnd, GUI_PREVIEWWND_MESSAGE, 0, 0))
-            this->texture_requests--;
-    }
 }
 
 media_stream_t sink_preview2::create_stream()
 {
     return stream_preview2_t(new stream_preview2(this->shared_from_this<sink_preview2>()));
-}
-
-void sink_preview2::clear_preview_wnd()
-{
-    scoped_lock lock(this->mutex);
-    this->hwnd = NULL;
 }
 
 
@@ -85,6 +64,6 @@ media_stream::result_t stream_preview2::request_sample(const request_packet& rp,
 media_stream::result_t stream_preview2::process_sample(
     const media_component_args* args, const request_packet& rp, const media_stream*)
 {
-    this->sink->draw_sample(args);
+    this->sink->update_preview_sample(args);
     return this->sink->session->give_sample(this, args, rp) ? OK : FATAL_ERROR;
 }

@@ -100,12 +100,21 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
     return item_selected;
 }
 
+void gui_previewwnd::set_timer(UINT timeout_ms)
+{
+    this->SetTimer(gui_previewwnd::timer_id, timeout_ms);
+}
+
 int gui_previewwnd::OnCreate(LPCREATESTRUCT)
 {
     this->d3d11dev = this->ctrl_pipeline.d3d11dev;
     this->d2d1factory = this->ctrl_pipeline.d2d1factory;
     this->d2d1dev = this->ctrl_pipeline.d2d1dev;
 
+    // create timer
+    this->set_timer(USER_TIMER_MAXIMUM);
+
+    // initialize the preview
     HRESULT hr = S_OK;
 
     CComPtr<IDXGIAdapter> dxgiadapter;
@@ -210,6 +219,11 @@ done:
         throw HR_EXCEPTION(hr);
 
     return 0;
+}
+
+void gui_previewwnd::OnDestroy()
+{
+    this->KillTimer(gui_previewwnd::timer_id);
 }
 
 LRESULT gui_previewwnd::OnSize(UINT /*nType*/, CSize /*Extent*/)
@@ -499,18 +513,29 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
     }
 }
 
-LRESULT gui_previewwnd::OnPreviewWndMessage(UINT /*uMsg*/, WPARAM /*wParam*/, 
-    LPARAM /*lParam*/, BOOL& /*bHandled*/)
+void gui_previewwnd::OnTimer(UINT_PTR uTimerId)
+{
+    if(uTimerId != gui_previewwnd::timer_id)
+        this->SetMsgHandled(FALSE);
+    else
+        this->RedrawWindow();
+}
+
+BOOL gui_previewwnd::OnEraseBkgnd(HDC /*hdc*/)
+{
+    this->update_preview();
+    // background was erased
+    return TRUE;
+}
+
+void gui_previewwnd::update_preview()
 {
     sink_preview2_t preview_window = this->ctrl_pipeline.preview_control->get_component();
     if(!preview_window)
-        return 0;
+        return;
 
     UINT32 canvas_width, canvas_height;
     this->ctrl_pipeline.preview_control->get_canvas_size(canvas_width, canvas_height);
-
-    // TODO: multiple ongoing sessions will trigger onpreviewwndmessage multiple times;
-    // preview fps should probably be independent of the session fps
 
     HRESULT hr = S_OK;
     bool has_video_control = false;
@@ -569,7 +594,7 @@ out:
             /*control_video::video_params_t video_params = video_control->get_video_params(true);*/
 
             // draw size box
-            FLOAT box_stroke = 1.5f;
+            const FLOAT box_stroke = 1.5f;
             /*Matrix3x2F dest =
                 Matrix3x2F::Scale(
                     video_params.rectangle.right - video_params.rectangle.left,
@@ -683,10 +708,6 @@ out:
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
-
-    preview_window->request_more_textures();
-
-    return 0;
 }
 
 D2D1_RECT_F gui_previewwnd::get_preview_rect() const

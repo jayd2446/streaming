@@ -222,9 +222,13 @@ bool control_displaycapture::is_identical_control(const control_class_t& control
     if(!displaycapture_control || !displaycapture_control->component)
         return false;
 
-    // check that component isn't requesting a reinitialization
+    // check that the component isn't requesting a reinitialization
     if(displaycapture_control->component->get_instance_type() ==
         media_component::INSTANCE_NOT_SHAREABLE)
+        return false;
+
+    // check that the component will reside in the same session
+    if(displaycapture_control->component->session != this->pipeline.session)
         return false;
 
     // check that the control params match this control's params

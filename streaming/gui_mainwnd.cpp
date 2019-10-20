@@ -290,5 +290,12 @@ LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
             this->ctrl_pipeline->root_scene->get_selected_scene());
     }*/
 
+    control_pipeline_config config;
+    config.fps_num = 60;
+    config.fps_den = 1;
+    config.sample_rate = 44100;
+
+    this->ctrl_pipeline->apply_config(config);
+
     return 0;
 }

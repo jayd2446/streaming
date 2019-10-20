@@ -24,7 +24,8 @@ control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
     context_mutex(new std::recursive_mutex),
     root_scene(new control_scene(controls, *this)),
     preview_control(new control_preview(controls, *this)),
-    recording(false)
+    recording(false),
+    restart_pipeline_requested(false)
 {
     this->root_scene->parent = this;
 
@@ -79,9 +80,7 @@ control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
     CHECK_HR(hr = this->dxgidev->GetGPUThreadPriority(&old_priority));
     CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(3));*/
 
-    this->configured_fps_num = 10;
-    this->configured_fps_den = 1;
-    this->configured_sample_rate = 44100;
+    this->config = control_pipeline::get_default_config();
 
 done:
     if(FAILED(hr))
@@ -133,6 +132,12 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
             return;
         }
 
+        if(this->restart_pipeline_requested)
+        {
+            this->restart_pipeline_requested = false;
+            this->deactivate_components();
+        }
+
         this->activate_components();
 
         // add this to the new set
@@ -164,11 +169,10 @@ void control_pipeline::activate_components()
     }
     if(!this->session)
         this->session.reset(new media_session(this->time_source,
-            this->configured_fps_num,
-            this->configured_fps_den));
+            this->config.fps_num, this->config.fps_den));
     if(!this->audio_session)
         this->audio_session.reset(new media_session(this->time_source,
-            this->configured_sample_rate, 1));
+            this->config.sample_rate, 1));
 
     // must be called after resetting the video session
     frame_unit fps_num, fps_den;
@@ -488,6 +492,24 @@ void control_pipeline::get_session_frame_rate(frame_unit& num, frame_unit& den) 
 {
     num = this->session->frame_rate_num;
     den = this->session->frame_rate_den;
+}
+
+control_pipeline_config control_pipeline::get_default_config()
+{
+    control_pipeline_config config;
+    config.fps_num = 10;
+    config.fps_den = 1;
+    config.sample_rate = 48000;
+
+    return config;
+}
+
+void control_pipeline::apply_config(const control_pipeline_config& new_config)
+{
+    this->config = new_config;
+    this->restart_pipeline_requested = true;
+
+    this->control_class::activate();
 }
 
 void control_pipeline::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)

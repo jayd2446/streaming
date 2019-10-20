@@ -10,8 +10,6 @@
 class gui_sourcedlg;
 class control_pipeline;
 
-#define GUI_PREVIEWWND_MESSAGE WM_APP
-
 // preview window implements the user controls for controlling the sources in the
 // scene and provides the canvas for sink_preview
 
@@ -22,6 +20,8 @@ public:
     static const UINT32 padding_width = 20;
     static const UINT32 padding_height = 20;
 private:
+    static constexpr UINT_PTR timer_id = 1;
+
     control_pipeline& ctrl_pipeline;
     bool dragging, scaling, moving;
     int scale_flags;
@@ -55,25 +55,32 @@ public:
     explicit gui_previewwnd(control_pipeline&);
 
     // TODO: use redraw window
+    void set_timer(UINT timeout_ms);
+
+    void update_preview();
 
     // in preview window coordinates
     D2D1_RECT_F get_preview_rect() const;
 
     BEGIN_MSG_MAP(gui_previewwnd)
         MSG_WM_CREATE(OnCreate)
+        MSG_WM_DESTROY(OnDestroy)
         MSG_WM_SIZE(OnSize)
         MSG_WM_LBUTTONDOWN(OnLButtonDown)
         MSG_WM_LBUTTONUP(OnLButtonUp)
         MSG_WM_MOUSEMOVE(OnMouseMove)
         MSG_WM_RBUTTONDOWN(OnRButtonDown)
-        MESSAGE_HANDLER(GUI_PREVIEWWND_MESSAGE, OnPreviewWndMessage)
+        MSG_WM_TIMER(OnTimer)
+        MSG_WM_ERASEBKGND(OnEraseBkgnd)
     END_MSG_MAP()
 
     int OnCreate(LPCREATESTRUCT);
+    void OnDestroy();
     LRESULT OnSize(UINT nType, CSize Extent);
     void OnRButtonDown(UINT nFlags, CPoint point);
     void OnLButtonDown(UINT nFlags, CPoint point);
     void OnLButtonUp(UINT nFlags, CPoint point);
     void OnMouseMove(UINT nFlags, CPoint point);
-    LRESULT OnPreviewWndMessage(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
+    void OnTimer(UINT_PTR uTimerId);
+    BOOL OnEraseBkgnd(HDC hdc);
 };

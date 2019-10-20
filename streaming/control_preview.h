@@ -4,6 +4,8 @@
 #include "sink_preview2.h"
 #include <d2d1.h>
 
+#define DEFAULT_PREVIEW_FPS 60 // 100fps is the maximum currently
+
 class control_preview : public control_class
 {
     friend class control_pipeline;
@@ -11,6 +13,7 @@ private:
     control_pipeline& pipeline;
     sink_preview2_t component;
     HWND parent;
+    frame_unit fps;
 
     // control_class
     void build_video_topology(const media_stream_t& from,
@@ -28,9 +31,13 @@ public:
     D2D1_RECT_F get_preview_rect() const { return this->wnd_preview.get_preview_rect(); }
     void get_canvas_size(UINT32& width, UINT32& height) const;
 
+    void set_fps(frame_unit fps) 
+    { this->fps = fps; this->wnd_preview.set_timer(1000 / (UINT)this->fps - 1); }
+    frame_unit get_fps() const { return this->fps; }
+
     // initializes wnd_preview
+    void set_state(bool render);
     void initialize_window(HWND parent);
     void show_window() { this->wnd_preview.ShowWindow(SW_SHOW); }
-    void set_state(bool render);
     bool is_identical_control(const control_class_t&) const;
 };

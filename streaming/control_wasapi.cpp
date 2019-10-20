@@ -167,9 +167,13 @@ bool control_wasapi::is_identical_control(const control_class_t& control) const
     if(!wasapi_control || !wasapi_control->component)
         return false;
 
-    // check that component isn't requesting a reinitialization
+    // check that the component isn't requesting a reinitialization
     if(wasapi_control->component->get_instance_type() ==
         media_component::INSTANCE_NOT_SHAREABLE)
+        return false;
+
+    // check that the component will reside in the same session
+    if(wasapi_control->component->session != this->pipeline.audio_session)
         return false;
 
     // check that the control params match this control's params

@@ -26,6 +26,7 @@
 #include <vector>
 
 // TODO: longer buffering increases processing usage
+// TODO: buffering length should be configurable
 #define BUFFERING_DEFAULT_VIDEO_LATENCY (SECOND_IN_TIME_UNIT / 2) // 100ms default buffering
 #define BUFFERING_DEFAULT_AUDIO_LATENCY (SECOND_IN_TIME_UNIT / 2)
 
@@ -34,6 +35,13 @@
 #pragma comment(lib, "D2d1.lib")
 
 typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
+
+struct control_pipeline_config
+{
+    frame_unit fps_num, fps_den;
+    // allowed values: 44100 and 48000
+    frame_unit sample_rate;
+};
 
 class control_pipeline final : public control_class
 {
@@ -56,9 +64,8 @@ private:
     source_buffering_video_t video_buffering_source;
     source_buffering_audio_t audio_buffering_source;
 
-    frame_unit configured_fps_num, configured_fps_den;
-    // allowed values: 44100 and 48000
-    frame_unit configured_sample_rate;
+    control_pipeline_config config;
+    bool restart_pipeline_requested;
 
     // active controls must not have duplicate elements
     control_set_t controls;
@@ -103,12 +110,15 @@ public:
     void set_selected_control(control_class*, selection_type type = SET);
     const std::vector<control_class*>& get_selected_controls() const { return this->selected_controls; }
 
-    bool is_recording() const {return this->recording;}
+    bool is_recording() const { return this->recording; }
 
     void get_session_frame_rate(frame_unit& num, frame_unit& den) const;
     frame_unit get_session_sample_rate() const { return this->audio_session->frame_rate_num; }
 
-    // void apply_new_settings
+    // the config if nothing else has been configured
+    static control_pipeline_config get_default_config();
+    // stores and applies the new config(by calling activate());
+    void apply_config(const control_pipeline_config& new_config);
 
     //void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
     //// TODO: this should return control preview instead of the component
@@ -119,7 +129,7 @@ public:
     void stop_recording();
 
     // releases all circular dependencies
-    void shutdown() {this->disable();}
+    void shutdown() { this->disable(); }
 };
 
 // TODO: rename this
