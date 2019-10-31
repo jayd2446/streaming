@@ -200,8 +200,6 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         // add the frame
         {
             scoped_lock lock(source->source_helper_mutex);
-
-            source->source_helper.set_initialized(true);
             source->source_helper.add_new_sample(frame);
         }
     }

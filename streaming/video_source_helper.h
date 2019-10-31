@@ -21,8 +21,7 @@ private:
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     media_sample_video_mixer_frame last_served_frame;
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
-
-    bool fully_initialized, broken;
+    bool initialized, fully_initialized;
 
     void add_padding_frames(const media_sample_video_mixer_frame& last_frame,
         frame_unit next_frame_pos,
@@ -32,16 +31,13 @@ public:
     ~video_source_helper();
 
     // this should be called before any other functions
-    void initialize(frame_unit start, frame_unit frame_rate_num, frame_unit frame_rate_den);
+    void initialize(frame_unit start, frame_unit frame_rate_num, frame_unit frame_rate_den,
+        bool serve_null_samples_before_first_sample = true);
 
     bool get_samples_end(time_unit request_time, frame_unit& end) const;
     // frame duration must be 1
     void add_new_sample(const media_sample_video_mixer_frame&);
     // updates the last served frame;
-    // makes a frame collection up to frame_end
+    // makes a frame collection either from captured frames or last served frame up to frame_end
     media_sample_video_mixer_frames_t make_sample(frame_unit frame_end);
-
-    // TODO: fully remove broken functionality
-    /*void set_broken(bool broken) {this->broken = broken;}*/
-    void set_initialized(bool fully_initialized) {this->fully_initialized = fully_initialized;}
 };

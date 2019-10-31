@@ -54,9 +54,7 @@ public:
 
     explicit gui_previewwnd(control_pipeline&);
 
-    // TODO: use redraw window
     void set_timer(UINT timeout_ms);
-
     void update_preview();
 
     // in preview window coordinates

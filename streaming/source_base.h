@@ -296,7 +296,7 @@ media_stream::result_t stream_source_base<T>::request_sample(
     typename request_queue::request_t request;
     request.rp = rp; 
     request.stream = this;
-    request.sample.drain = this->drainable_or_drained;
+    request.sample.drain = this->drainable_or_drained || (rp.flags & FLAG_LAST_PACKET);
     this->requests.push(request);
 
     // sources flip the direction

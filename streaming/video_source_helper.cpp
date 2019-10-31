@@ -2,8 +2,9 @@
 #include <iostream>
 
 video_source_helper::video_source_helper() :
-    fully_initialized(false), broken(false),
-    buffer_pool_video_frames(new buffer_pool_video_frames_t)
+    initialized(false),
+    buffer_pool_video_frames(new buffer_pool_video_frames_t),
+    fully_initialized(false)
 {
 }
 
@@ -33,18 +34,24 @@ void video_source_helper::add_padding_frames(
 }
 
 void video_source_helper::initialize(frame_unit start,
-    frame_unit frame_rate_num, frame_unit frame_rate_den)
+    frame_unit frame_rate_num, frame_unit frame_rate_den,
+    bool serve_null_samples_before_first_sample)
 {
     media_sample_video_mixer_frame first_frame;
     first_frame.pos = start - 1;
     first_frame.dur = 1;
     this->last_served_frame = first_frame;
     this->framerate = {frame_rate_num, frame_rate_den};
+
+    this->initialized = true;
+
+    if(!serve_null_samples_before_first_sample)
+        this->fully_initialized = true;
 }
 
 bool video_source_helper::get_samples_end(time_unit request_time, frame_unit& end) const
 {
-    if(this->broken || !this->fully_initialized)
+    if(!this->fully_initialized)
     {
         end = convert_to_frame_unit(request_time,
             this->framerate.first,
@@ -65,6 +72,8 @@ void video_source_helper::add_new_sample(const media_sample_video_mixer_frame& n
     assert_(this->captured_frames.size() <= maximum_frame_count);
     assert_(new_sample.dur == 1);
 
+    this->fully_initialized = true;
+
     if(this->captured_frames.size() == maximum_frame_count)
     {
         std::cout << "captured frame dropped" << std::endl;
@@ -76,6 +85,11 @@ void video_source_helper::add_new_sample(const media_sample_video_mixer_frame& n
 
 media_sample_video_mixer_frames_t video_source_helper::make_sample(frame_unit frame_end)
 {
+    assert_(this->initialized);
+
+    // TODO: video source helper should be made more robust so that it could
+    // return empty collections aswell
+
     media_sample_video_mixer_frames_t sample;
     {
         buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
@@ -98,12 +112,16 @@ media_sample_video_mixer_frames_t video_source_helper::make_sample(frame_unit fr
         else
         {
             // add the last served frame if no captured frames were added
-            if(sample->frames.empty())
-                sample->add_consecutive_frames(this->last_served_frame);
+            /*if(sample->frames.empty())
+                sample->add_consecutive_frames(this->last_served_frame);*/
 
             break;
         }
     }
+
+    // TODO: add the last served frame here(probably) and remove from above
+    if(sample->frames.empty())
+        sample->add_consecutive_frames(this->last_served_frame);
 
     // add padding up to frame_end
     this->add_padding_frames(this->last_served_frame, frame_end, sample);
