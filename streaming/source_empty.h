@@ -9,7 +9,7 @@
 
 // TODO: source empty could be a template class
 
-class source_empty_audio : public source_base<media_component_audiomixer_args>
+class source_empty_audio final : public source_base<media_component_audiomixer_args>
 {
     friend class stream_empty_audio;
 public:
@@ -18,10 +18,10 @@ private:
     std::shared_ptr<buffer_pool_audio_frames_t> buffer_pool_audio_frames;
     frame_unit last_frame_end;
 
-    stream_source_base_t create_derived_stream();
-    bool get_samples_end(time_unit request_time, frame_unit& end);
-    void make_request(request_t&, frame_unit frame_end);
-    void dispatch(request_t&);
+    stream_source_base_t create_derived_stream() override;
+    bool get_samples_end(time_unit request_time, frame_unit& end) const override;
+    void make_request(request_t&, frame_unit frame_end) override;
+    void dispatch(request_t&) override;
 
     // one second
     frame_unit get_maximum_buffer_size() const { return this->session->frame_rate_num; }
@@ -34,18 +34,19 @@ public:
 
 typedef std::shared_ptr<source_empty_audio> source_empty_audio_t;
 
-class stream_empty_audio : public stream_source_base<source_base<media_component_audiomixer_args>>
+class stream_empty_audio final : 
+    public stream_source_base<source_base<media_component_audiomixer_args>>
 {
 private:
     source_empty_audio_t source;
-    void on_component_start(time_unit);
+    void on_component_start(time_unit) override;
 public:
     explicit stream_empty_audio(const source_empty_audio_t&);
 };
 
 typedef std::shared_ptr<stream_empty_audio> stream_empty_audio_t;
 
-class source_empty_video : public source_base<media_component_videomixer_args>
+class source_empty_video final : public source_base<media_component_videomixer_args>
 {
     friend class stream_empty_video;
 public:
@@ -55,10 +56,10 @@ private:
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     frame_unit last_frame_end;
 
-    stream_source_base_t create_derived_stream();
-    bool get_samples_end(time_unit request_time, frame_unit& end);
-    void make_request(request_t&, frame_unit frame_end);
-    void dispatch(request_t&);
+    stream_source_base_t create_derived_stream() override;
+    bool get_samples_end(time_unit request_time, frame_unit& end) const override;
+    void make_request(request_t&, frame_unit frame_end) override;
+    void dispatch(request_t&) override;
 public:
     explicit source_empty_video(const media_session_t& session);
     ~source_empty_video();
@@ -68,11 +69,12 @@ public:
 
 typedef std::shared_ptr<source_empty_video> source_empty_video_t;
 
-class stream_empty_video : public stream_source_base<source_base<media_component_videomixer_args>>
+class stream_empty_video final : 
+    public stream_source_base<source_base<media_component_videomixer_args>>
 {
 private:
     source_empty_video_t source;
-    void on_component_start(time_unit);
+    void on_component_start(time_unit) override;
 public:
     explicit stream_empty_video(const source_empty_video_t&);
 };

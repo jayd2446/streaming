@@ -13,7 +13,7 @@
 
 struct IMMDevice;
 
-class source_wasapi : public source_base<media_component_audiomixer_args>
+class source_wasapi final : public source_base<media_component_audiomixer_args>
 {
     friend class stream_wasapi;
 public:
@@ -28,7 +28,7 @@ public:
 private:
     audio_resampler resampler;
 
-    std::mutex captured_audio_mutex;
+    mutable std::mutex captured_audio_mutex;
     std::shared_ptr<buffer_pool_memory_t> buffer_pool_memory;
     std::shared_ptr<buffer_pool_audio_frames_t> buffer_pool_audio_frames;
     media_sample_audio_mixer_frames_t captured_audio;
@@ -58,10 +58,10 @@ private:
     frame_unit get_maximum_buffer_size() const { return this->session->frame_rate_num; }
 
     // source_base
-    stream_source_base_t create_derived_stream();
-    bool get_samples_end(time_unit request_time, frame_unit& end);
-    void make_request(request_t&, frame_unit frame_end);
-    void dispatch(request_t&);
+    stream_source_base_t create_derived_stream() override;
+    bool get_samples_end(time_unit request_time, frame_unit& end) const override;
+    void make_request(request_t&, frame_unit frame_end) override;
+    void dispatch(request_t&) override;
 
     void sine_wave(BYTE* data, DWORD len);
     double sine_wave_counter;
@@ -84,11 +84,11 @@ public:
 
 typedef std::shared_ptr<source_wasapi> source_wasapi_t;
 
-class stream_wasapi : public stream_source_base<source_base<media_component_audiomixer_args>>
+class stream_wasapi final : public stream_source_base<source_base<media_component_audiomixer_args>>
 {
 private:
     source_wasapi_t source;
-    void on_component_start(time_unit);
+    void on_component_start(time_unit) override;
 public:
     explicit stream_wasapi(const source_wasapi_t&);
 };

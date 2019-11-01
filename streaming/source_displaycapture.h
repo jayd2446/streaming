@@ -27,7 +27,7 @@ struct displaycapture_args
     media_component_videomixer_args args, pointer_args;
 };
 
-class source_displaycapture : public source_base<displaycapture_args>
+class source_displaycapture final : public source_base<displaycapture_args>
 {
     friend class stream_displaycapture;
 public:
@@ -58,11 +58,11 @@ private:
     bool same_adapter;
 
     // source_base
-    stream_source_base_t create_derived_stream();
-    bool get_samples_end(time_unit request_time, frame_unit& end);
+    stream_source_base_t create_derived_stream() override;
+    bool get_samples_end(time_unit request_time, frame_unit& end) const override;
     // TODO: fetch the sample here
-    void make_request(request_t&, frame_unit frame_end);
-    void dispatch(request_t&);
+    void make_request(request_t&, frame_unit frame_end) override;
+    void dispatch(request_t&) override;
 
     media_buffer_texture_t acquire_buffer(const std::shared_ptr<buffer_pool>&);
 
@@ -102,7 +102,7 @@ public:
 
 typedef std::shared_ptr<source_displaycapture> source_displaycapture_t;
 
-class stream_displaycapture : public stream_source_base<source_base<displaycapture_args>>
+class stream_displaycapture final : public stream_source_base<source_base<displaycapture_args>>
 {
     friend class source_displaycapture;
     friend class stream_displaycapture_pointer;
@@ -110,12 +110,12 @@ private:
     source_displaycapture_t source;
     stream_displaycapture_pointer_t pointer_stream;
 
-    void on_component_start(time_unit);
+    void on_component_start(time_unit) override;
 public:
     explicit stream_displaycapture(const source_displaycapture_t&);
 };
 
-class stream_displaycapture_pointer : public media_stream
+class stream_displaycapture_pointer final : public media_stream
 {
     friend class stream_displaycapture;
 private:
@@ -123,6 +123,7 @@ private:
 public:
     explicit stream_displaycapture_pointer(const source_displaycapture_t&);
 
-    result_t request_sample(const request_packet&, const media_stream*);
-    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*) override;
+    result_t process_sample(
+        const media_component_args*, const request_packet&, const media_stream*) override;
 };

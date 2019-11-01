@@ -15,7 +15,7 @@ template<class OutArgs>
 class stream_buffering;
 
 template<class OutArgs>
-class source_buffering : public source_base<OutArgs>
+class source_buffering final : public source_base<OutArgs>
 {
     friend class stream_buffering<OutArgs>;
 public:
@@ -26,10 +26,10 @@ public:
 private:
     time_unit latency;
 
-    stream_source_base_t create_derived_stream();
-    bool get_samples_end(time_unit request_time, frame_unit& end);
-    void make_request(request_t&, frame_unit frame_end);
-    void dispatch(request_t&);
+    stream_source_base_t create_derived_stream() override;
+    bool get_samples_end(time_unit request_time, frame_unit& end) const override;
+    void make_request(request_t&, frame_unit frame_end) override;
+    void dispatch(request_t&) override;
 public:
     explicit source_buffering(const media_session_t& session);
 
@@ -84,7 +84,7 @@ typename source_buffering<T>::stream_source_base_t source_buffering<T>::create_d
 }
 
 template<class T>
-bool source_buffering<T>::get_samples_end(time_unit /*request_time*/, frame_unit& end)
+bool source_buffering<T>::get_samples_end(time_unit /*request_time*/, frame_unit& end) const
 {
     media_clock_t clock = this->session->get_clock();
     end = convert_to_frame_unit(clock->get_current_time() - this->latency,

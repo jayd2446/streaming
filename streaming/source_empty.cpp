@@ -23,7 +23,7 @@ source_empty_audio::stream_source_base_t source_empty_audio::create_derived_stre
     return stream_empty_audio_t(new stream_empty_audio(this->shared_from_this<source_empty_audio>()));
 }
 
-bool source_empty_audio::get_samples_end(time_unit request_time, frame_unit& end)
+bool source_empty_audio::get_samples_end(time_unit request_time, frame_unit& end) const
 {
     end = convert_to_frame_unit(request_time, 
         this->session->frame_rate_num, this->session->frame_rate_den);
@@ -114,7 +114,7 @@ source_empty_video::stream_source_base_t source_empty_video::create_derived_stre
     return stream_empty_video_t(new stream_empty_video(this->shared_from_this<source_empty_video>()));
 }
 
-bool source_empty_video::get_samples_end(time_unit request_time, frame_unit& end)
+bool source_empty_video::get_samples_end(time_unit request_time, frame_unit& end) const
 {
     end = convert_to_frame_unit(request_time,
         this->session->frame_rate_num, this->session->frame_rate_den);

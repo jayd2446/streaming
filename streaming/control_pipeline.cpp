@@ -356,7 +356,8 @@ void control_pipeline::deactivate_components()
     {
         this->video_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
         this->audio_topology.reset(new media_topology(media_message_generator_t(new media_message_generator)));
-        this->video_sink->switch_topologies(this->video_topology, this->audio_topology);
+        // topology is switched instantly
+        this->video_sink->switch_topologies(this->video_topology, this->audio_topology, true);
     }
 
     this->videomixer_transform = NULL;

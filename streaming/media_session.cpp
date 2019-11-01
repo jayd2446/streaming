@@ -5,6 +5,9 @@
 #include <iostream>
 #include "assert.h"
 
+#pragma warning(push)
+#pragma warning(disable: 4706) // assignment within conditional expression
+
 media_session::media_session(const media_clock_t& time_source,
     frame_unit frame_rate_num, frame_unit frame_rate_den) :
     time_source(time_source),
@@ -148,7 +151,8 @@ bool media_session::begin_request_sample(media_stream* stream, const request_pac
     // if the topology isn't current, it is in a state of being stopped
     if(topology != this->current_topology)
     {
-        if(rp.topology->get_message_generator()->is_drainable(rp.request_time))
+        if(rp.topology->drained || 
+            (rp.topology->drained = rp.topology->get_message_generator()->is_drainable(rp.request_time)))
             // this is the final request
             rp.flags |= FLAG_LAST_PACKET;
     }
@@ -167,3 +171,5 @@ bool media_session::begin_request_sample(media_stream* stream, const request_pac
 
     return ret;
 }
+
+#pragma warning(pop)

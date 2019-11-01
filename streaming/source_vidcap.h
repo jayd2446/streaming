@@ -29,7 +29,7 @@ public:
     typedef async_callback<source_vidcap> async_callback_t;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool_texture_t;
 private:
-    std::mutex source_helper_mutex;
+    mutable std::mutex source_helper_mutex;
     video_source_helper source_helper;
     std::shared_ptr<buffer_pool_texture_t> buffer_pool_texture;
     CComPtr<source_reader_callback_t> source_reader_callback;
@@ -64,7 +64,7 @@ private:
     media_buffer_texture_t acquire_buffer(const D3D11_TEXTURE2D_DESC&);
 
     stream_source_base_t create_derived_stream() override;
-    bool get_samples_end(time_unit request_time, frame_unit& end) override;
+    bool get_samples_end(time_unit request_time, frame_unit& end) const override;
     void make_request(request_t&, frame_unit frame_end) override;
     void dispatch(request_t&) override;
 

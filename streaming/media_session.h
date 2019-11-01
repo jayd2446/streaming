@@ -6,10 +6,7 @@
 #include "enable_shared_from_this.h"
 #include "request_packet.h"
 #include <memory>
-#include <vector>
-#include <map>
 #include <mutex>
-#include <queue>
 
 // orchestrates the data flow between components in the media pipeline
 

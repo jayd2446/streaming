@@ -30,6 +30,8 @@ private:
 
     media_session_t audio_session;
     media_topology_t pending_audio_topology;
+
+    bool instant_switch;
 public:
     sink_video(const media_session_t& session, const media_session_t& audio_session);
     ~sink_video();
@@ -39,10 +41,12 @@ public:
 
     time_unit get_audio_pull_periodicity() const;
 
-    // these functions make sure that both topologies are switched at the same time
+    // these functions make sure that both topologies are switched at the same time;
+    // instant switch will stop the old topology instantly when pulling a new frame
     void switch_topologies(
         const media_topology_t& video_topology,
-        const media_topology_t& audio_topology);
+        const media_topology_t& audio_topology,
+        bool instant_switch = false);
     void start_topologies(
         time_unit,
         const media_topology_t& video_topology,
@@ -81,12 +85,12 @@ private:
     /*DWORD work_queue_id;*/
 
     // media_stream_message_listener
-    void on_component_start(time_unit);
-    void on_component_stop(time_unit);
-    void on_stream_start(time_unit);
-    void on_stream_stop(time_unit);
+    void on_component_start(time_unit) override;
+    void on_component_stop(time_unit) override;
+    void on_stream_start(time_unit) override;
+    void on_stream_stop(time_unit) override;
     // media_clock_sink
-    void scheduled_callback(time_unit due_time);
+    void scheduled_callback(time_unit due_time) override;
 
     void schedule_new(time_unit due_time);
     void dispatch_request(const request_packet&, bool no_drop = false);
@@ -97,8 +101,9 @@ public:
     ~stream_video();
 
     // media_clock_sink
-    bool get_clock(media_clock_t&);
+    bool get_clock(media_clock_t&) override;
     // media_stream
-    result_t request_sample(const request_packet&, const media_stream*);
-    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*) override;
+    result_t process_sample(
+        const media_component_args*, const request_packet&, const media_stream*) override;
 };

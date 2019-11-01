@@ -32,7 +32,7 @@ public:
     // TODO: this should not be a typedef
     typedef typename request_queue<payload_t>::request_t request_t;
 private:
-    std::mutex active_topology_mutex;
+    mutable std::mutex active_topology_mutex;
     std::queue<media_topology_t> active_topology;
     std::atomic<bool> broken_flag;
 
@@ -48,7 +48,7 @@ protected:
     // sets the end of samples to 'end',
     // returns whether the end is undefined(=there are no samples available);
     // multithreaded
-    virtual bool get_samples_end(time_unit request_time, frame_unit& end) = 0;
+    virtual bool get_samples_end(time_unit request_time, frame_unit& end) const = 0;
     // sets the args field in request_t;
     // fetched samples must include padding frames;
     // make_request must add frames up to the frame_end point only;
@@ -89,25 +89,26 @@ public:
 private:
     source_base_t source;
     std::weak_ptr<media_topology> this_topology;
-    bool drainable_or_drained;
+    mutable bool drainable_or_drained;
     std::shared_ptr<::request_dispatcher<void*>> serve_dispatcher;
     std::shared_ptr<request_dispatcher> dispatcher;
 
     // wrapper for source_base::get_samples_end, handles broken functionality
-    bool get_samples_end(time_unit request_time, frame_unit& end);
+    bool get_samples_end(time_unit request_time, frame_unit& end) const;
 
     // media_stream_message_listener
-    void on_stream_start(time_unit);
-    bool is_drainable_or_drained(time_unit);
+    void on_stream_start(time_unit) override;
+    bool is_drainable_or_drained(time_unit) const override;
     // request_queue_handler
-    bool on_serve(typename request_queue::request_t&);
-    typename request_queue::request_t* next_request();
+    bool on_serve(typename request_queue::request_t&) override;
+    typename request_queue::request_t* next_request() override;
 public:
     explicit stream_source_base(const source_base_t&);
     virtual ~stream_source_base() {}
 
-    result_t request_sample(const request_packet&, const media_stream*);
-    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*) override final;
+    result_t process_sample(
+        const media_component_args*, const request_packet&, const media_stream*) override final;
 };
 
 
@@ -169,7 +170,7 @@ stream_source_base<T>::stream_source_base(const source_base_t& source) :
 }
 
 template<typename T>
-bool stream_source_base<T>::get_samples_end(time_unit request_time, frame_unit& end)
+bool stream_source_base<T>::get_samples_end(time_unit request_time, frame_unit& end) const
 {
     const bool broken_flag = this->source->broken_flag;
     if(broken_flag)
@@ -193,7 +194,7 @@ void stream_source_base<T>::on_stream_start(time_unit)
 }
 
 template<typename T>
-bool stream_source_base<T>::is_drainable_or_drained(time_unit t)
+bool stream_source_base<T>::is_drainable_or_drained(time_unit t) const
 {
     // drain can be finished only when the active_topology equals this topology,
     // otherwise there exists a chance where the last_request is dispatched while the

@@ -65,7 +65,7 @@ source_wasapi::stream_source_base_t source_wasapi::create_derived_stream()
     return stream_wasapi_t(new stream_wasapi(this->shared_from_this<source_wasapi>()));
 }
 
-bool source_wasapi::get_samples_end(time_unit /*request_time*/, frame_unit& end)
+bool source_wasapi::get_samples_end(time_unit /*request_time*/, frame_unit& end) const
 {
     scoped_lock lock(this->captured_audio_mutex);
     if(this->captured_audio->frames.empty())

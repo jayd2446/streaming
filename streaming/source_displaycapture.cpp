@@ -65,7 +65,7 @@ media_stream_t source_displaycapture::create_pointer_stream(
     return pointer_stream;
 }
 
-bool source_displaycapture::get_samples_end(time_unit request_time, frame_unit& end)
+bool source_displaycapture::get_samples_end(time_unit request_time, frame_unit& end) const
 {
     // note: time shifting isn't possible here, unless the drain is properly handled aswell
 

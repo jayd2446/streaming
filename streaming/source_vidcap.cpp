@@ -12,6 +12,7 @@
 struct source_vidcap::source_reader_callback_t : public IMFSourceReaderCallback2, IUnknownImpl
 {
     std::weak_ptr<source_vidcap> source;
+    std::mutex on_read_sample_mutex;
 
     explicit source_reader_callback_t(const source_vidcap_t& source) : source(source) {}
     void on_error(const source_vidcap_t& source);
@@ -80,6 +81,8 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
     // TODO: these callbacks should be wrapped to try exception block
 
     streaming::check_for_errors();
+
+    scoped_lock lock(this->on_read_sample_mutex);
 
     source_vidcap_t source = this->source.lock();
     if(!source)
@@ -268,7 +271,7 @@ source_vidcap::stream_source_base_t source_vidcap::create_derived_stream()
     return stream_vidcap_t(new stream_vidcap(this->shared_from_this<source_vidcap>()));
 }
 
-bool source_vidcap::get_samples_end(time_unit request_time, frame_unit& end)
+bool source_vidcap::get_samples_end(time_unit request_time, frame_unit& end) const
 {
     scoped_lock lock(this->source_helper_mutex);
     return this->source_helper.get_samples_end(request_time, end);

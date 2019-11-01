@@ -16,7 +16,7 @@
 sink_video::sink_video(const media_session_t& session, const media_session_t& audio_session) : 
     media_sink(session),
     audio_session(audio_session),
-    started(false)
+    started(false), instant_switch(false)
 {
 }
 
@@ -38,7 +38,8 @@ time_unit sink_video::get_audio_pull_periodicity() const
 
 void sink_video::switch_topologies(
     const media_topology_t& video_topology,
-    const media_topology_t& audio_topology)
+    const media_topology_t& audio_topology,
+    bool instant_switch)
 {
     scoped_lock lock(this->topology_switch_mutex);
 
@@ -46,6 +47,9 @@ void sink_video::switch_topologies(
 
     this->session->switch_topology(video_topology);
     this->pending_audio_topology = audio_topology;
+
+    if(!this->instant_switch)
+        this->instant_switch = instant_switch;
 }
 
 void sink_video::start_topologies(
@@ -122,15 +126,19 @@ void stream_video::on_stream_start(time_unit t)
 
 void stream_video::on_stream_stop(time_unit t)
 {
-    /*this->requesting = false;*/
+    assert_(this->sink->pending_audio_topology);
+
     this->stopping = true;
     this->stop_point = t;
 
-    /*this->running = false;
-    this->clear_queue();*/
+    if(this->sink->instant_switch)
+    {
+        this->sink->instant_switch = false;
+        this->get_topology()->drained = true;
+        this->audio_sink_stream->get_topology()->drained = true;
+    }
 
     // the audio topology will be switched in this call
-    assert_(this->sink->pending_audio_topology);
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
     this->sink->pending_audio_topology = NULL;
 }

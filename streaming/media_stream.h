@@ -34,6 +34,8 @@ private:
     volatile bool locked;
     std::mutex mutex;
     std::condition_variable cv;
+
+    std::weak_ptr<media_topology> topology;
 protected:
     // requesting stage shouldn't lock because it can cause a deadlock with the topology
     // switch mutex
@@ -50,6 +52,9 @@ public:
     virtual void connect_streams(const media_stream_t& from, const media_topology_t&);
 
     // TODO: remove previous_stream for request_sample
+
+    // might be null
+    media_topology_t get_topology() const;
 
     // requests samples from media session or processes
     // samples if there are any;
@@ -83,7 +88,7 @@ protected:
     virtual void on_stream_stop(time_unit) {}
     // TODO: this message could be moved to media_source_stream only
     // called by media session to resolve the status of topology draining after on_stream_stop event
-    virtual bool is_drainable_or_drained(time_unit) {return true;}
+    virtual bool is_drainable_or_drained(time_unit) const {return true;}
 public:
     media_stream_message_listener(const media_component*, stream_t = OTHER);
     virtual ~media_stream_message_listener() {}

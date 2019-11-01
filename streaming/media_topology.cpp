@@ -3,7 +3,8 @@
 #include <algorithm>
 
 media_topology::media_topology(const media_message_generator_t& message_generator) :
-    message_generator(message_generator), next_packet_number(0), topology_number(0)
+    message_generator(message_generator), next_packet_number(0), topology_number(0),
+    drained(false)
 {
 }
 
