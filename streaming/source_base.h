@@ -5,10 +5,11 @@
 #include "request_packet.h"
 #include "request_dispatcher.h"
 #include "request_queue_handler.h"
-#include <queue>
+#include <vector>
 #include <optional>
 #include <mutex>
 #include <atomic>
+#include <algorithm>
 
 #undef min
 #undef max
@@ -33,7 +34,7 @@ public:
     typedef typename request_queue<payload_t>::request_t request_t;
 private:
     mutable std::mutex active_topology_mutex;
-    std::queue<media_topology_t> active_topology;
+    std::vector<media_topology_t> active_topology;
     std::atomic<bool> broken_flag;
 
     // set_broken must be used instead
@@ -88,7 +89,6 @@ public:
         request_queue;
 private:
     source_base_t source;
-    std::weak_ptr<media_topology> this_topology;
     mutable bool drainable_or_drained;
     std::shared_ptr<::request_dispatcher<void*>> serve_dispatcher;
     std::shared_ptr<request_dispatcher> dispatcher;
@@ -189,8 +189,9 @@ template<typename T>
 void stream_source_base<T>::on_stream_start(time_unit)
 {
     scoped_lock lock(this->source->active_topology_mutex);
-    this->source->active_topology.push(this->source->session->get_current_topology());
-    this->this_topology = this->source->session->get_current_topology();
+
+    // session::get_current_topology() equals this->get_topology()
+    this->source->active_topology.push_back(this->get_topology());
 }
 
 template<typename T>
@@ -210,8 +211,7 @@ bool stream_source_base<T>::is_drainable_or_drained(time_unit t) const
                 active_topology = this->source->active_topology.front();
         }
 
-        assert_(this->this_topology.lock());
-        if(active_topology == this->this_topology.lock())
+        if(active_topology == this->get_topology())
         {
             frame_unit samples_end;
             const frame_unit request_end = convert_to_frame_unit(t,
@@ -263,18 +263,23 @@ bool stream_source_base<T>::on_serve(typename request_queue::request_t& request)
         else
             assert_(!request.sample.args);
 
-        // pop the current active topology if the request has drain flag;
-        // it is important to pop the topology after make_request call so that
-        // it stays singlethreaded
-        if(request.sample.drain)
-        {
-            scoped_lock lock(this->source->active_topology_mutex);
-            assert_(!this->source->active_topology.empty());
-            this->source->active_topology.pop();
-        }
     }
     else
         assert_(!request.sample.args);
+
+    // remove this topology from the list of queued topologies if the request has a drain flag;
+    // it is important to remove the topology after make_request call so that
+    // it stays singlethreaded
+    if(request.sample.drain)
+    {
+        scoped_lock lock(this->source->active_topology_mutex);
+
+        this->source->active_topology.erase(std::remove(
+            this->source->active_topology.begin(),
+            this->source->active_topology.end(),
+            this->get_topology()),
+            this->source->active_topology.end());
+    }
 
     this->dispatcher->dispatch_request(std::move(request),
         std::bind(&source_base::dispatch, this->source, std::placeholders::_1));
