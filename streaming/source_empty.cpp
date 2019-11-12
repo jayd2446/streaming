@@ -133,8 +133,8 @@ void source_empty_video::make_request(request_t& request, frame_unit frame_end)
     {
         buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
         args.sample = this->buffer_pool_video_frames->acquire_buffer();
-        args.sample->initialize();
     }
+    args.sample->initialize();
 
     args.frame_end = frame_end;
 
@@ -143,7 +143,7 @@ void source_empty_video::make_request(request_t& request, frame_unit frame_end)
     args.sample->add_consecutive_frames(frame);
 
     const bool limit_reached =
-        args.sample->move_frames_to(NULL, args.sample->end - maximum_buffer_size);
+        args.sample->move_frames_to(NULL, args.sample->get_end() - maximum_buffer_size);
     if(limit_reached)
     {
         std::cout << "source_empty_video buffer limit reached, excess frames discarded" << std::endl;

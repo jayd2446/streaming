@@ -77,7 +77,7 @@ private:
 
     // one second
     frame_unit get_maximum_buffer_size() const { return this->session->frame_rate_num; }
-    stream_mixer_t create_derived_stream();
+    stream_mixer_t create_derived_stream() override;
 public:
     explicit transform_audiomixer2(const media_session_t& session);
     ~transform_audiomixer2();
@@ -93,8 +93,8 @@ private:
     transform_audiomixer2_t transform;
 
     bool move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
-        frame_unit end, bool discarded);
-    void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end);
+        frame_unit end, bool discarded) override;
+    void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end) override;
 public:
     explicit stream_audiomixer2(const transform_audiomixer2_t& transform);
 };

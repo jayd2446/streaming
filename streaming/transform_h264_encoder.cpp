@@ -335,13 +335,18 @@ bool transform_h264_encoder::extract_frame(media_sample_video_frame& frame, cons
     if(!request.sample.args)
         return true;
 
-    while(!request.sample.args->sample->frames.empty() && !frame.buffer)
+    while(!request.sample.args->sample->get_frames().empty() && !frame.buffer)
     {
-        frame = request.sample.args->sample->frames.front();
-        request.sample.args->sample->frames.pop_front();
+        // TODO: h264 encoder should copy the frames container and modify that
+        // TODO: vector should be used for media_sample_video_frames_template
+        frame = const_cast<media_sample_video_frame&>(
+            request.sample.args->sample->get_frames().front());
+
+        const_cast<media_sample_video_frames::samples_t&>(
+            request.sample.args->sample->get_frames()).pop_front();
     }
 
-    return request.sample.args->sample->frames.empty();
+    return request.sample.args->sample->get_frames().empty();
 }
 
 bool transform_h264_encoder::on_serve(request_queue::request_t& request)

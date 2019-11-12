@@ -180,12 +180,11 @@ void stream_color_converter::process(media_component_h264_encoder_args_t& this_a
         transform_color_converter::buffer_pool_video_frames_t::scoped_lock lock(
             this->transform->buffer_pool_video_frames->mutex);
         frames = this->transform->buffer_pool_video_frames->acquire_buffer();
-        frames->initialize();
-
-        frames->end = this_args->sample->end;
     }
+    frames->initialize();
+    /*frames->end = this_args->sample->end;*/
 
-    for(auto&& item : this_args->sample->frames)
+    for(const auto& item : this_args->sample->get_frames())
     {
         media_sample_video_frame frame(item.pos);
 
@@ -262,7 +261,7 @@ void stream_color_converter::process(media_component_h264_encoder_args_t& this_a
             frame.buffer = output_buffer;
         }
 
-        frames->frames.push_back(frame);
+        frames->add_consecutive_frames(frame);
     }
 
 done:

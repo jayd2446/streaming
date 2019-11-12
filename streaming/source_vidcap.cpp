@@ -293,7 +293,7 @@ void source_vidcap::make_request(request_t& request, frame_unit frame_end)
         args.sample = sample;
 
     // the sample must not be empty
-    assert_(!args.sample->frames.empty());
+    assert_(args.sample->is_valid());
 }
 
 void source_vidcap::dispatch(request_t& request)

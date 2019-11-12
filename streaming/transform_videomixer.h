@@ -96,7 +96,7 @@ private:
     CComPtr<ID3D11DeviceContext> d3d11devctx;
     CComPtr<ID2D1Device> d2d1dev;
 
-    stream_mixer_t create_derived_stream();
+    stream_mixer_t create_derived_stream() override;
 public:
     transform_videomixer(const media_session_t& session, context_mutex_t context_mutex);
     ~transform_videomixer();
@@ -124,9 +124,10 @@ private:
     void initialize_texture(const media_buffer_texture_t&);
     void initialize_resources(const device_context_resources_t& resources);
     device_context_resources_t acquire_buffer();
+
     bool move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t& reference,
-        frame_unit end, bool discarded);
-    void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end);
+        frame_unit end, bool discarded) override;
+    void mix(out_arg_t& out_arg, args_t&, frame_unit first, frame_unit end) override;
 public:
     explicit stream_videomixer(const transform_videomixer_t& transform);
 };

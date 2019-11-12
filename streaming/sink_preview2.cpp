@@ -30,7 +30,7 @@ void sink_preview2::update_preview_sample(const media_component_args* args_)
     if(args)
     {
         // find the first available bitmap
-        for(auto&& item : args->sample->frames)
+        for(const auto& item : args->sample->get_frames())
         {
             if(item.buffer && item.buffer->bitmap)
             {

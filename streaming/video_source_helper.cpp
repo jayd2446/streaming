@@ -94,8 +94,8 @@ media_sample_video_mixer_frames_t video_source_helper::make_sample(frame_unit fr
     {
         buffer_pool_video_frames_t::scoped_lock lock(this->buffer_pool_video_frames->mutex);
         sample = this->buffer_pool_video_frames->acquire_buffer();
-        sample->initialize();
     }
+    sample->initialize();
 
     // add captured frames to the collection and insert padding frames
     while(!this->captured_frames.empty())
@@ -120,20 +120,20 @@ media_sample_video_mixer_frames_t video_source_helper::make_sample(frame_unit fr
     }
 
     // TODO: add the last served frame here(probably) and remove from above
-    if(sample->frames.empty())
+    if(!sample->is_valid())
         sample->add_consecutive_frames(this->last_served_frame);
 
     // add padding up to frame_end
     this->add_padding_frames(this->last_served_frame, frame_end, sample);
 
-    assert_(sample->end == frame_end);
+    assert_(sample->get_end() == frame_end);
     this->last_served_frame.pos = frame_end - 1;
     this->last_served_frame.dur = 1;
 
     // keep the frames buffer within the limits
-    if(sample->move_frames_to(NULL, sample->end - maximum_buffer_size))
+    if(sample->move_frames_to(NULL, sample->get_end() - maximum_buffer_size))
         std::cout << "frame limit reached; frames skipped" << std::endl;
 
-    assert_(!sample->frames.empty());
+    assert_(sample->is_valid());
     return sample;
 }

@@ -148,6 +148,32 @@ bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t
     frame_unit end, bool discarded)
 {
     assert_(reference);
+    assert_(!to && !from);
+
+    // TODO: make same changes to audio side
+
+    // optimized specialization if the whole sample is moved
+    if(end >= reference->frame_end)
+    {
+        to = reference;
+        to->frame_end = end;
+
+        if(discarded)
+            std::cout << "discarded video frames" << std::endl;
+
+        return true;
+    }
+
+    // optimized specialization if nothing is moved
+    if(reference->sample && end <= reference->sample->get_first())
+    {
+        to = std::make_optional<in_arg_t::value_type>();
+        from = reference;
+
+        to->frame_end = end;
+
+        return false;
+    }
 
     to = std::make_optional<in_arg_t::value_type>();
     from = std::make_optional<in_arg_t::value_type>();
@@ -161,14 +187,9 @@ bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t
             transform_videomixer::buffer_pool_video_mixer_frames_t::scoped_lock lock(
                 this->transform->buffer_pool_video_mixer_frames->mutex);
             from->sample = this->transform->buffer_pool_video_mixer_frames->acquire_buffer();
-            from->sample->initialize();
         }
 
-        // *from->sample = *reference->sample
-        // could be used, but currently the fields are assigned individually
-        // (assignment operation would assign the contents of the parent class aswell)
-        from->sample->frames = reference->sample->frames;
-        from->sample->end = reference->sample->end;
+        from->sample->initialize(*reference->sample);
 
         if(!discarded)
         {
@@ -187,9 +208,9 @@ bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t
 
     // reset the samples of 'from' and 'to' if they contain no data,
     // because frame collections with empty data is not currently allowed
-    if(from && from->sample && from->sample->frames.empty())
+    if(from && from->sample && !from->sample->is_valid())
         from->sample.reset();
-    if(to && to->sample && to->sample->frames.empty())
+    if(to && to->sample && !to->sample->is_valid())
         to->sample.reset();
 
     return !from;
@@ -234,16 +255,9 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
             return (a.stream_index < b.stream_index);
         });
 
-    media_sample_video_frames_t frames;
-    {
-        transform_videomixer::buffer_pool_video_frames_t::scoped_lock lock(
-            this->transform->buffer_pool_video_frames->mutex);
-        frames = this->transform->buffer_pool_video_frames->acquire_buffer();
-        frames->initialize();
-    }
-
+    media_sample_video_frames::samples_t frames;
     for(frame_unit i = 0; i < frame_count; i++)
-        frames->frames.push_back(media_sample_video_frame(first + i));
+        frames.push_back(media_sample_video_frame(first + i));
 
     // indicates whether the out arg will have any encodeable frames
     bool has_frames = false;
@@ -259,6 +273,8 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
     // TODO: the end of samples in case if the sample is empty should be properly defined
 
+    media_sample_video_frames_t sample;
+
     // draw
     for(auto&& item : packets.container)
     {
@@ -266,10 +282,10 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
         if(!item.arg || !item.arg->sample)
             continue;
 
-        assert_(end >= item.arg->sample->end);
+        assert_(end >= item.arg->sample->get_end());
         // empty frame collection isn't allowed
-        assert_(!item.arg->sample->frames.empty());
-        for(auto&& frame_ : item.arg->sample->frames)
+        assert_(item.arg->sample->is_valid());
+        for(const auto& frame_ : item.arg->sample->get_frames())
         {
             has_frames = true;
 
@@ -298,11 +314,11 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                 const size_t index = (size_t)(pos - first);
                 device_context_resources_t frame =
                     std::static_pointer_cast<transform_videomixer::device_context_resources>(
-                        frames->frames[index].buffer);
+                        frames[index].buffer);
                 if(!frame)
                 {
                     frame = this->acquire_buffer();
-                    frames->frames[index].buffer = frame;
+                    frames[index].buffer = frame;
 
                     frame->ctx->BeginDraw();
                     frame->ctx->SetTarget(frame->bitmap);
@@ -313,9 +329,8 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
                 {
                     CComPtr<ID3D11Texture2D> texture = frame_.buffer->texture;
                     // params is valid only when the frame stores a non silent buffer
-                    const stream_videomixer_controller::params_t& params = frame_.params;
-                    const stream_videomixer_controller::params_t& user_params =
-                        item.valid_user_params ? item.user_params : params;
+                    const auto& params = frame_.params;
+                    const auto& user_params = item.valid_user_params ? item.user_params : params;
 
                     /////////////////////////////////////////////////////////////////
                     /////////////////////////////////////////////////////////////////
@@ -415,16 +430,21 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
     {
         device_context_resources_t frame =
             std::static_pointer_cast<transform_videomixer::device_context_resources>(
-                frames->frames[i].buffer);
+                frames[i].buffer);
         if(frame)
             frame->ctx->EndDraw();
     }
 
-    frames->end = end;
-
+    {
+        transform_videomixer::buffer_pool_video_frames_t::scoped_lock lock(
+            this->transform->buffer_pool_video_frames->mutex);
+        sample = this->transform->buffer_pool_video_frames->acquire_buffer();
+    }
     assert_(end > 0);
+    sample->initialize(std::move(frames), first, end);
+
     out_arg = std::make_optional<out_arg_t::value_type>();
-    out_arg->sample = std::move(frames);
+    out_arg->sample = std::move(sample);
     out_arg->has_frames = has_frames;
 
     // TODO: test this

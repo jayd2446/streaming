@@ -20,9 +20,6 @@
 #undef min
 #undef max
 
-#pragma warning(push)
-#pragma warning(disable: 4706) // assignment within conditional expression
-
 // on stream stop the component should serve requests to the request point, so that
 // a component that might stop receives enough samples;
 // at other times, a component is allowed serve samples from zero up to the request point
@@ -136,11 +133,11 @@ private:
     void dispatch(typename request_dispatcher::request_t&);
 
     // request_queue_handler
-    bool on_serve(typename request_queue::request_t&);
-    typename request_queue::request_t* next_request();
+    bool on_serve(typename request_queue::request_t&) override;
+    typename request_queue::request_t* next_request() override;
 protected:
-    virtual void on_stream_start(time_unit);
-    virtual void on_stream_stop(time_unit);
+    virtual void on_stream_start(time_unit) override;
+    virtual void on_stream_stop(time_unit) override;
     // moves all frames from 'from' to 'to', using the 'reference' as the source for samples,
     // and updates the fields of 'from' and 'to';
     // 'reference' is assumed to be valid;
@@ -164,8 +161,9 @@ public:
         const user_params_controller_t& user_params_controller,
         const media_topology_t&);
 
-    result_t request_sample(const request_packet&, const media_stream*);
-    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*) override final;
+    result_t process_sample(
+        const media_component_args*, const request_packet&, const media_stream*) override final;
 };
 
 
@@ -292,81 +290,83 @@ void stream_mixer<T>::process(typename request_queue::request_t& request)
         std::cout << "drain on mixer" << std::endl;
     }
 
-    // move everything to the leftover container if the cutoff is same as the old cutoff;
+    // move the packets to the leftover container
+    for(auto&& item : packets.container)
+    {
+        if(item.arg)
+            this->leftover[item.stream_index].container.push_back(std::move(item));
+    }
+    packets.container.clear();
+
     // this is an optimization so that the pipeline doesn't cause too much overhead if
     // a source has a lower fps than the pipeline
     if(this->cutoff == old_cutoff)
-    {
-        for(auto&& item : packets.container)
-        {
-            if(item.arg)
-                this->leftover[item.stream_index].container.push_back(item);
-        }
         goto out;
-    }
 
-    // move the leftover packets to the request
     for(size_t i = 0; i < this->input_streams_props.size(); i++)
     {
-        std::move(this->leftover[i].container.begin(),
-            this->leftover[i].container.end(),
-            std::back_inserter(packets.container));
-        this->leftover[i].container.clear();
-    }
+        auto&& container = this->leftover[i].container;
 
-    // TODO: see if packets.container could be pooled
-
-    // only keep frames that are between the old and the new cutoff point and contain samples
-    packets.container.erase(std::remove_if(
-        packets.container.begin(),
-        packets.container.end(),
-        [&](packet_t& item)
-        {
+        container.erase(std::remove_if(container.begin(), container.end(),
+            [&](packet_t& item)
             {
-                in_arg_t discarded, modified;
+                bool remove_item = true;
+                in_arg_t modified;
+
+                // try discarding old items
                 if(item.arg)
                 {
-                    const bool ret =
+                    in_arg_t discarded;
+                    const bool all_frames_moved =
                         this->move_frames(discarded, modified, item.arg, old_cutoff, true);
-                    item.arg = modified;
 
-                    assert_((ret && !modified) || (!ret && modified));
+                    assert_((all_frames_moved && !modified) || (!all_frames_moved && modified));
                 }
-            }
-            {
-                in_arg_t new_arg, modified;
-                if(item.arg)
+
+                // try modifying the leftover buffer
+                in_arg_t new_arg;
+                if(modified)
                 {
-                    bool ret;
-                    if(!(ret = this->move_frames(new_arg, modified, item.arg, this->cutoff, false)))
+                    in_arg_t modified2;
+                    const bool all_frames_moved =
+                        this->move_frames(new_arg, modified2, modified, this->cutoff, false);
+
+                    // TODO: this could be further optimized so that
+                    // item.arg = modified2 won't be performed if item.arg == modified2;
+                    // happens only when nothing is moved to 'to'
+                    if(!all_frames_moved)
                     {
-                        item.arg = modified;
-                        // assign the item to the leftover buffer since it was only partly moved
-                        this->leftover[item.stream_index].container.push_back(item);
+                        item.arg = modified2;
+
+                        // keep the item in the leftover buffer since it was not fully moved
+                        remove_item = false;
                     }
-                    assert_((ret && !modified) || (!ret && modified));
+
+                    assert_((all_frames_moved && !modified2) || (!all_frames_moved && modified2));
                 }
 
+                // try assigning to the request
                 if(new_arg && new_arg->sample)
                 {
-                    // assign the processed arg to the request
-                    item.arg = new_arg;
-
 #ifdef TRANSFORM_MIXER_APPLY_STREAM_CONTROLLER_IMMEDIATELY
                     // apply stream controller here;
-                    // it overwrites the previous value set in request_sample
+                    // it overwrites the previous value set in request_sample;
+                    // get_params is multithread safe
                     if(item.valid_user_params)
-                        this->input_streams_props[item.stream_index].user_params_controller->get_params(
-                            item.user_params);
+                        this->input_streams_props[item.stream_index].
+                        user_params_controller->get_params(item.user_params);
 #endif
 
-                    return false;
+                    // move the processed packet to the request
+                    packet_t new_item = item;
+                    new_item.arg = new_arg;
+                    packets.container.push_back(std::move(new_item));
                 }
-                else
-                    // remove item
-                    return true;
-            }
-        }), packets.container.end());
+
+                return remove_item;
+
+            }), container.end());
+    }
 
 out:
     const frame_unit cutoff = this->cutoff;
@@ -388,10 +388,17 @@ out:
     }
     else
     {
-        // pass null args downstream;
-        // currently, it is assumed that none of the downstream components do any processing
-        // on null args
-        this->transform->session->give_sample(request.stream, NULL, request.rp);
+        // pass null args downstream
+        typename request_dispatcher::request_t dispatcher_request;
+        dispatcher_request.stream = request.stream;
+        dispatcher_request.rp = request.rp;
+
+        this->dispatcher->dispatch_request(std::move(dispatcher_request),
+            [this_ = this->shared_from_this<stream_mixer>()](
+                typename request_dispatcher::request_t& request)
+        {
+            this_->transform->session->give_sample(request.stream, NULL, request.rp);
+        });
     }
 }
 
@@ -506,5 +513,3 @@ typename stream_mixer<T>::result_t stream_mixer<T>::process_sample(
 
     return OK;
 }
-
-#pragma warning(pop)
