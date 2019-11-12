@@ -68,13 +68,13 @@ source_wasapi::stream_source_base_t source_wasapi::create_derived_stream()
 bool source_wasapi::get_samples_end(time_unit /*request_time*/, frame_unit& end) const
 {
     scoped_lock lock(this->captured_audio_mutex);
-    if(this->captured_audio->frames.empty())
+    if(!this->captured_audio->is_valid())
         return false;
 
     // TODO: if source wasapi becomes broken, get_samples_end should always return true
     // and have samples up to request_time
 
-    end = this->captured_audio->end;
+    end = this->captured_audio->get_end();
     return true;
 }
 
@@ -102,8 +102,8 @@ void source_wasapi::make_request(request_t& request, frame_unit frame_end)
     if(moved)
     {
         args.sample = std::move(captured_audio);
-        // the sample must not be empty
-        assert_(!args.sample->frames.empty());
+        // the sample must be valid
+        assert_(args.sample->is_valid());
     }
 }
 
@@ -273,8 +273,8 @@ void source_wasapi::capture_cb(void*)
                     *this->captured_audio, false);
 
             // keep the buffer within the limits
-            if(this->captured_audio->move_frames_to(
-                NULL, this->captured_audio->end - this->get_maximum_buffer_size(), 
+            if(this->captured_audio->is_valid() && this->captured_audio->move_frames_to(
+                NULL, this->captured_audio->get_end() - this->get_maximum_buffer_size(), 
                 this->resampled_block_align))
             {
                 std::cout << "source_wasapi buffer limit reached, excess frames discarded" << std::endl;

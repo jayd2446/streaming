@@ -132,41 +132,58 @@ public:
     media_sample_audio_consecutive_frames() : dur(0) {}
 };
 
+template<typename FrameType, typename FrameCollection = std::vector<FrameType>>
+class media_sample_frames_template : public buffer_poolable
+{
+    template<typename T> friend class buffer_pooled;
+public:
+    using sample_t = FrameType;
+    using samples_t = FrameCollection;
+    static const frame_unit undef_end = std::numeric_limits<frame_unit>::min(),
+        undef_first = std::numeric_limits<frame_unit>::max();
+private:
+    void uninitialize() override;
+protected:
+    samples_t frames;
+    frame_unit end, first;
+public:
+    media_sample_frames_template() : end(undef_end), first(undef_first) {}
+    media_sample_frames_template(const media_sample_frames_template&) = delete;
+    media_sample_frames_template& operator=(const media_sample_frames_template&) = delete;
+    virtual ~media_sample_frames_template() {}
+
+    // end is the max (pos + dur) of frames;
+    // assert failure if is_valid() == false
+    frame_unit get_end() const { assert_(this->is_valid()); return this->end; }
+    // assert failure if is_valid() == false
+    frame_unit get_first() const { assert_(this->is_valid()); return this->first; }
+    const samples_t& get_frames() const { return this->frames; }
+
+    sample_t& add_consecutive_frames(const sample_t&);
+
+    void initialize();
+    void initialize(const media_sample_frames_template& other);
+    // it should be ensured that the end and first are valid for the sample collection;
+    // sample collection must not be empty
+    void initialize(samples_t&& sample_collection, frame_unit first, frame_unit end);
+
+    // empty frame collection is not valid
+    bool is_valid() const { return !this->frames.empty(); }
+};
+
 // frametype should be either media_sample_audio_consecutive_frames or a derived type of it
 template<typename FrameType>
-class media_sample_audio_frames_template : public buffer_poolable
+class media_sample_audio_frames_template : public media_sample_frames_template<FrameType>
 {
-    friend class buffer_pooled<media_sample_audio_frames_template<FrameType>>;
 public:
-    typedef FrameType sample_t;
-private:
-    void uninitialize() {this->frames.clear(); this->end = 0; this->buffer_poolable::uninitialize();}
-public:
-    // TODO: set the initial end position to absolute minimum, so that max can be used
-    // even if the end is technically undefined
-    // end is the max (pos + dur) of frames
-    frame_unit end;
-    // element must have valid data;
-    // vector is used for cache friendliness;
-    // the audio frames sample is pooled so that the capacity of the vector should stabilize
-    std::vector<sample_t> frames;
-
-    media_sample_audio_frames_template() : end(0) {}
     virtual ~media_sample_audio_frames_template() {}
 
     // moves part from this to 'to'
     // returns whether any frames were moved;
     // to can be null, in which case the contents from this are discarded;
-    // std move is used for conventional move where the contents of this are replaced;
     // std::numeric_limits::max can be used for moving all frames;
     // block align is assumed to be the same for both samples
     bool move_frames_to(media_sample_audio_frames_template* to, frame_unit end, UINT32 block_align);
-
-    sample_t& add_consecutive_frames(const sample_t&);
-
-    // buffer pool methods
-    void initialize()
-    {assert_(this->end == 0); assert_(this->frames.empty()); this->buffer_poolable::initialize();}
 };
 
 typedef media_sample_audio_frames_template<media_sample_audio_consecutive_frames> 
@@ -193,47 +210,13 @@ public:
 
 // frametype should be either media_sample_video_frame or a derived type of it
 template<typename FrameType>
-class media_sample_video_frames_template : public buffer_poolable
-{
-    friend class buffer_pooled<media_sample_video_frames_template<FrameType>>;
-public:
-    using sample_t = FrameType;
+class media_sample_video_frames_template : 
     // TODO: use vector
-    using samples_t = std::deque<sample_t>;
-    typedef FrameType sample_t;
-    static const frame_unit undef_end = std::numeric_limits<frame_unit>::min(),
-        undef_first = std::numeric_limits<frame_unit>::max();
-private:
-    samples_t frames;
-    frame_unit end, first;
-
-    void uninitialize() override;
+    public media_sample_frames_template<FrameType, std::deque<FrameType>>
+{
 public:
-    media_sample_video_frames_template() : end(undef_end), first(undef_first) {}
-    media_sample_video_frames_template(const media_sample_video_frames_template&) = delete;
-    media_sample_video_frames_template& operator=(const media_sample_video_frames_template&) = delete;
     virtual ~media_sample_video_frames_template() {}
-
-    // end is the max (pos + dur) of frames;
-    // assert failure if is_valid() == false
-    frame_unit get_end() const { assert_(this->is_valid()); return this->end; }
-    // assert failure if is_valid() == false
-    frame_unit get_first() const { assert_(this->is_valid()); return this->first; }
-    const samples_t& get_frames() const { return this->frames; }
-
     bool move_frames_to(media_sample_video_frames_template* to, frame_unit end);
-    // adds new frame and sets the end position;
-    // returns the added frame
-    sample_t& add_consecutive_frames(const sample_t&);
-
-    void initialize();
-    void initialize(const media_sample_video_frames_template& other);
-    // it should be ensured that the end and first are valid for the sample collection;
-    // sample collection must not be empty
-    void initialize(samples_t&& sample_collection, frame_unit first, frame_unit end);
-
-    // empty frame collection is not valid
-    bool is_valid() const { return !this->frames.empty(); }
 };
 
 typedef media_sample_video_frames_template<media_sample_video_frame> media_sample_video_frames;
@@ -393,25 +376,93 @@ typedef std::optional<media_component_aac_audio_args> media_component_aac_audio_
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-template<typename T>
-typename media_sample_audio_frames_template<T>::sample_t&
-media_sample_audio_frames_template<T>::add_consecutive_frames(const sample_t& new_frame)
+template<typename T, typename U>
+typename media_sample_frames_template<T, U>::sample_t&
+media_sample_frames_template<T, U>::add_consecutive_frames(const sample_t& new_frame)
 {
     assert_(new_frame.dur > 0);
 
     this->frames.push_back(new_frame);
     this->end = std::max(new_frame.pos + new_frame.dur, this->end);
+    this->first = std::min(new_frame.pos, this->first);
 
     return this->frames.back();
 }
+
+template<typename T, typename U>
+void media_sample_frames_template<T, U>::uninitialize()
+{
+    this->frames.clear();
+    this->end = undef_end;
+    this->first = undef_first;
+
+    this->buffer_poolable::uninitialize();
+}
+
+template<typename T, typename U>
+void media_sample_frames_template<T, U>::initialize()
+{
+    assert_(this->end == undef_end);
+    assert_(this->first == undef_first);
+    assert_(this->frames.empty());
+
+    this->buffer_poolable::initialize();
+}
+
+template<typename T, typename U>
+void media_sample_frames_template<T, U>::initialize(const media_sample_frames_template& other)
+{
+    this->initialize();
+
+    this->frames = other.frames;
+    this->end = other.end;
+    this->first = other.first;
+}
+
+template<typename T, typename U>
+void media_sample_frames_template<T, U>::initialize(
+    samples_t&& sample_collection, frame_unit first, frame_unit end)
+{
+    assert_(!sample_collection.empty());
+
+    this->initialize();
+
+    this->frames = std::move(sample_collection);
+    this->end = end;
+    this->first = first;
+
+#ifdef _DEBUG
+    // check that the passed end and first args are valid
+    frame_unit collection_end = undef_end,
+        collection_first = undef_first;
+    for(auto&& item : this->frames)
+    {
+        collection_end = std::max(collection_end, item.pos + item.dur);
+        collection_first = std::min(collection_first, item.pos);
+    }
+
+    assert_(end == collection_end);
+    assert_(first == collection_first);
+#endif
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
 
 template<typename T>
 bool media_sample_audio_frames_template<T>::move_frames_to(
     media_sample_audio_frames_template* to, frame_unit end, UINT32 block_align)
 {
-    assert_(this->end == 0 || !this->frames.empty());
+    assert_(this->end == undef_end || !this->frames.empty());
 
     bool moved = false;
+
+    this->first = undef_first;
+
+    // TODO: this can be optimized by using the first field
 
     // the media_sample_audio_consecutive_frames should be lightweight, because it seems that
     // the value is moved within the container
@@ -426,7 +477,10 @@ bool media_sample_audio_frames_template<T>::move_frames_to(
         // this sample would retain the ordered flag only if this was null when
         // frames were moved
         if(elem.pos >= end)
+        {
+            this->first = std::min(this->first, elem.pos);
             return false;
+        }
 
         moved = true;
 
@@ -473,6 +527,8 @@ bool media_sample_audio_frames_template<T>::move_frames_to(
 
             elem.pos = new_frame_pos;
             elem.dur = new_frame_dur;
+
+            this->first = std::min(this->first, elem.pos);
         }
         else
             remove = true;
@@ -487,6 +543,7 @@ bool media_sample_audio_frames_template<T>::move_frames_to(
         {
             to->frames.push_back(new_frames);
             to->end = std::max(to->end, new_frames.pos + new_frames.dur);
+            to->first = std::min(to->first, new_frames.pos);
         }
 
     done:
@@ -497,11 +554,12 @@ bool media_sample_audio_frames_template<T>::move_frames_to(
 
     }), this->frames.end());
 
-    if(end >= this->end)
+    assert_(this->is_valid() || end >= this->end);
+    if(!this->is_valid())
     {
         assert_(this->frames.empty());
-        // set the end to 'undefined' state
-        this->end = 0;
+        this->end = undef_end;
+        this->first = undef_first;
     }
 
     return moved;
@@ -514,25 +572,14 @@ bool media_sample_audio_frames_template<T>::move_frames_to(
 
 
 template<typename T>
-typename media_sample_video_frames_template<T>::sample_t&
-media_sample_video_frames_template<T>::add_consecutive_frames(const sample_t& new_frame)
-{
-    assert_(new_frame.dur > 0);
-
-    this->frames.push_back(new_frame);
-    this->end = std::max(new_frame.pos + new_frame.dur, this->end);
-    this->first = std::min(new_frame.pos, this->first);
-
-    return this->frames.back();
-}
-
-template<typename T>
 bool media_sample_video_frames_template<T>::move_frames_to(
     media_sample_video_frames_template* to, frame_unit end)
 {
     assert_(this->end == undef_end || !this->frames.empty());
 
     bool moved = false;
+
+    this->first = undef_first;
 
     // TODO: this can be optimized by using the first field
 
@@ -549,7 +596,10 @@ bool media_sample_video_frames_template<T>::move_frames_to(
         // this sample would retain the ordered flag only if this was null when
         // frames were moved
         if(elem.pos >= end)
+        {
+            this->first = std::min(this->first, elem.pos);
             return false;
+        }
 
         moved = true;
 
@@ -566,81 +616,29 @@ bool media_sample_video_frames_template<T>::move_frames_to(
             new_frame.dur = end - new_frame.pos;
             elem.dur = (elem.pos + elem.dur) - end;
             elem.pos = end;
+
+            this->first = std::min(this->first, elem.pos);
         }
 
         if(to)
         {
             to->frames.push_back(new_frame);
             to->end = std::max(to->end, new_frame.pos + new_frame.dur);
+            to->first = std::min(to->first, new_frame.pos);
         }
 
         return remove;
     }), this->frames.end());
 
-    if(end >= this->end)
+    assert_(this->is_valid() || end >= this->end);
+    if(!this->is_valid())
     {
-        assert_(this->frames.empty());
         this->end = undef_end;
+        this->first = undef_first;
     }
 
     return moved;
 }
 
-template<typename T>
-void media_sample_video_frames_template<T>::uninitialize()
-{
-    this->frames.clear();
-    this->end = undef_end;
-    this->first = undef_first;
-
-    this->buffer_poolable::uninitialize();
-}
-
-template<typename T>
-void media_sample_video_frames_template<T>::initialize()
-{
-    assert_(this->end == undef_end); 
-    assert_(this->first == undef_first);
-    assert_(this->frames.empty()); 
-    this->buffer_poolable::initialize();
-}
-
-template<typename T>
-void media_sample_video_frames_template<T>::initialize(
-    const media_sample_video_frames_template& other)
-{
-    this->initialize();
-
-    this->frames = other.frames;
-    this->end = other.end;
-    this->first = other.first;
-}
-
-template<typename T>
-void media_sample_video_frames_template<T>::initialize(
-    samples_t&& sample_collection, frame_unit first, frame_unit end)
-{
-    assert_(!sample_collection.empty());
-
-    this->initialize();
-
-    this->frames = std::move(sample_collection);
-    this->end = end;
-    this->first = first;
-
-#ifdef _DEBUG
-    // check that the passed end and first args are valid
-    frame_unit collection_end = undef_end,
-        collection_first = undef_first;
-    for(auto&& item : this->frames)
-    {
-        collection_end = std::max(collection_end, item.pos + item.dur);
-        collection_first = std::min(collection_first, item.pos);
-    }
-
-    assert_(end == collection_end);
-    assert_(first == collection_first);
-#endif
-}
 
 #undef CHECK_HR

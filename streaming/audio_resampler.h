@@ -104,8 +104,10 @@ frame_unit audio_resampler::resample(
         }
         else
         {
-            buffer_pool_memory_t::scoped_lock lock(this->buffer_pool_memory->mutex);
-            buffer = this->buffer_pool_memory->acquire_buffer();
+            {
+                buffer_pool_memory_t::scoped_lock lock(this->buffer_pool_memory->mutex);
+                buffer = this->buffer_pool_memory->acquire_buffer();
+            }
             buffer->initialize(frames_count * block_align);
             out_buffer = buffer->buffer;
         }
@@ -137,8 +139,7 @@ frame_unit audio_resampler::resample(
         consec_frames.dur = frame_dur;
         consec_frames.buffer = mf_buffer;
 
-        frames.end = std::max(frames.end, consec_frames.pos + consec_frames.dur);
-        frames.frames.push_back(std::move(consec_frames));
+        frames.add_consecutive_frames(consec_frames);
 
         frame_next_pos += frame_dur;
         frames_added += frame_dur;

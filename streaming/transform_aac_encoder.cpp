@@ -120,7 +120,7 @@ bool transform_aac_encoder::encode(const media_sample_audio_frames* in_frames,
     // currently, the audio mixer only outputs one frame
     if(in_frames)
     {
-        for(auto&& elem : in_frames->frames)
+        for(const auto& elem : in_frames->get_frames())
         {
             assert_(elem.buffer);
 
@@ -405,8 +405,10 @@ media_stream::result_t stream_aac_encoder::process_sample(
         (request.sample.args && request.sample.args->has_frames);
     if(process_request)
     {
-        buffer_pool_aac_frames_t::scoped_lock lock(this->buffer_pool_aac_frames->mutex);
-        request.sample.out_sample = this->buffer_pool_aac_frames->acquire_buffer();
+        {
+            buffer_pool_aac_frames_t::scoped_lock lock(this->buffer_pool_aac_frames->mutex);
+            request.sample.out_sample = this->buffer_pool_aac_frames->acquire_buffer();
+        }
         request.sample.out_sample->initialize();
     }
 

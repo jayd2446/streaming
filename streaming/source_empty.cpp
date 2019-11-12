@@ -52,7 +52,7 @@ void source_empty_audio::make_request(request_t& request, frame_unit frame_end)
     args.sample->add_consecutive_frames(frame);
 
     const bool limit_reached =
-        args.sample->move_frames_to(NULL, args.sample->end - this->get_maximum_buffer_size(),
+        args.sample->move_frames_to(NULL, args.sample->get_end() - this->get_maximum_buffer_size(),
             transform_audiomixer2::block_align);
     if(limit_reached)
     {

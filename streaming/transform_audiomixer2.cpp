@@ -60,6 +60,30 @@ bool stream_audiomixer2::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_
     frame_unit end, bool discarded)
 {
     assert_(reference);
+    assert_(!to && !from);
+
+    // optimized specialization if the whole sample is moved
+    if(reference->sample && end >= reference->sample->get_end())
+    {
+        to = reference;
+        to->frame_end = end;
+
+        if(discarded)
+            std::cout << "discarded audio frames" << std::endl;
+
+        return true;
+    }
+
+    // optimized specialization if nothing is moved
+    if(reference->sample && end <= reference->sample->get_first())
+    {
+        to = std::make_optional<in_arg_t::value_type>();
+        from = reference;
+
+        to->frame_end = end;
+
+        return false;
+    }
 
     to = std::make_optional<in_arg_t::value_type>();
     from = std::make_optional<in_arg_t::value_type>();
@@ -73,13 +97,9 @@ bool stream_audiomixer2::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_
             transform_audiomixer2::buffer_pool_audio_mixer_frames_t::scoped_lock lock(
                 this->transform->buffer_pool_audio_mixer_frames->mutex);
             from->sample = this->transform->buffer_pool_audio_mixer_frames->acquire_buffer();
-            from->sample->initialize();
         }
-
-        // *from->sample = *reference->sample
-        // could be used, but currently the fields are assigned individually
-        from->sample->frames = reference->sample->frames;
-        from->sample->end = reference->sample->end;
+            
+        from->sample->initialize(*reference->sample);
 
         if(!discarded)
         {
@@ -99,9 +119,9 @@ bool stream_audiomixer2::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_
 
     // reset the samples of 'from' and 'to' if they contain no data,
     // because frame collections with empty data is not currently allowed
-    if(from && from->sample && from->sample->frames.empty())
+    if(from && from->sample && !from->sample->is_valid())
         from->sample.reset();
-    if(to && to->sample && to->sample->frames.empty())
+    if(to && to->sample && !to->sample->is_valid())
         to->sample.reset();
 
     return !from;
@@ -146,12 +166,6 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     assert_(frame_count > 0);
 
     {
-        transform_audiomixer2::buffer_pool_audio_frames_t::scoped_lock lock(
-            this->transform->buffer_pool_audio_frames->mutex);
-        frames = this->transform->buffer_pool_audio_frames->acquire_buffer();
-        frames->initialize();
-    }
-    {
         transform_audiomixer2::buffer_pool_memory_t::scoped_lock lock(
             this->transform->buffer_pool_memory->mutex);
         out_buffer = this->transform->buffer_pool_memory->acquire_buffer();
@@ -170,10 +184,10 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
         if(!item.arg || !item.arg->sample)
             continue;
 
-        assert_(end >= item.arg->sample->end);
+        assert_(end >= item.arg->sample->get_end());
         // empty frame collection isn't allowed
-        assert_(!item.arg->sample->frames.empty());
-        for(auto&& consec_frames : item.arg->sample->frames)
+        assert_(item.arg->sample->is_valid());
+        for(const auto& consec_frames : item.arg->sample->get_frames())
         {
             // max buffer length is defined which makes this assertion false
             /*assert_(first <= consec_frames.pos);*/
@@ -184,7 +198,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
             if(!consec_frames.buffer)
                 continue;
 
-            in_bit_depth_t* in_data_base;
+            const in_bit_depth_t* in_data_base;
             CHECK_HR(hr = consec_frames.buffer->Lock((BYTE**)&in_data_base, 0, 0));
                 
             for(frame_unit i = std::max(first, consec_frames.pos);
@@ -196,7 +210,7 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
 
                 out_bit_depth_t* out_data = out_data_base + 
                     (UINT32)(i - first) * transform_aac_encoder::channels;
-                in_bit_depth_t* in_data = in_data_base +
+                const in_bit_depth_t* in_data = in_data_base +
                     (UINT32)(i - consec_frames.pos) * transform_aac_encoder::channels;
 
                 for(UINT32 j = 0; j < transform_aac_encoder::channels; j++)
@@ -218,14 +232,19 @@ void stream_audiomixer2::mix(out_arg_t& out_arg, args_t& packets,
     CHECK_HR(hr = out_buffer->buffer->Unlock());
 
     {
-        assert_(frames->frames.empty());
+        transform_audiomixer2::buffer_pool_audio_frames_t::scoped_lock lock(
+            this->transform->buffer_pool_audio_frames->mutex);
+        frames = this->transform->buffer_pool_audio_frames->acquire_buffer();
+    }
+    frames->initialize();
+
+    {
         media_sample_audio_consecutive_frames consec_frames;
         consec_frames.memory_host = out_buffer;
         consec_frames.buffer = out_buffer->buffer;
         consec_frames.pos = first;
         consec_frames.dur = frame_count;
-        frames->end = end;
-        frames->frames.push_back(consec_frames);
+        frames->add_consecutive_frames(consec_frames);
     }
 
     assert_(end > 0);

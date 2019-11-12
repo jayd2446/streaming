@@ -150,10 +150,8 @@ bool stream_videomixer::move_frames(in_arg_t& to, in_arg_t& from, const in_arg_t
     assert_(reference);
     assert_(!to && !from);
 
-    // TODO: make same changes to audio side
-
     // optimized specialization if the whole sample is moved
-    if(end >= reference->frame_end)
+    if(reference->sample && end >= reference->sample->get_end())
     {
         to = reference;
         to->frame_end = end;
