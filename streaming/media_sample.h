@@ -458,11 +458,11 @@ bool media_sample_audio_frames_template<T>::move_frames_to(
 {
     assert_(this->end == undef_end || !this->frames.empty());
 
+    if(end <= this->first)
+        return false;
+
     bool moved = false;
-
     this->first = undef_first;
-
-    // TODO: this can be optimized by using the first field
 
     // the media_sample_audio_consecutive_frames should be lightweight, because it seems that
     // the value is moved within the container
@@ -577,11 +577,11 @@ bool media_sample_video_frames_template<T>::move_frames_to(
 {
     assert_(this->end == undef_end || !this->frames.empty());
 
+    if(end <= this->first)
+        return false;
+
     bool moved = false;
-
     this->first = undef_first;
-
-    // TODO: this can be optimized by using the first field
 
     // the media_sample_video_frame should be lightweight, because it seems that
     // the value is moved within the container
