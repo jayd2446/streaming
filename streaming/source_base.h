@@ -10,6 +10,7 @@
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+#include <type_traits>
 
 #undef min
 #undef max
@@ -23,15 +24,17 @@ class stream_source_base;
 template<class Args>
 class source_base : public media_component
 {
+    static_assert(std::is_base_of_v<media_component_frame_args, Args>,
+        "Args must be derived from media_component_frame_args");
     friend class stream_source_base<source_base<Args>>;
 public:
-    typedef std::lock_guard<std::mutex> scoped_lock;
-    typedef Args args_t;
+    using scoped_lock           = std::lock_guard<std::mutex>;
+    using args_t                = Args;
     struct payload_t { bool drain; std::optional<args_t> args; };
-    typedef stream_source_base<source_base> stream_source_base;
-    typedef std::shared_ptr<stream_source_base> stream_source_base_t;
+    using stream_source_base    = stream_source_base<source_base>;
+    using stream_source_base_t  = std::shared_ptr<stream_source_base>;
     // TODO: this should not be a typedef
-    typedef typename request_queue<payload_t>::request_t request_t;
+    using request_t             = typename request_queue<payload_t>::request_t;
 private:
     mutable std::mutex active_topology_mutex;
     std::vector<media_topology_t> active_topology;
@@ -81,12 +84,12 @@ class stream_source_base :
     request_queue_handler<typename SourceBase::payload_t>
 {
 public:
-    typedef std::lock_guard<std::mutex> scoped_lock;
-    typedef SourceBase source_base;
-    typedef std::shared_ptr<source_base> source_base_t;
-    typedef request_dispatcher<typename source_base::request_t> request_dispatcher;
-    typedef typename request_queue_handler<typename SourceBase::payload_t>::request_queue 
-        request_queue;
+    using scoped_lock           = std::lock_guard<std::mutex>;
+    using source_base           = SourceBase;
+    using source_base_t         = std::shared_ptr<source_base>;
+    using request_dispatcher    = request_dispatcher<typename source_base::request_t>;
+    using request_queue         = 
+        typename request_queue_handler<typename SourceBase::payload_t>::request_queue;
 private:
     source_base_t source;
     mutable bool drainable_or_drained;
@@ -95,6 +98,8 @@ private:
 
     // wrapper for source_base::get_samples_end, handles broken functionality
     bool get_samples_end(time_unit request_time, frame_unit& end) const;
+    // wrapper for source_base::make_request, handles broken functionality
+    void make_request(typename source_base::request_t&, frame_unit frame_end);
 
     // media_stream_message_listener
     void on_stream_start(time_unit) override;
@@ -186,6 +191,21 @@ bool stream_source_base<T>::get_samples_end(time_unit request_time, frame_unit& 
 }
 
 template<typename T>
+void stream_source_base<T>::make_request(
+    typename source_base::request_t& request, frame_unit frame_end)
+{
+    const bool broken_flag = this->source->broken_flag;
+    if(broken_flag)
+    {
+        using args_t = typename source_base::args_t;
+        request.sample.args = std::make_optional<args_t>();
+        request.sample.args->frame_end = frame_end;
+    }
+    else
+        this->source->make_request(request, frame_end);
+}
+
+template<typename T>
 void stream_source_base<T>::on_stream_start(time_unit)
 {
     scoped_lock lock(this->source->active_topology_mutex);
@@ -258,7 +278,7 @@ bool stream_source_base<T>::on_serve(typename request_queue::request_t& request)
         {
             const frame_unit end = std::min(request_end, samples_end);
             // make_request is allowed to set the args in request to null
-            this->source->make_request(request, end);
+            this->make_request(request, end);
         }
         else
             assert_(!request.sample.args);

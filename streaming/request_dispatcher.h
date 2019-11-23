@@ -118,9 +118,6 @@ request_dispatcher<T>::~request_dispatcher()
 template<class T>
 void request_dispatcher<T>::dispatch_cb(void* res_)
 {
-    // TODO: make sure that the imfasyncresult isn't kept alive for longer than the duration of
-    // dispatch_cb
-
     assert_(res_);
     IMFAsyncResult* res = static_cast<IMFAsyncResult*>(res_);
     CComPtr<IUnknown> params_unk;
@@ -131,6 +128,10 @@ void request_dispatcher<T>::dispatch_cb(void* res_)
 
     params = static_cast<state_object*>(params_unk.p);
     params->on_dispatch(params->request);
+
+    // manually release the contents of state object
+    params->on_dispatch = {};
+    params->request = {};
 
 done:
     if(FAILED(hr))

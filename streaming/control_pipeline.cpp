@@ -76,9 +76,9 @@ control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
     std::cout << "adapter " << this->d3d11dev_adapter << std::endl;
 
     // set the gpu thread priority
-    /*INT old_priority;
+    INT old_priority;
     CHECK_HR(hr = this->dxgidev->GetGPUThreadPriority(&old_priority));
-    CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(3));*/
+    CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(7));
 
     this->config = control_pipeline::get_default_config();
 

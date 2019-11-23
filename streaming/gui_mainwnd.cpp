@@ -290,10 +290,15 @@ LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
             this->ctrl_pipeline->root_scene->get_selected_scene());
     }*/
 
+    static frame_unit fps_num = 60;
+
     control_pipeline_config config;
-    config.fps_num = 60;
+    config.fps_num = fps_num;
     config.fps_den = 1;
     config.sample_rate = 44100;
+
+    std::cout << "new fps: " << fps_num << std::endl;
+    fps_num = fps_num * 2;
 
     this->ctrl_pipeline->apply_config(config);
 

@@ -8,20 +8,21 @@
 
 // TODO: add timeout so that a stalling source doesn't stall the pipeline
 
-class video_source_helper
+class video_source_helper final
 {
 public:
-    // video devices might send samples in bursts, so
-    // maximum_frame_count should be carefully chosen
-    static const size_t maximum_frame_count = 10;
     static const frame_unit maximum_buffer_size = 6000/*60*/;
-    typedef buffer_pool<media_sample_video_mixer_frames_pooled> buffer_pool_video_frames_t;
+    using buffer_pool_video_frames_t = buffer_pool<media_sample_video_mixer_frames_pooled>;
 private:
     std::queue<media_sample_video_mixer_frame> captured_frames;
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
     media_sample_video_mixer_frame last_served_frame;
     std::pair<frame_unit /*num*/, frame_unit /*den*/> framerate;
     bool initialized, fully_initialized;
+
+    // video devices might send samples in bursts, so
+    // maximum_frame_count should be carefully chosen
+    size_t maximum_frame_count;
 
     void add_padding_frames(const media_sample_video_mixer_frame& last_frame,
         frame_unit next_frame_pos,

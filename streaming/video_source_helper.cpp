@@ -1,10 +1,14 @@
 #include "video_source_helper.h"
 #include <iostream>
 
+#define FRAME_COUNT_PER_60_FPS 10
+#define FRAME_COUNT_MIN 5
+
 video_source_helper::video_source_helper() :
     initialized(false),
     buffer_pool_video_frames(new buffer_pool_video_frames_t),
-    fully_initialized(false)
+    fully_initialized(false),
+    maximum_frame_count(FRAME_COUNT_PER_60_FPS)
 {
 }
 
@@ -42,6 +46,10 @@ void video_source_helper::initialize(frame_unit start,
     first_frame.dur = 1;
     this->last_served_frame = first_frame;
     this->framerate = {frame_rate_num, frame_rate_den};
+
+    this->maximum_frame_count = std::max(
+        (size_t)((frame_rate_num / (float)frame_rate_den) / 60 * FRAME_COUNT_PER_60_FPS),
+        (size_t)FRAME_COUNT_MIN);
 
     this->initialized = true;
 

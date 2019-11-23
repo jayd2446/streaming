@@ -7,6 +7,7 @@
 #include <dxgi1_2.h>
 #include <dxgi1_5.h>
 #include <memory>
+#include <optional>
 
 #pragma comment(lib, "dxgi")
 
@@ -21,10 +22,11 @@ class stream_displaycapture_pointer;
 typedef std::shared_ptr<stream_displaycapture> stream_displaycapture_t;
 typedef std::shared_ptr<stream_displaycapture_pointer> stream_displaycapture_pointer_t;
 
-// this struct is internal to displaycapture
-struct displaycapture_args
+// this struct is internal to displaycapture;
+// derived from frame args because source_base requires it
+struct displaycapture_args : media_component_frame_args
 {
-    media_component_videomixer_args args, pointer_args;
+    std::optional<media_component_videomixer_args> args, pointer_args;
 };
 
 class source_displaycapture final : public source_base<displaycapture_args>

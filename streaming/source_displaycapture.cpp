@@ -143,8 +143,12 @@ void source_displaycapture::make_request(request_t& request, frame_unit frame_en
     };
 
     request.sample.args = std::make_optional<displaycapture_args>();
-    media_component_videomixer_args& args = request.sample.args->args;
-    media_component_videomixer_args& pointer_args = request.sample.args->pointer_args;
+    request.sample.args->args = std::make_optional< media_component_videomixer_args>();
+    request.sample.args->pointer_args = std::make_optional< media_component_videomixer_args>();
+    request.sample.args->frame_end = frame_end;
+
+    media_component_videomixer_args& args = *request.sample.args->args;
+    media_component_videomixer_args& pointer_args = *request.sample.args->pointer_args;
     media_sample_video_mixer_frame frame, pointer_frame;
 
     try
@@ -185,10 +189,27 @@ void source_displaycapture::dispatch(request_t& request)
 {
     stream_displaycapture* stream = static_cast<stream_displaycapture*>(request.stream);
 
-    this->session->give_sample(stream, request.sample.args.has_value() ?
-        &request.sample.args->args : NULL, request.rp);
-    this->session->give_sample(stream->pointer_stream.get(), request.sample.args.has_value() ?
-        &request.sample.args->pointer_args : NULL, request.rp);
+    if(!request.sample.args)
+    {
+        this->session->give_sample(stream, NULL, request.rp);
+        this->session->give_sample(stream->pointer_stream.get(), NULL, request.rp);
+    }
+    else
+    {
+        auto& args = *request.sample.args;
+        if(!args.args && !args.pointer_args)
+        {
+            args.args = std::make_optional<media_component_videomixer_args>();
+            args.pointer_args = std::make_optional<media_component_videomixer_args>();
+
+            args.args->frame_end = args.frame_end;
+            args.pointer_args->frame_end = args.frame_end;
+        }
+
+        this->session->give_sample(stream, args.args ? &(*args.args) : NULL, request.rp);
+        this->session->give_sample(stream->pointer_stream.get(),
+            args.pointer_args ? &(*args.pointer_args) : NULL, request.rp);
+    }
 }
 
 HRESULT source_displaycapture::initialize_pointer_texture(media_buffer_texture_t& pointer)
