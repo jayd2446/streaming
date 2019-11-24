@@ -111,6 +111,9 @@ void gui_mainwnd::set_statusbar_parts(CSize size)
 
 BOOL gui_mainwnd::PreTranslateMessage(MSG* pMsg)
 {
+    // this will intentionally freeze the gui if there are errors originating from the pipeline
+    streaming::check_for_errors();
+
     return CFrameWindowImpl<gui_mainwnd>::PreTranslateMessage(pMsg);
 }
 

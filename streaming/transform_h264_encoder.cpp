@@ -278,54 +278,63 @@ done:
 
 void transform_h264_encoder::events_cb(void* unk)
 {
-    IMFAsyncResult* result = (IMFAsyncResult*)unk;
-    HRESULT hr = S_OK;
-    CComPtr<IMFMediaEvent> media_event;
-
-    // get the event from the event queue
-    CHECK_HR(hr = this->event_generator->EndGetEvent(result, &media_event));
-
-    // process the event
-    MediaEventType type = MEUnknown;
-    HRESULT status = S_OK;
-    CHECK_HR(hr = media_event->GetType(&type));
-    CHECK_HR(hr = media_event->GetStatus(&status));
-
-    if(type == METransformNeedInput)
+    try
     {
-        this->encoder_requests++;
-        this->serve();
-    }
-    else if(type == METransformHaveOutput)
-    {
-        this->process_output_cb(NULL);
-    }
-    else if(type == METransformDrainComplete)
-    {
-        media_sample_h264_frames_t out_sample;
-        request_t request = this->last_request;
-        this->last_request = request_t();
+        streaming::check_for_errors();
+
+        IMFAsyncResult* result = (IMFAsyncResult*)unk;
+        HRESULT hr = S_OK;
+        CComPtr<IMFMediaEvent> media_event;
+
+        // get the event from the event queue
+        CHECK_HR(hr = this->event_generator->EndGetEvent(result, &media_event));
+
+        // process the event
+        MediaEventType type = MEUnknown;
+        HRESULT status = S_OK;
+        CHECK_HR(hr = media_event->GetType(&type));
+        CHECK_HR(hr = media_event->GetStatus(&status));
+
+        if(type == METransformNeedInput)
         {
-            scoped_lock lock(this->process_output_mutex);
-            out_sample = std::move(this->out_sample);
+            this->encoder_requests++;
+            this->serve();
         }
+        else if(type == METransformHaveOutput)
+        {
+            this->process_output_cb(NULL);
+        }
+        else if(type == METransformDrainComplete)
+        {
+            media_sample_h264_frames_t out_sample;
+            request_t request = this->last_request;
+            this->last_request = request_t();
+            {
+                scoped_lock lock(this->process_output_mutex);
+                out_sample = std::move(this->out_sample);
+            }
 
-        this->process_request(out_sample, request);
-    }
-    else if(type == MEError)
-    {
-        // status has the error code
-        throw HR_EXCEPTION(status);
-    }
-    else
-        assert_(false);
+            this->process_request(out_sample, request);
+        }
+        else if(type == MEError)
+        {
+            // status has the error code
+            throw HR_EXCEPTION(status);
+        }
+        else
+            assert_(false);
 
-    // set callback for the next event
-    CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
+        // set callback for the next event
+        CHECK_HR(hr = this->event_generator->BeginGetEvent(&this->events_callback->native, NULL));
 
 done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
+        if(FAILED(hr))
+            throw HR_EXCEPTION(hr);
+    }
+    catch(streaming::exception e)
+    {
+        streaming::print_error_and_abort(e.what());
+    }
 }
 
 bool transform_h264_encoder::extract_frame(media_sample_video_frame& frame, const request_t& request)

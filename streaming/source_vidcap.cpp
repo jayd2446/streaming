@@ -9,13 +9,24 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-struct source_vidcap::source_reader_callback_t : public IMFSourceReaderCallback2, IUnknownImpl
+struct source_vidcap::source_reader_callback_t : 
+    public IMFSourceReaderCallback2, 
+    IUnknownImpl
 {
     std::weak_ptr<source_vidcap> source;
     std::mutex on_read_sample_mutex;
 
-    explicit source_reader_callback_t(const source_vidcap_t& source) : source(source) {}
-    void on_error(const source_vidcap_t& source);
+    explicit source_reader_callback_t(const source_vidcap_t& source) : source(source) 
+    {
+    }
+    source_reader_callback_t(const source_reader_callback_t&) = delete;
+    source_reader_callback_t& operator=(const source_reader_callback_t&) = delete;
+
+    void on_error(const source_vidcap_t& source)
+    {
+        streaming::check_for_errors();
+        source->set_broken();
+    }
 
     ULONG STDMETHODCALLTYPE AddRef() {return IUnknownImpl::AddRef();}
     ULONG STDMETHODCALLTYPE Release() {return IUnknownImpl::Release();}
@@ -69,149 +80,146 @@ struct source_vidcap::source_reader_callback_t : public IMFSourceReaderCallback2
     }
 };
 
-void source_vidcap::source_reader_callback_t::on_error(const source_vidcap_t& source)
-{
-    streaming::check_for_errors();
-    source->set_broken();
-}
-
 HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD /*stream_index*/,
     DWORD flags, LONGLONG timestamp, IMFSample* sample)
 {
-    // TODO: these callbacks should be wrapped to try exception block
-
-    streaming::check_for_errors();
-
-    scoped_lock lock(this->on_read_sample_mutex);
-
-    source_vidcap_t source = this->source.lock();
-    if(!source)
-        return S_OK;
-
-    CHECK_HR(hr);
-
-    if(source->reset_size.exchange(false))
+    try
     {
-        // resize
-        source->ctrl_pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+        streaming::check_for_errors();
+
+        scoped_lock lock(this->on_read_sample_mutex);
+
+        source_vidcap_t source = this->source.lock();
+        if(!source)
+            return S_OK;
+
+        CHECK_HR(hr);
+
+        if(source->reset_size.exchange(false))
+        {
+            // resize
+            source->ctrl_pipeline->run_in_gui_thread([](const control_class_t& pipeline)
+                {
+                    pipeline->activate();
+                });
+        }
+
+        //  this is assumed to be singlethreaded
+        if((flags & MF_SOURCE_READERF_ENDOFSTREAM) || (flags & MF_SOURCE_READERF_ERROR))
+        {
+            std::cout << "end of stream" << std::endl;
+            source->set_broken();
+        }
+        if(flags & MF_SOURCE_READERF_NEWSTREAM)
+        {
+            std::cout << "new stream" << std::endl;
+        }
+        if(flags & MF_SOURCE_READERF_NATIVEMEDIATYPECHANGED)
+        {
+            std::cout << "native mediatype changed" << std::endl;
+        }
+        if(flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)
+        {
+            std::cout << "current mediatype changed" << std::endl;
+
+            source->output_type = NULL;
+
+            CHECK_HR(hr = source->source_reader->GetCurrentMediaType(
+                (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+                &source->output_type));
             {
-                pipeline->activate();
-            });
-    }
+                scoped_lock lock(source->size_mutex);
+                CHECK_HR(hr = MFGetAttributeSize(source->output_type, MF_MT_FRAME_SIZE,
+                    &source->frame_width, &source->frame_height));
+            }
 
-    // TODO: https://docs.microsoft.com/en-us/windows/desktop/medfound/handling-video-device-loss
-
-    //  this is assumed to be singlethreaded
-    if((flags & MF_SOURCE_READERF_ENDOFSTREAM) || (flags & MF_SOURCE_READERF_ERROR))
-    {
-        std::cout << "end of stream" << std::endl;
-        source->set_broken();
-    }
-    if(flags & MF_SOURCE_READERF_NEWSTREAM)
-    {
-        std::cout << "new stream" << std::endl;
-    }
-    if(flags & MF_SOURCE_READERF_NATIVEMEDIATYPECHANGED)
-    {
-        std::cout << "native mediatype changed" << std::endl;
-    }
-    if(flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)
-    {
-        std::cout << "current mediatype changed" << std::endl;
-
-        source->output_type = NULL;
-
-        CHECK_HR(hr = source->source_reader->GetCurrentMediaType(
-            (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
-            &source->output_type));
+            // reactivate the current scene; it will update the control_vidcap with 
+            // a possible new frame size
+            source->ctrl_pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+                {
+                    pipeline->activate();
+                });
+        }
+        if(flags & MF_SOURCE_READERF_STREAMTICK)
         {
-            scoped_lock lock(source->size_mutex);
-            CHECK_HR(hr = MFGetAttributeSize(source->output_type, MF_MT_FRAME_SIZE,
-                &source->frame_width, &source->frame_height));
+            std::cout << "stream tick" << std::endl;
         }
 
-        // reactivate the current scene; it will update the control_vidcap with 
-        // a possible new frame size
-        source->ctrl_pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+        if(sample)
+        {
+            CComPtr<IMFMediaBuffer> buffer;
+            CComPtr<IMFDXGIBuffer> dxgi_buffer;
+            CComPtr<ID3D11Texture2D> texture;
+            media_clock_t clock = source->session->get_clock();
+            media_sample_video_mixer_frame frame;
+            D3D11_TEXTURE2D_DESC desc;
+
+            if(!clock)
             {
-                pipeline->activate();
-            });
-    }
-    if(flags & MF_SOURCE_READERF_STREAMTICK)
-    {
-        std::cout << "stream tick" << std::endl;
-    }
+                std::cout << "clock was not initialized" << std::endl;
+                goto done;
+            }
 
-    if(sample)
-    {
-        CComPtr<IMFMediaBuffer> buffer;
-        CComPtr<IMFDXGIBuffer> dxgi_buffer;
-        CComPtr<ID3D11Texture2D> texture;
-        media_clock_t clock = source->session->get_clock();
-        media_sample_video_mixer_frame frame;
-        D3D11_TEXTURE2D_DESC desc;
+            CHECK_HR(hr = sample->GetBufferByIndex(0, &buffer));
+            CHECK_HR(hr = buffer->QueryInterface(&dxgi_buffer));
+            CHECK_HR(hr = dxgi_buffer->GetResource(__uuidof(ID3D11Texture2D), (LPVOID*)&texture));
+            texture->GetDesc(&desc);
 
-        if(!clock)
-        {
-            std::cout << "clock was not initialized" << std::endl;
-            goto done;
+            CHECK_HR(hr = sample->GetSampleTime(&timestamp));
+
+            // TODO: use this in source_wasapi aswell(maybe)
+
+            // make frame
+            const frame_unit fps_num = source->session->frame_rate_num,
+                fps_den = source->session->frame_rate_den;
+            const time_unit real_timestamp = clock->system_time_to_clock_time(timestamp),
+                calculated_timestamp = convert_to_time_unit(source->next_frame_pos, fps_num, fps_den),
+                frame_interval = convert_to_time_unit(1, fps_num, fps_den);
+
+            // reset the next frame pos if not set or the timestamps have drifted too far apart
+            if(source->next_frame_pos < 0 ||
+                std::abs(real_timestamp - calculated_timestamp) >(frame_interval / 2))
+            {
+                std::cout << "source_vidcap time base reset" << std::endl;
+                source->next_frame_pos = convert_to_frame_unit(real_timestamp, fps_num, fps_den);
+            }
+
+            frame.pos = source->next_frame_pos++;
+            frame.dur = 1;
+            frame.buffer = source->acquire_buffer(desc);
+
+            // texture must be copied from sample so that media foundation can work correctly;
+            // media foundation has a limit for pooled samples and if it is reached
+            // media foundation begins to stall
+            {
+                using scoped_lock = std::lock_guard<std::recursive_mutex>;
+                scoped_lock lock(*source->context_mutex);
+                source->d3d11devctx->CopyResource(frame.buffer->texture, texture);
+            }
+
+            frame.params.source_rect.top = frame.params.source_rect.left = 0.f;
+            frame.params.source_rect.right = (FLOAT)source->frame_width;
+            frame.params.source_rect.bottom = (FLOAT)source->frame_height;
+            frame.params.dest_rect = frame.params.source_rect;
+            frame.params.source_m = frame.params.dest_m = D2D1::Matrix3x2F::Identity();
+
+            // add the frame
+            {
+                scoped_lock lock(source->source_helper_mutex);
+                source->source_helper.add_new_sample(frame);
+            }
         }
 
-        CHECK_HR(hr = sample->GetBufferByIndex(0, &buffer));
-        CHECK_HR(hr = buffer->QueryInterface(&dxgi_buffer));
-        CHECK_HR(hr = dxgi_buffer->GetResource(__uuidof(ID3D11Texture2D), (LPVOID*)&texture));
-        texture->GetDesc(&desc);
-
-        CHECK_HR(hr = sample->GetSampleTime(&timestamp));
-
-        // TODO: use this in source_wasapi aswell(maybe)
-
-        // make frame
-        const frame_unit fps_num = source->session->frame_rate_num, 
-            fps_den = source->session->frame_rate_den;
-        const time_unit real_timestamp = clock->system_time_to_clock_time(timestamp),
-            calculated_timestamp = convert_to_time_unit(source->next_frame_pos, fps_num, fps_den),
-            frame_interval = convert_to_time_unit(1, fps_num, fps_den);
-
-        // reset the next frame pos if not set or the timestamps have drifted too far apart
-        if(source->next_frame_pos < 0 || 
-            std::abs(real_timestamp - calculated_timestamp) > (frame_interval / 2))
-        {
-            std::cout << "source_vidcap time base reset" << std::endl;
-            source->next_frame_pos = convert_to_frame_unit(real_timestamp, fps_num, fps_den);
-        }
-
-        frame.pos = source->next_frame_pos++;
-        frame.dur = 1;
-        frame.buffer = source->acquire_buffer(desc);
-
-        // texture must be copied from sample so that media foundation can work correctly;
-        // media foundation has a limit for pooled samples and if it is reached
-        // media foundation begins to stall
-        {
-            using scoped_lock = std::lock_guard<std::recursive_mutex>;
-            scoped_lock lock(*source->context_mutex);
-            source->d3d11devctx->CopyResource(frame.buffer->texture, texture);
-        }
-
-        frame.params.source_rect.top = frame.params.source_rect.left = 0.f;
-        frame.params.source_rect.right = (FLOAT)source->frame_width;
-        frame.params.source_rect.bottom = (FLOAT)source->frame_height;
-        frame.params.dest_rect = frame.params.source_rect;
-        frame.params.source_m = frame.params.dest_m = D2D1::Matrix3x2F::Identity();
-
-        // add the frame
-        {
-            scoped_lock lock(source->source_helper_mutex);
-            source->source_helper.add_new_sample(frame);
-        }
-    }
-
-    CHECK_HR(hr = source->queue_new_capture());
+        CHECK_HR(hr = source->queue_new_capture());
 
 done:
-    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
-        this->on_error(source);
+        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+            this->on_error(source);
+    }
+    catch(streaming::exception e)
+    {
+        streaming::print_error_and_abort(e.what());
+    }
 
     return S_OK;
 }
@@ -402,7 +410,12 @@ void source_vidcap::initialize_async()
 
 done:
     if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
+    {
+        PRINT_ERROR(hr);
+
+        // just set as broken
+        this->set_broken(false);
+    }
 }
 
 void source_vidcap::initialize(const control_class_t& ctrl_pipeline,

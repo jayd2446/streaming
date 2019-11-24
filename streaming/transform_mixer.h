@@ -270,6 +270,10 @@ void stream_mixer<T>::process(typename request_queue::request_t& request)
 {
     assert_(request.sample.second.container.size() == this->input_streams_props.size());
 
+    // TODO: decide if transform mixer should have a limit for the difference between
+    // the old cutoff and the current one;
+    // old cutoff could be increased if the limit is reached
+
     args_t& packets = request.sample.second;
     const frame_unit old_cutoff = this->cutoff;
     this->cutoff = std::max(this->find_common_frame_end(packets), old_cutoff);

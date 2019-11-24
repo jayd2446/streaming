@@ -18,6 +18,8 @@
 // source specialization base class for components;
 // the args type is wrapped into an optional type to enable null args
 
+// TODO: add timeout for sources so that a stalling source won't just cause uncontrolled buffering
+
 template<class SourceBase>
 class stream_source_base;
 
@@ -68,7 +70,7 @@ protected:
     // source_base serves frame skips when the component is broken;
     // NOTE: should not be called in request call chain, which means that
     // this should not be called in get_samples_end
-    void set_broken();
+    void set_broken(bool request_reinitialization = true);
 public:
     explicit source_base(const media_session_t& session);
     virtual ~source_base();
@@ -137,10 +139,11 @@ source_base<T>::~source_base()
 }
 
 template<typename T>
-void source_base<T>::set_broken()
+void source_base<T>::set_broken(bool request_reinitialization)
 {
     this->broken_flag = true;
-    this->request_reinitialization(this->ctrl_pipeline);
+    if(request_reinitialization)
+        this->request_reinitialization(this->ctrl_pipeline);
 }
 
 template<typename T>

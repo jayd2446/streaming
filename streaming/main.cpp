@@ -77,57 +77,67 @@ int YourReportHook( int reportType, char *message, int *returnValue )
 
 int main()
 {
-    HRESULT hr = S_OK;
-    CHECK_HR(hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY | COINIT_MULTITHREADED));
-    AtlInitCommonControls(ICC_COOL_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES);
-    CHECK_HR(hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET));
-    CHECK_HR(hr = module_.Init(NULL, NULL));
+    try
+    {
 
-    // lock a capture priority multithreaded work queue
-    /*DWORD task_id = 0;
-    CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &capture_work_queue_id));*/
+        HRESULT hr = S_OK;
+        CHECK_HR(hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY | COINIT_MULTITHREADED));
+        AtlInitCommonControls(ICC_COOL_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES);
+        CHECK_HR(hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET));
+        CHECK_HR(hr = module_.Init(NULL, NULL));
 
-    //// register all media foundation standard work queues as playback
-    /*DWORD taskgroup_id = 0;
-    if(FAILED(MFRegisterPlatformWithMMCSS(L"Capture", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
-        throw HR_EXCEPTION(hr);*/
+        // lock a capture priority multithreaded work queue
+        /*DWORD task_id = 0;
+        CHECK_HR(hr = MFLockSharedWorkQueue(L"Capture", 0, &task_id, &capture_work_queue_id));*/
 
-    // make atl/wtl asserts to break immediately
+        //// register all media foundation standard work queues as playback
+        /*DWORD taskgroup_id = 0;
+        if(FAILED(MFRegisterPlatformWithMMCSS(L"Capture", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
+            throw HR_EXCEPTION(hr);*/
+
+            // make atl/wtl asserts to break immediately
 #ifdef _DEBUG
-    _CrtSetReportHook(YourReportHook);
+        _CrtSetReportHook(YourReportHook);
 #endif
 
-    {
-        CMessageLoop msgloop;
-        module_.AddMessageLoop(&msgloop);
         {
-            /*gui_frame wnd(module_);*/
-            gui_mainwnd wnd;
-            RECT r = {CW_USEDEFAULT, CW_USEDEFAULT, 
-                CW_USEDEFAULT + WINDOW_WIDTH, CW_USEDEFAULT + WINDOW_HEIGHT};
-            if(wnd.CreateEx(NULL, &r) == NULL)
-                throw HR_EXCEPTION(E_UNEXPECTED);
-            wnd.ShowWindow(SW_SHOW);
-            wnd.UpdateWindow();
-            int ret = msgloop.Run();
-            module_.RemoveMessageLoop();
-            ret;
+            CMessageLoop msgloop;
+            module_.AddMessageLoop(&msgloop);
+            {
+                /*gui_frame wnd(module_);*/
+                gui_mainwnd wnd;
+                RECT r = {CW_USEDEFAULT, CW_USEDEFAULT,
+                    CW_USEDEFAULT + WINDOW_WIDTH, CW_USEDEFAULT + WINDOW_HEIGHT};
+                if(wnd.CreateEx(NULL, &r) == NULL)
+                    throw HR_EXCEPTION(E_UNEXPECTED);
+                wnd.ShowWindow(SW_SHOW);
+                wnd.UpdateWindow();
+                int ret = msgloop.Run();
+                module_.RemoveMessageLoop();
+                ret;
+            }
         }
-    }
 
 done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
+        if(FAILED(hr))
+            throw HR_EXCEPTION(hr);
 
-    // unlocking the work queue might crash ongoing async operations,
-    // so it is safer just to call mfshutdown
-    /*hr = MFUnlockWorkQueue(capture_work_queue_id);*/
+        // unlocking the work queue might crash ongoing async operations,
+        // so it is safer just to call mfshutdown
+        /*hr = MFUnlockWorkQueue(capture_work_queue_id);*/
 
 #ifdef _DEBUG
-    module_.Term();
-    hr = MFShutdown();
-    CoUninitialize();
+        module_.Term();
+        hr = MFShutdown();
+        CoUninitialize();
 #endif
+
+    }
+    catch(streaming::exception e)
+    {
+        streaming::print_error_and_abort(e.what());
+    }
+
 
     return 0;
 }

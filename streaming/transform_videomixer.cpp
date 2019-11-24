@@ -247,7 +247,6 @@ void stream_videomixer::mix(out_arg_t& out_arg, args_t& packets,
 
             // TODO: stream controller should be reinitialized on activate
             // (the params should be copied over)
-            // TODO: remove mutex in control class and implement run_in_gui_thread
 
             // set streams with invalid user params behind everything else
             return (a.stream_index < b.stream_index);

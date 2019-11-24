@@ -104,57 +104,49 @@ bool control_pipeline::run_in_gui_thread(callable_f f)
 
 void control_pipeline::activate(const control_set_t& last_set, control_set_t& new_set)
 {
-    // catch all unhandled initialization exceptions
-    try
+    if(this->disabled)
     {
-        if(this->disabled)
+        // this also breaks the possible circular dependency between control pipeline
+        // and the component
+
         {
-           // this also breaks the possible circular dependency between control pipeline
-            // and the component
-
-            {
-                const bool old_disabled = this->root_scene->disabled;
-                this->root_scene->disabled = true;
-                this->root_scene->activate(last_set, new_set);
-                this->root_scene->disabled = old_disabled;
-            }
-            {
-                const bool old_disabled = this->preview_control->disabled;
-                this->preview_control->disabled = true;
-                this->preview_control->activate(last_set, new_set);
-                this->preview_control->disabled = old_disabled;
-            }
-
-            this->deactivate_components();
-
-            this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
-
-            return;
+            const bool old_disabled = this->root_scene->disabled;
+            this->root_scene->disabled = true;
+            this->root_scene->activate(last_set, new_set);
+            this->root_scene->disabled = old_disabled;
+        }
+        {
+            const bool old_disabled = this->preview_control->disabled;
+            this->preview_control->disabled = true;
+            this->preview_control->activate(last_set, new_set);
+            this->preview_control->disabled = old_disabled;
         }
 
-        if(this->restart_pipeline_requested)
-        {
-            this->restart_pipeline_requested = false;
-            this->deactivate_components();
-        }
+        this->deactivate_components();
 
-        this->activate_components();
+        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
 
-        // add this to the new set
-        new_set.push_back(this->shared_from_this<control_pipeline>());
-
-        // activate the preview control
-        this->preview_control->activate(last_set, new_set);
-
-        // activate the root scene
-        this->root_scene->activate(last_set, new_set);
-
-        this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
+        return;
     }
-    catch(streaming::exception e)
+
+    if(this->restart_pipeline_requested)
     {
-        streaming::print_error_and_abort(e.what());
+        this->restart_pipeline_requested = false;
+        this->deactivate_components();
     }
+
+    this->activate_components();
+
+    // add this to the new set
+    new_set.push_back(this->shared_from_this<control_pipeline>());
+
+    // activate the preview control
+    this->preview_control->activate(last_set, new_set);
+
+    // activate the root scene
+    this->root_scene->activate(last_set, new_set);
+
+    this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
 }
 
 void control_pipeline::activate_components()
@@ -380,10 +372,6 @@ void control_pipeline::deactivate_components()
 
 void control_pipeline::build_and_switch_topology()
 {
-    // catch all unhandled initialization exceptions
-    try
-    {
-
     if(this->disabled)
         return;
 
@@ -468,12 +456,6 @@ void control_pipeline::build_and_switch_topology()
     }
     else
         this->video_sink->switch_topologies(this->video_topology, this->audio_topology);
-
-    }
-    catch(streaming::exception e)
-    {
-    streaming::print_error_and_abort(e.what());
-    }
 }
 
 void control_pipeline::set_selected_control(control_class* control, selection_type type)
