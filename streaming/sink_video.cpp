@@ -41,15 +41,10 @@ void sink_video::switch_topologies(
     const media_topology_t& audio_topology,
     bool instant_switch)
 {
-    scoped_lock lock(this->topology_switch_mutex);
+    std::lock_guard<std::mutex> lock(this->switch_topologies_mutex);
 
     assert_(this->is_started());
-
-    this->session->switch_topology(video_topology);
-    this->pending_audio_topology = audio_topology;
-
-    if(!this->instant_switch)
-        this->instant_switch = instant_switch;
+    this->switch_topologies_data = {video_topology, audio_topology, instant_switch};
 }
 
 void sink_video::start_topologies(
@@ -140,13 +135,31 @@ void stream_video::on_stream_stop(time_unit t)
 
     // the audio topology will be switched in this call
     this->sink->audio_session->switch_topology(this->sink->pending_audio_topology);
-    this->sink->pending_audio_topology = NULL;
+    this->sink->pending_audio_topology = nullptr;
 }
 
 void stream_video::scheduled_callback(time_unit due_time)
 {
+    std::optional<sink_video::switch_topologies_t> switch_topologies_data;
+    {
+        std::unique_lock<std::mutex> lock(this->sink->switch_topologies_mutex);
+        switch_topologies_data.swap(this->sink->switch_topologies_data);
+    }
+
     // this lock makes sure that the video and audio topology are switched at the same time
     scoped_lock lock(this->sink->topology_switch_mutex);
+
+    // try switching the topology if needed
+    if(switch_topologies_data)
+    {
+        this->sink->session->switch_topology(switch_topologies_data->video_topology);
+        this->sink->pending_audio_topology = switch_topologies_data->audio_topology;
+
+        if(!this->sink->instant_switch)
+            this->sink->instant_switch = switch_topologies_data->instant_switch;
+
+        switch_topologies_data = {};
+    }
 
     // video might not be pulled as often as audio
     const bool is_video_request = (due_time == this->video_next_due_time);
@@ -184,9 +197,9 @@ void stream_video::scheduled_callback(time_unit due_time)
     if(!this->requesting && !this->audio_sink_stream->requesting)
         // the topology must be explicitly set to null so that the circular dependency
         // between the topology and this stream is broken
-        this->topology = NULL;
+        this->topology = nullptr;
     if(!this->audio_sink_stream->requesting)
-        this->audio_sink_stream->topology = NULL;
+        this->audio_sink_stream->topology = nullptr;
 }
 
 bool stream_video::get_clock(media_clock_t& clock)

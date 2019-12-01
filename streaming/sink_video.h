@@ -12,6 +12,7 @@
 #include <mutex>
 #include <chrono>
 #include <atomic>
+#include <optional>
 
 class sink_video;
 class stream_video;
@@ -21,12 +22,20 @@ typedef std::shared_ptr<stream_video> stream_video_t;
 class sink_video final : public media_sink
 {
     friend class stream_video;
+    struct switch_topologies_t
+    {
+        media_topology_t video_topology, audio_topology;
+        bool instant_switch;
+    };
 public:
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
     typedef async_callback<sink_video> async_callback_t;
 private:
     std::recursive_mutex topology_switch_mutex;
     bool started;
+
+    std::mutex switch_topologies_mutex;
+    std::optional<switch_topologies_t> switch_topologies_data;
 
     media_session_t audio_session;
     media_topology_t pending_audio_topology;
