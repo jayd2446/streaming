@@ -23,12 +23,24 @@
 class source_vidcap final : public source_base<media_component_videomixer_args>
 {
     friend class stream_vidcap;
+    class device_notification_listener;
     struct source_reader_callback_t;
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
     typedef async_callback<source_vidcap> async_callback_t;
     typedef buffer_pool<media_buffer_pooled_texture> buffer_pool_texture_t;
+
+    enum state_t
+    {
+        UNINITIALIZED,
+        INITIALIZED,
+        WAITING_FOR_DEVICE
+    };
 private:
+    std::shared_ptr<device_notification_listener> listener;
+    // state must be only modified in the gui thread
+    state_t state;
+
     mutable std::mutex source_helper_mutex;
     video_source_helper source_helper;
     std::shared_ptr<buffer_pool_texture_t> buffer_pool_texture;
@@ -58,6 +70,7 @@ private:
     */
     CComPtr<IMFSourceReader> source_reader;
     CComPtr<IMFAttributes> source_reader_attributes;
+    // transformed to lower case
     std::wstring symbolic_link;
 
     void initialize_buffer(const media_buffer_texture_t&, const D3D11_TEXTURE2D_DESC&);
@@ -76,6 +89,7 @@ public:
 
     void get_size(UINT32& width, UINT32& height) const
     { scoped_lock lock(this->size_mutex); width = this->frame_width; height = this->frame_height; }
+    state_t get_state() const { return this->state; }
 
     void initialize(const control_class_t&, 
         const CComPtr<ID3D11Device>&,

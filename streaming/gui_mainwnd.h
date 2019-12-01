@@ -55,7 +55,6 @@ private:
 
     BOOL was_minimized;
     CSplitterWindow wnd_splitter;
-    std::unique_ptr<gui_threadwnd> wnd_thread;
     /*std::unique_ptr<gui_previewwnd> wnd_preview;*/
     std::unique_ptr<gui_controlwnd> wnd_control;
     CWindow last_focus;

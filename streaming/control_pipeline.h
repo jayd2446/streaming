@@ -2,6 +2,7 @@
 #include "control_class.h"
 #include "control_scene.h"
 #include "control_preview.h"
+#include "gui_threadwnd.h"
 #include "media_clock.h"
 #include "media_session.h"
 #include "media_topology.h"
@@ -48,7 +49,7 @@ class control_pipeline final : public control_class
 private:
     bool recording;
     ATL::CWindow recording_initiator_wnd;
-    HWND gui_thread_hwnd;
+    gui_threadwnd wnd_thread;
 
     media_clock_t time_source;
     media_topology_t video_topology, audio_topology;
@@ -97,10 +98,10 @@ public:
     std::shared_ptr<control_preview> preview_control;
     gui_event_provider event_provider;
 
-    explicit control_pipeline(HWND gui_thread_hwnd);
+    control_pipeline();
     ~control_pipeline();
 
-    bool run_in_gui_thread(callable_f) override;
+    void run_in_gui_thread(callable_f) override;
 
     enum selection_type { ADD, SET, CLEAR };
     // control class must not be null, unless cleared
@@ -128,6 +129,7 @@ public:
     void stop_recording();
 
     // releases all circular dependencies
+    // TODO: decide if this should be removed
     void shutdown() { this->disable(); }
 };
 

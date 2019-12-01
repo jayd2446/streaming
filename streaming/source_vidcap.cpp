@@ -1,13 +1,134 @@
 #include "source_vidcap.h"
 #include "transform_videomixer.h"
 #include "assert.h"
+#include "wtl.h"
+#include <Dbt.h>
+#include <ks.h>
+#include <ksmedia.h>
 #include <thread>
 #include <iostream>
+#include <string_view>
+#include <cwctype>
 
 #undef max
 #undef min
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
+
+class source_vidcap::device_notification_listener : 
+    public CWindowImpl<device_notification_listener, CWindow, CWinTraits<>>,
+    public std::enable_shared_from_this<device_notification_listener>
+{
+private:
+    HDEVNOTIFY dev_notify;
+    std::shared_ptr<device_notification_listener> self;
+public:
+    std::weak_ptr<source_vidcap> source;
+
+    device_notification_listener() : dev_notify(nullptr)
+    {
+    }
+
+    DECLARE_WND_CLASS(L"device_notification_listener");
+
+    BEGIN_MSG_MAP(device_notification_listener)
+        MSG_WM_CREATE(OnCreate)
+        MSG_WM_DESTROY(OnDestroy)
+        MESSAGE_HANDLER(WM_DEVICECHANGE, OnDeviceChange)
+    END_MSG_MAP()
+
+    // delete this
+    void OnFinalMessage(HWND) override { this->self = nullptr; }
+
+    int OnCreate(LPCREATESTRUCT)
+    {
+        assert_(!this->dev_notify);
+
+        DEV_BROADCAST_DEVICEINTERFACE di = {0};
+        di.dbcc_size = sizeof(di);
+        di.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+        di.dbcc_classguid = KSCATEGORY_CAPTURE;
+
+        this->dev_notify = RegisterDeviceNotification(
+            *this, &di, DEVICE_NOTIFY_WINDOW_HANDLE);
+
+        if(!this->dev_notify)
+            throw HR_EXCEPTION(E_UNEXPECTED);
+
+        this->self = this->shared_from_this();
+
+        return 0;
+    }
+
+    void OnDestroy()
+    {
+        if(this->dev_notify)
+        {
+            UnregisterDeviceNotification(this->dev_notify);
+            this->dev_notify = nullptr;
+        }
+    }
+
+    LRESULT OnDeviceChange(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM lParam, BOOL& bHandled)
+    {
+        auto source = this->source.lock();
+        if(!source)
+        {
+            bHandled = FALSE;
+            return 0;
+        }
+
+        PDEV_BROADCAST_HDR hdr = (PDEV_BROADCAST_HDR)lParam;
+        if(!hdr)
+        {
+            bHandled = FALSE;
+            return 0;
+        }
+
+        DEV_BROADCAST_DEVICEINTERFACE* di = (DEV_BROADCAST_DEVICEINTERFACE*)hdr;
+
+        std::wstring_view source_slink = source->symbolic_link;
+        std::wstring di_slink_copy = di->dbcc_name;
+
+        // transform to lower case
+        for(auto&& c : di_slink_copy)
+            c = towlower(c);
+
+        std::wstring_view di_slink = di_slink_copy;
+
+        std::wstring source_device, di_device;
+        try
+        {
+            // try removing the class guid part
+            source_device = source_slink.substr(0, source_slink.find(L'{'));
+            source_device.append(source_slink.substr(source_slink.find(L'}') + 1));
+
+            di_device = di_slink.substr(0, di_slink.find(L'{'));
+            di_device.append(di_slink.substr(di_slink.find(L'}') + 1));
+        }
+        catch(...)
+        {
+            source_device = source_slink;
+            di_device = di_slink;
+        }
+
+        if(source_device == di_device)
+        {
+            // release manually the resources the device is using so that it is disconnected
+            // before the topology is reactivated
+            if(source->device)
+                source->device->Shutdown();
+            source->set_broken();
+        }
+        else
+        {
+            bHandled = FALSE;
+            return 0;
+        }
+
+        return TRUE;
+    }
+};
 
 struct source_vidcap::source_reader_callback_t : 
     public IMFSourceReaderCallback2, 
@@ -98,7 +219,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         if(source->reset_size.exchange(false))
         {
             // resize
-            source->ctrl_pipeline->run_in_gui_thread([](const control_class_t& pipeline)
+            source->ctrl_pipeline->run_in_gui_thread([](control_class* pipeline)
                 {
                     pipeline->activate();
                 });
@@ -135,7 +256,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
             // reactivate the current scene; it will update the control_vidcap with 
             // a possible new frame size
-            source->ctrl_pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+            source->ctrl_pipeline->run_in_gui_thread([this](control_class* pipeline)
                 {
                     pipeline->activate();
                 });
@@ -213,7 +334,16 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
         CHECK_HR(hr = source->queue_new_capture());
 
 done:
-        if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        if(hr == MF_E_HW_MFT_FAILED_START_STREAMING)
+        {
+            // prevent loop from happening by handling this separately
+            source->ctrl_pipeline->run_in_gui_thread([source](control_class* pipeline)
+                {
+                    source->state = WAITING_FOR_DEVICE;
+                    pipeline->activate();
+                });
+        }
+        else if(FAILED(hr) && hr != MF_E_SHUTDOWN)
             this->on_error(source);
     }
     catch(streaming::exception e)
@@ -237,14 +367,23 @@ source_vidcap::source_vidcap(const media_session_t& session, context_mutex_t con
     frame_width(0), frame_height(0), 
     next_frame_pos(-1),
     is_capture_initialized(false), is_helper_initialized(false),
-    reset_size(false)
+    reset_size(false),
+    listener(new device_notification_listener),
+    state(UNINITIALIZED)
 {
+    this->listener->Create(nullptr);
 }
 
 source_vidcap::~source_vidcap()
 {
-    buffer_pool_texture_t::scoped_lock lock(this->buffer_pool_texture->mutex);
-    this->buffer_pool_texture->dispose();
+    this->ctrl_pipeline->run_in_gui_thread([this](control_class*)
+        {
+            this->listener->DestroyWindow();
+        });
+    {
+        buffer_pool_texture_t::scoped_lock lock(this->buffer_pool_texture->mutex);
+        this->buffer_pool_texture->dispose();
+    }
 }
 
 void source_vidcap::initialize_buffer(const media_buffer_texture_t& buffer,
@@ -335,6 +474,12 @@ void source_vidcap::initialize_async()
     CComPtr<IMFAttributes> attributes;
     CComPtr<IMFMediaType> output_type;
 
+    // reset the size
+    {
+        scoped_lock lock(this->size_mutex);
+        this->frame_width = this->frame_height = 0;
+    }
+
     CHECK_HR(hr = MFCreateDXGIDeviceManager(&this->reset_token, &this->devmngr));
     CHECK_HR(hr = this->devmngr->ResetDevice(this->d3d11dev, this->reset_token));
 
@@ -406,15 +551,16 @@ void source_vidcap::initialize_async()
         CHECK_HR(hr = this->queue_new_capture());
     }
 
-    // TODO: failure should be signalled to control_vidcap in some way
-
 done:
-    if(FAILED(hr))
+    if(FAILED(hr) && hr != MF_E_SHUTDOWN)
     {
         PRINT_ERROR(hr);
 
-        // just set as broken
-        this->set_broken(false);
+        this->ctrl_pipeline->run_in_gui_thread([this](control_class* pipeline)
+            {
+                this->state = WAITING_FOR_DEVICE;
+                pipeline->activate();
+            });
     }
 }
 
@@ -424,12 +570,19 @@ void source_vidcap::initialize(const control_class_t& ctrl_pipeline,
     const std::wstring& symbolic_link)
 {
     assert_(!this->device);
+    assert_(this->state == UNINITIALIZED);
 
     this->source_base::initialize(ctrl_pipeline);
 
     this->d3d11dev = d3d11dev;
     this->d3d11devctx = d3d11devctx;
     this->symbolic_link = symbolic_link;
+    this->listener->source = this->shared_from_this<source_vidcap>();
+    this->state = INITIALIZED;
+
+    // transform to lower case
+    for(auto&& c : this->symbolic_link)
+        c = towlower(c);
 
     std::thread(&source_vidcap::initialize_async, this->shared_from_this<source_vidcap>()).detach();
 }

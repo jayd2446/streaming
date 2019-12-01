@@ -129,10 +129,7 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
     loop->AddIdleHandler(this);
     
     // create windows and control_pipeline
-    this->wnd_thread.reset(new gui_threadwnd);
-    this->wnd_thread->Create(NULL);
-    this->ctrl_pipeline.reset(new control_pipeline(*this->wnd_thread));
-    this->wnd_thread->ctrl_pipeline = this->ctrl_pipeline;
+    this->ctrl_pipeline.reset(new control_pipeline);
     /*this->wnd_preview.reset(new gui_previewwnd(this->ctrl_pipeline));*/
     this->wnd_control.reset(new gui_controlwnd(this->ctrl_pipeline));
 
@@ -187,9 +184,7 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
 void gui_mainwnd::OnDestroy()
 {
     this->ctrl_pipeline->shutdown();
-    // wnd_thread must be destroyed after the pipeline has been shutdown;
-    // wm_destroy is sent to parent windows before child windows
-    this->wnd_thread->DestroyWindow();
+    this->ctrl_pipeline = nullptr;
 
     CMessageLoop* loop = module_.GetMessageLoop();
     loop->RemoveIdleHandler(this);

@@ -38,7 +38,7 @@ class control_class : public enable_shared_from_this
 {
     friend class control_scene;
 public:
-    typedef std::function<void(const control_class_t&)> callable_f;
+    typedef std::function<void(control_class*)> callable_f;
 private:
     control_set_t& active_controls;
 protected:
@@ -80,10 +80,8 @@ public:
     virtual ~control_class() {}
 
     // pipeline must use this for accessing control classes;
-    // NOTE: all locks should be cleared when calling this to avoid possible deadlocking scenarios;
-    // returns whether the function was run;
-    // no-op if control_pipeline has been deactivated
-    virtual bool run_in_gui_thread(callable_f) { assert_(false); return false; }
+    // NOTE: all locks should be cleared when calling this to avoid possible deadlocking scenarios
+    virtual void run_in_gui_thread(callable_f) { assert_(false); }
 
     // (re)activates the whole tree and builds the topology
     void activate();

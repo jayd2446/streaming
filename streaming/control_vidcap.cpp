@@ -26,24 +26,32 @@ void control_vidcap::build_video_topology(const media_stream_t& from,
     if(!videomixer_stream)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
+    // only add the component to the topology if it's not waiting for a device
     if(!this->reference)
     {
-        media_stream_t vidcap_stream = this->component->create_stream(topology->get_message_generator());
+        if(this->component->get_state() == source_vidcap::INITIALIZED)
+        {
+            media_stream_t vidcap_stream =
+                this->component->create_stream(topology->get_message_generator());
 
-        vidcap_stream->connect_streams(from, topology);
-        videomixer_stream->connect_streams(vidcap_stream, this->videomixer_params, topology);
+            vidcap_stream->connect_streams(from, topology);
+            videomixer_stream->connect_streams(vidcap_stream, this->videomixer_params, topology);
 
-        this->stream = vidcap_stream;
+            this->stream = vidcap_stream;
+        }
     }
     else
     {
-        assert_(this->reference->stream);
-        assert_(!this->stream);
+        if(this->reference->component->get_state() == source_vidcap::INITIALIZED)
+        {
+            assert_(this->reference->stream);
+            assert_(!this->stream);
 
-        // only connect from this stream to 'to' stream
-        // (since this a duplicate control from the original)
-        videomixer_stream->connect_streams(
-            this->reference->stream, this->videomixer_params, topology);
+            // only connect from this stream to 'to' stream
+            // (since this a duplicate control from the original)
+            videomixer_stream->connect_streams(
+                this->reference->stream, this->videomixer_params, topology);
+        }
     }
 }
 

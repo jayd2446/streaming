@@ -17,8 +17,7 @@
 
 // if using intel encoder, the adapter must be set to intel aswell
 
-control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
-    gui_thread_hwnd(gui_thread_hwnd),
+control_pipeline::control_pipeline() :
     control_class(controls, event_provider),
     d3d11dev_adapter(0),
     context_mutex(new std::recursive_mutex),
@@ -28,6 +27,9 @@ control_pipeline::control_pipeline(HWND gui_thread_hwnd) :
     restart_pipeline_requested(false)
 {
     this->root_scene->parent = this;
+
+    // initialize the thread window
+    this->wnd_thread.Create(nullptr);
 
     // initialize graphics
     HRESULT hr = S_OK;
@@ -89,17 +91,15 @@ done:
 
 control_pipeline::~control_pipeline()
 {
+    this->run_in_gui_thread([this](control_class*)
+        {
+            this->wnd_thread.DestroyWindow();
+        });
 }
 
-bool control_pipeline::run_in_gui_thread(callable_f f)
+void control_pipeline::run_in_gui_thread(callable_f f)
 {
-    if(!this->is_active())
-        // gui_thread_wnd might have been destroyed when this isn't active anymore
-        return false;
-
-    control_class_t this_ = this->shared_from_this<control_class>();
-    // gui_threadwnd returns 0 if the callable_f was not called
-    return (SendMessage(this->gui_thread_hwnd, GUI_THREAD_MESSAGE, (WPARAM)&f, (LPARAM)&this_) != 0);
+    SendMessage(this->wnd_thread, GUI_THREAD_MESSAGE, (WPARAM)&f, (LPARAM)this);
 }
 
 void control_pipeline::activate(const control_set_t& last_set, control_set_t& new_set)

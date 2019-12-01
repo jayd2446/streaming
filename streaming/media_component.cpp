@@ -22,7 +22,7 @@ void media_component::request_reinitialization(const control_class_t& pipeline)
         // all component locks(those that keep locking)
         // should be unlocked before calling any pipeline functions
         // to prevent possible deadlock scenarios
-        pipeline->run_in_gui_thread([this](const control_class_t& pipeline)
+        pipeline->run_in_gui_thread([this](control_class* pipeline)
             {
                 // set the component as not shareable so that it is recreated when
                 // resetting the active scene
