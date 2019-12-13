@@ -344,7 +344,11 @@ done:
                 });
         }
         else if(FAILED(hr) && hr != MF_E_SHUTDOWN)
+        {
+            if(!source->is_broken())
+                std::cout << "error code: " << std::hex << "0x" << hr << std::dec << std::endl;
             this->on_error(source);
+        }
     }
     catch(streaming::exception e)
     {

@@ -392,9 +392,10 @@
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalOptions>/PDBALTPATH:streaming.pdb %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>
@@ -420,6 +421,8 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
+      <AdditionalOptions>/PDBALTPATH:streaming.pdb %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>
       <AdditionalManifestFiles>
@@ -461,11 +464,13 @@
     <ClCompile Include="control_vidcap.cpp" />
     <ClCompile Include="control_video.cpp" />
     <ClCompile Include="control_wasapi.cpp" />
+    <ClCompile Include="gui_configdlgs.cpp" />
     <ClCompile Include="gui_event_handler.cpp" />
     <ClCompile Include="gui_mainwnd.cpp" />
     <ClCompile Include="gui_newdlg.cpp" />
     <ClCompile Include="gui_previewwnd.cpp" />
     <ClCompile Include="gui_dlgs.cpp" />
+    <ClCompile Include="gui_settingsdlg.cpp" />
     <ClCompile Include="gui_threadwnd.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="media_component.cpp" />
@@ -517,8 +522,10 @@
     <ClInclude Include="gui_event_handler.h" />
     <ClInclude Include="gui_mainwnd.h" />
     <ClInclude Include="gui_newdlg.h" />
+    <ClInclude Include="gui_configdlgs.h" />
     <ClInclude Include="gui_previewwnd.h" />
     <ClInclude Include="gui_dlgs.h" />
+    <ClInclude Include="gui_settingsdlg.h" />
     <ClInclude Include="gui_threadwnd.h" />
     <ClInclude Include="IUnknownImpl.h" />
     <ClInclude Include="media_component.h" />

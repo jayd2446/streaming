@@ -8,6 +8,8 @@
 #include <atlsplit.h>
 #include <memory>
 
+#define GUI_MAINWND_SHOW_MESSAGE WM_APP
+
 class gui_mainwnd;
 
 // hosts the dialogs
@@ -73,9 +75,11 @@ public:
         MSG_WM_DESTROY(OnDestroy)
         MSG_WM_SETFOCUS(OnSetFocus)
         MSG_WM_ACTIVATE(OnActivate)
+        MESSAGE_HANDLER(GUI_MAINWND_SHOW_MESSAGE, OnMainWndShowMessage)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         COMMAND_ID_HANDLER(ID_ABOUT, OnAbout)
         COMMAND_ID_HANDLER(ID_DEBUG, OnDebug)
+        COMMAND_ID_HANDLER(ID_SETTINGS, OnSettings)
 
         CHAIN_MSG_MAP(CFrameWindowImpl<gui_mainwnd>)
 
@@ -91,7 +95,9 @@ public:
     void OnActivate(UINT /*nState*/, BOOL /*bMinimized*/, CWindow /*wndOther*/);
     void OnStatusBarSize(UINT /*nType*/, CSize size);
     LRESULT OnStatusBarSimple(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
+    LRESULT OnMainWndShowMessage(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
     LRESULT OnDpiChanged(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
     LRESULT OnAbout(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+    LRESULT OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };

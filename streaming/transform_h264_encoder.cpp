@@ -2,7 +2,6 @@
 #include <Mferror.h>
 #include <initguid.h>
 #include <evr.h>
-#include <codecapi.h>
 #include <iostream>
 #include "assert.h"
 #include "IUnknownImpl.h"

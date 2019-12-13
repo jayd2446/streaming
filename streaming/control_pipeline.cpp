@@ -2,6 +2,7 @@
 #include "wtl.h"
 #include "gui_threadwnd.h"
 #include <iostream>
+#include <fstream>
 #include <d3d11_4.h>
 #include <d2d1_2.h>
 
@@ -82,8 +83,6 @@ control_pipeline::control_pipeline() :
     CHECK_HR(hr = this->dxgidev->GetGPUThreadPriority(&old_priority));
     CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(7));
 
-    this->config = control_pipeline::get_default_config();
-
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
@@ -161,10 +160,10 @@ void control_pipeline::activate_components()
     }
     if(!this->session)
         this->session.reset(new media_session(this->time_source,
-            this->config.fps_num, this->config.fps_den));
+            this->config.config_video.fps_num, this->config.config_video.fps_den));
     if(!this->audio_session)
         this->audio_session.reset(new media_session(this->time_source,
-            this->config.sample_rate, 1));
+            this->config.config_audio.sample_rate, 1));
 
     // must be called after resetting the video session
     frame_unit fps_num, fps_den;
@@ -477,22 +476,76 @@ void control_pipeline::get_session_frame_rate(frame_unit& num, frame_unit& den) 
     den = this->session->frame_rate_den;
 }
 
-control_pipeline_config control_pipeline::get_default_config()
-{
-    control_pipeline_config config;
-    config.fps_num = 10;
-    config.fps_den = 1;
-    config.sample_rate = 48000;
-
-    return config;
-}
-
 void control_pipeline::apply_config(const control_pipeline_config& new_config)
 {
     this->config = new_config;
     this->restart_pipeline_requested = true;
 
     this->control_class::activate();
+}
+
+control_pipeline_config control_pipeline::load_config(const std::wstring_view& config_file)
+{
+    std::ifstream in;
+    control_pipeline_config config;
+
+    try
+    {
+        in.exceptions(std::ifstream::failbit | std::ifstream::badbit | std::ifstream::eofbit);
+        in.open(config_file.data(),
+            std::ios_base::in | std::ios_base::binary | std::ios_base::ate);
+
+        const auto pos = in.tellg();
+        if(pos > sizeof(config))
+            throw std::exception();
+
+        in.seekg(0);
+        in.read((char*)&config, pos);
+
+        in.close();
+
+        if(config.magic_number != control_pipeline_config::MAGIC_NUMBER || 
+            config.version > control_pipeline_config::LATEST_VERSION)
+            throw std::exception();
+    }
+    catch(std::exception)
+    {
+        in.exceptions(0);
+        if(in.is_open())
+            in.close();
+
+        throw HR_EXCEPTION(E_UNEXPECTED);
+    }
+
+    return config;
+}
+
+void control_pipeline::save_config(const control_pipeline_config& config,
+    const std::wstring_view& config_file)
+{
+    std::ofstream out;
+
+    if(config.magic_number != control_pipeline_config::MAGIC_NUMBER || 
+        config.version > control_pipeline_config::LATEST_VERSION)
+        throw HR_EXCEPTION(E_UNEXPECTED);
+
+    try
+    {
+        out.exceptions(std::ofstream::failbit | std::ofstream::badbit | std::ofstream::eofbit);
+        out.open(config_file.data(), 
+            std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
+
+        out.write((const char*)&config, sizeof(config));
+        out.close();
+    }
+    catch(std::exception)
+    {
+        out.exceptions(0);
+        if(out.is_open())
+            out.close();
+
+        throw HR_EXCEPTION(E_UNEXPECTED);
+    }
 }
 
 void control_pipeline::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)

@@ -1,4 +1,6 @@
 #include "gui_mainwnd.h"
+#include "gui_settingsdlg.h"
+#include "gui_configdlgs.h"
 
 extern CAppModule module_;
 
@@ -178,6 +180,8 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
     // initialize the preview window
     /*this->ctrl_pipeline->set_preview_window(*this->wnd_preview);*/
 
+    this->PostMessageW(GUI_MAINWND_SHOW_MESSAGE);
+
     return 0;
 }
 
@@ -234,6 +238,40 @@ void gui_mainwnd::OnActivate(UINT nState, BOOL bMinimized, CWindow /*wndOther*/)
     }
 }
 
+LRESULT gui_mainwnd::OnMainWndShowMessage(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
+{
+    // load the configuration
+    // TODO: add special handling if there's no settings.dat file
+    control_pipeline_config config;
+    try
+    {
+        config = this->ctrl_pipeline->load_config();
+    }
+    catch(streaming::exception)
+    {
+        const int res = this->MessageBoxW(
+            L"Could not load the settings.dat file.\n"
+            L"Would you like to overwrite the file with default values?",
+            nullptr, MB_ICONERROR | MB_YESNO);
+
+        if(res == IDYES)
+        {
+            try
+            {
+                this->ctrl_pipeline->save_config(config);
+            }
+            catch(streaming::exception)
+            {
+                this->MessageBoxW(L"Could not save the file.", nullptr, MB_ICONERROR);
+            }
+        }
+    }
+
+    this->ctrl_pipeline->apply_config(config);
+
+    return 0;
+}
+
 void gui_mainwnd::OnStatusBarSize(UINT /*nType*/, CSize size)
 {
     if(size.cx != 0 || size.cy != 0)
@@ -288,7 +326,7 @@ LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
             this->ctrl_pipeline->root_scene->get_selected_scene());
     }*/
 
-    static frame_unit fps_num = 60;
+    /*static frame_unit fps_num = 60;
 
     control_pipeline_config config;
     config.fps_num = fps_num;
@@ -298,7 +336,43 @@ LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
     std::cout << "new fps: " << fps_num << std::endl;
     fps_num = fps_num * 2;
 
-    this->ctrl_pipeline->apply_config(config);
+    this->ctrl_pipeline->apply_config(config);*/
+
+    return 0;
+}
+
+LRESULT gui_mainwnd::OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
+{
+    gui_configdlg_general config_general(this->ctrl_pipeline);
+    gui_configdlg_video config_video(this->ctrl_pipeline);
+    gui_configdlg_audio config_audio(this->ctrl_pipeline);
+
+    gui_settingsdlg dlg(this->ctrl_pipeline);
+
+    dlg.add_settings_pages(
+        {
+            {L"General", &config_general},
+            {L"Video", &config_video},
+            {L"Audio", &config_audio}
+        });
+
+    const INT_PTR res = dlg.DoModal(*this);
+    if(res == IDOK && !this->ctrl_pipeline->is_recording() && dlg.should_update_settings())
+    {
+        control_pipeline_config config;
+        dlg.update_settings(config);
+
+        try
+        {
+            this->ctrl_pipeline->save_config(config);
+        }
+        catch(streaming::exception)
+        {
+            this->MessageBoxW(L"Could not save the file.", nullptr, MB_ICONERROR);
+        }
+
+        this->ctrl_pipeline->apply_config(config);
+    }
 
     return 0;
 }

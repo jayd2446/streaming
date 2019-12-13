@@ -371,6 +371,7 @@ done:
             output_frame = this->newest_buffer;
             pointer_frame = this->newest_pointer_buffer;
 
+            PRINT_ERROR(hr);
             throw displaycapture_exception();
         }
     }

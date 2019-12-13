@@ -135,6 +135,12 @@
     <ClCompile Include="sink_video.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="gui_settingsdlg.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
+    <ClCompile Include="gui_configdlgs.cpp">
+      <Filter>gui</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="media_session.h">
@@ -292,6 +298,12 @@
     </ClInclude>
     <ClInclude Include="sink_video.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_settingsdlg.h">
+      <Filter>gui</Filter>
+    </ClInclude>
+    <ClInclude Include="gui_configdlgs.h">
+      <Filter>gui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

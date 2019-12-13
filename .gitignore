@@ -269,3 +269,4 @@ __pycache__/
 /LlvmReleaseDisabled
 /streaming/LlvmDebug
 /streaming/LlvmReleaseDisabled
+*.zip

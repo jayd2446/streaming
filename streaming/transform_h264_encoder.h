@@ -9,6 +9,7 @@
 #include <d3d11.h>
 #include <atlbase.h>
 #include <mfapi.h>
+#include <codecapi.h>
 #include <memory>
 #include <mutex>
 #include <atomic>

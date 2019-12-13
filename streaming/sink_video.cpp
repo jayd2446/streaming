@@ -158,7 +158,7 @@ void stream_video::scheduled_callback(time_unit due_time)
         if(!this->sink->instant_switch)
             this->sink->instant_switch = switch_topologies_data->instant_switch;
 
-        switch_topologies_data = {};
+        switch_topologies_data = std::nullopt;
     }
 
     // video might not be pulled as often as audio

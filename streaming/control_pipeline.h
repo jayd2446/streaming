@@ -25,6 +25,7 @@
 #include <mutex>
 #include <memory>
 #include <vector>
+#include <string_view>
 
 // NOTE: buffering slightly increases processing usage
 #define BUFFERING_DEFAULT_VIDEO_LATENCY (SECOND_IN_TIME_UNIT / 2) // 100ms default buffering
@@ -36,12 +37,101 @@
 
 typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
 
-struct control_pipeline_config
+//struct control_session_config
+//{
+//    frame_unit fps_num, fps_den;
+//    // allowed values: 44100 and 48000
+//    frame_unit sample_rate;
+//
+//    /*
+//    extended config:
+//    LUID adapter; (optional)
+//
+//    video surface type
+//    audio channel info
+//
+//    TODO: media session could hold a major type, which is either video or audio;
+//    the uncompressed subtype then would be the video surface type or the audio channel type
+//
+//    TODO: session must hold this basic info
+//    */
+//};
+
+
+#pragma pack(push, 1)
+
+// TODO: these configs need to be refactored
+struct control_video_config
 {
     frame_unit fps_num, fps_den;
+
+    bool adapter_use_default; // TODO: default values can be displayed as System Default
+    LUID adapter;
+
+    bool encoder_use_default;
+    CLSID encoder;
+
+    UINT32 width_frame, height_frame;
+    UINT32 bitrate; // avg bitrate (in kbps)
+    UINT32 quality_vs_speed;
+    eAVEncH264VProfile h264_video_profile;
+
+    control_video_config() :
+        fps_num(60),
+        fps_den(1),
+        adapter_use_default(true),
+        adapter{0},
+        encoder_use_default(true),
+        encoder{0},
+        width_frame(1920),
+        height_frame(1080),
+        bitrate(6000),
+        quality_vs_speed(100),
+        h264_video_profile(eAVEncH264VProfile_Main)
+    {
+    }
+};
+
+struct control_audio_config
+{
     // allowed values: 44100 and 48000
     frame_unit sample_rate;
+
+    UINT32 channels; // must be 1, 2 or 6
+    transform_aac_encoder::bitrate_t bitrate;
+    UINT32 profile_level_indication;
+
+    control_audio_config() :
+        sample_rate(44100),
+        channels(2),
+        bitrate(transform_aac_encoder::rate_128),
+        profile_level_indication(0x29) // default
+    {
+    }
 };
+
+struct control_pipeline_config
+{
+    static constexpr int MAGIC_NUMBER = 0xE43AF973;
+    // version must be increased every time the config struct is changed;
+    // new config versions are only allowed to extend the previous config versions,
+    // which also means that only the control_pipeline_config struct can be altered
+    // (with padding it is not necessary)
+    static constexpr int VERSION = 1;
+    static constexpr int LATEST_VERSION = VERSION;
+
+    int magic_number;
+    int version;
+    control_video_config config_video;
+    control_audio_config config_audio;
+
+    control_pipeline_config() :
+        magic_number(MAGIC_NUMBER),
+        version(LATEST_VERSION)
+    {
+    }
+};
+#pragma pack(pop)
 
 class control_pipeline final : public control_class
 {
@@ -115,10 +205,18 @@ public:
     void get_session_frame_rate(frame_unit& num, frame_unit& den) const;
     frame_unit get_session_sample_rate() const { return this->audio_session->frame_rate_num; }
 
-    // the config if nothing else has been configured
-    static control_pipeline_config get_default_config();
+    const control_pipeline_config& get_current_config() const { return this->config; }
     // stores and applies the new config(by calling activate());
     void apply_config(const control_pipeline_config& new_config);
+    // throws on error;
+    // loads any config version and fills the rest with default values
+    // TODO: add custom error values
+    static control_pipeline_config load_config(
+        const std::wstring_view& config_file = L"settings.dat");
+    // throws on error
+    static void save_config(
+        const control_pipeline_config& config,
+        const std::wstring_view& config_file = L"settings.dat");
 
     //void set_preview_window(HWND hwnd) {this->preview_hwnd = hwnd;}
     //// TODO: this should return control preview instead of the component
