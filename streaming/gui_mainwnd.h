@@ -4,6 +4,7 @@
 #include "gui_threadwnd.h"
 #include "gui_previewwnd.h"
 #include "gui_dlgs.h"
+#include "gui_event_handler.h"
 #include "control_pipeline.h"
 #include <atlsplit.h>
 #include <memory>
@@ -46,7 +47,8 @@ public:
 };
 
 // hosts the preview and control window using a splitter window
-class gui_mainwnd :
+class gui_mainwnd final :
+    public gui_event_handler,
     public CFrameWindowImpl<gui_mainwnd>,
     public CMessageFilter,
     public CIdleHandler
@@ -63,6 +65,9 @@ private:
     CContainedWindowT<CStatusBarCtrl> wnd_statusbar;
 
     void set_statusbar_parts(CSize);
+
+    // gui_event_handler
+    void on_activate(control_class*, bool deactivated) override;
 public:
     DECLARE_FRAME_WND_CLASS(L"streaming", IDR_MAINFRAME)
 

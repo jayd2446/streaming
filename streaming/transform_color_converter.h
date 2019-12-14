@@ -31,12 +31,17 @@ private:
     std::shared_ptr<buffer_pool> texture_pool;
     std::shared_ptr<buffer_pool_video_frames_t> buffer_pool_video_frames;
 
+    UINT32 frame_width_in, frame_height_in;
+    UINT32 frame_width_out, frame_height_out;
+
     context_mutex_t context_mutex;
 public:
     transform_color_converter(const media_session_t& session, context_mutex_t context_mutex);
     ~transform_color_converter();
 
     HRESULT initialize(const control_class_t&,
+        UINT32 frame_width_in, UINT32 frame_height_in,
+        UINT32 frame_width_out, UINT32 frame_height_out,
         const CComPtr<ID3D11Device>&, ID3D11DeviceContext* devctx);
     media_stream_t create_stream();
 };

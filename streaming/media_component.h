@@ -12,6 +12,13 @@ typedef std::shared_ptr<std::recursive_mutex> context_mutex_t;
 class control_class;
 typedef std::shared_ptr<control_class> control_class_t;
 
+/*
+
+media components should not take a reference to control_pipeline;
+control_class should be used instead
+
+*/
+
 // TODO: sink component type class probably useless
 class media_component : public enable_shared_from_this
 {

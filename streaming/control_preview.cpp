@@ -53,10 +53,17 @@ void control_preview::activate(const control_set_t& last_set, control_set_t& new
 
         if(it == last_set.end())
         {
-            assert_(this->wnd_preview.m_hWnd != NULL);
+            assert_(this->wnd_preview.m_hWnd == nullptr);
+
+            this->wnd_preview.Create(this->parent, CWindow::rcDefault, NULL, WS_CHILD);
 
             sink_preview2_t preview_sink(new sink_preview2(this->pipeline.session));
-            preview_sink->initialize(this->pipeline.shared_from_this<control_pipeline>());
+            preview_sink->initialize(
+                this->wnd_preview,
+                this->pipeline.d3d11dev,
+                this->pipeline.d2d1factory,
+                this->pipeline.d2d1dev,
+                *this->pipeline.context_mutex);
 
             // start the timer
             this->set_state(true);
@@ -74,9 +81,14 @@ out:
         this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, false); });
     else
     {
-        // stop the timer
-        this->set_state(false);
         this->event_provider.for_each([this](gui_event_handler* e) { e->on_activate(this, true); });
+    
+        // stop the timer and destroy the window
+        if(this->wnd_preview)
+        {
+            this->set_state(false);
+            this->wnd_preview.DestroyWindow();
+        }
     }
 }
 
@@ -92,15 +104,6 @@ void control_preview::set_state(bool render)
         this->wnd_preview.set_timer(USER_TIMER_MAXIMUM);
     else
         this->set_fps(this->fps);
-}
-
-void control_preview::initialize_window(HWND parent)
-{
-    assert_(this->wnd_preview.m_hWnd == NULL);
-    assert_(parent != NULL);
-
-    this->parent = parent;
-    this->wnd_preview.Create(this->parent, CWindow::rcDefault, NULL, WS_CHILD);
 }
 
 bool control_preview::is_identical_control(const control_class_t& control) const

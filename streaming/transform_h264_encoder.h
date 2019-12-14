@@ -41,15 +41,17 @@ public:
     typedef request_queue_handler::request_queue request_queue;
     typedef request_queue::request_t request_t;
 
-    static const UINT32 frame_width = 1920, frame_height = 1080;
-    static const UINT32 avg_bitrate = 10000/*4500*/ * 1000;
+    /*static const UINT32 frame_width = 1920, frame_height = 1080;*/
+    //static const UINT32 avg_bitrate = 10000/*4500*/ * 1000;
     // 0: low quality, 100: high quality
-    static const UINT32 quality_vs_speed = 50;
+    /*static const UINT32 quality_vs_speed = 50;*/
 private:
     control_class_t ctrl_pipeline;
     context_mutex_t context_mutex;
 
     UINT32 frame_rate_num, frame_rate_den;
+    UINT32 frame_width, frame_height;
+    UINT32 avg_bitrate, quality_vs_speed;
 
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -110,11 +112,17 @@ public:
     bool is_encoder_overloading() const {return this->encoder_requests.load() == 0;}
 
     // passing null d3d device implies that the system memory is used to feed the encoder;
-    // software encoder flag overrides d3d device arg
+    // software encoder flag overrides d3d device arg;
+    // quality_vs_speed: 0: low quality, 100: high quality;
+    // avg bitrate is in bits per second;
+    // clsid is optional
     void initialize(const control_class_t&,
         const CComPtr<ID3D11Device>&, 
         UINT32 frame_rate_num, UINT32 frame_rate_den,
-        bool software = false);
+        UINT32 frame_width, UINT32 frame_height,
+        UINT32 avg_bitrate, UINT32 quality_vs_speed,
+        const CLSID*,
+        bool software);
     media_stream_t create_stream(media_message_generator_t&&);
 };
 

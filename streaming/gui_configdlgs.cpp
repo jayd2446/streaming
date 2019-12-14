@@ -31,26 +31,115 @@ LRESULT gui_configdlg_general::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LP
 
 bool gui_configdlg_video::should_update_settings() const
 {
-    static_assert(std::is_same_v<
-        decltype(config_video),
-        control_video_config>);
+    static_assert(std::is_same_v<decltype(config_video), control_video_config>);
     static_assert(std::is_same_v<
         decltype(config_video), 
         decltype(control_pipeline_config::config_video)>);
 
-    try
-    {
-        // TODO: read the dialog and update the local video config
-    }
-    catch(std::exception)
-    {
+    // read the dialog and update the local video config
 
+    // fps num
+    {
+        CString str;
+        this->wnd_fps_num.GetWindowTextW(str);
+        this->config_video.fps_num = std::stoi(str.GetString());
+
+        if(this->config_video.fps_num <= 0)
+            throw std::invalid_argument("");
+    }
+
+    // fps den
+    {
+        CString str;
+        this->wnd_fps_den.GetWindowTextW(str);
+        this->config_video.fps_den = std::stoi(str.GetString());
+
+        if(this->config_video.fps_den <= 0)
+            throw std::invalid_argument("");
+    }
+
+    // video resolution
+    {
+        CString str, str_width, str_height;
+        int start_index = 0;
+        this->wnd_video_resolution.GetWindowTextW(str);
+
+        str_width = str.Tokenize(L"x", start_index);
+        str_height = str.Mid(start_index);
+
+        this->config_video.width_frame = std::stoi(str_width.GetString());
+        this->config_video.height_frame = std::stoi(str_height.GetString());
+
+        if((int)this->config_video.width_frame <= 0 ||
+            (int)this->config_video.height_frame <= 0)
+            throw std::invalid_argument("");
+    }
+
+    // video device
+    if(this->wnd_adapter.GetCurSel() == 0)
+    {
+        this->config_video.adapter_use_default = true;
+        this->config_video.adapter = {0};
+    }
+    else
+    {
+        this->config_video.adapter_use_default = false;
+        this->config_video.adapter = this->adapters.at(this->wnd_adapter.GetCurSel() - 1);
+    }
+
+    // encoder
+    if(this->wnd_encoder.GetCurSel() == 0)
+    {
+        this->config_video.encoder_use_default = true;
+        this->config_video.encoder = {0};
+    }
+    else
+    {
+        this->config_video.encoder_use_default = false;
+        this->config_video.encoder = this->encoders.at(this->wnd_encoder.GetCurSel() - 1);
+    }
+
+    // bitrate
+    {
+        CString str;
+        this->wnd_bitrate.GetWindowTextW(str);
+
+        this->config_video.bitrate = std::stoi(str.GetString());
+        if((int)this->config_video.bitrate <= 0)
+            throw std::invalid_argument("");
+    }
+
+    // quality vs speed
+    {
+        CString str;
+        this->wnd_quality_vs_speed.GetWindowTextW(str);
+
+        this->config_video.quality_vs_speed = std::stoi(str.GetString());
+        // unsigned comparison
+        if(this->config_video.quality_vs_speed > 100)
+            throw std::invalid_argument("");
+    }
+
+    // h264 profile
+    switch(this->wnd_mpeg2_profile.GetCurSel())
+    {
+    case 0:
+        this->config_video.h264_video_profile = eAVEncH264VProfile_Simple;
+        break;
+    case 1:
+        this->config_video.h264_video_profile = eAVEncH264VProfile_Main;
+        break;
+    case 2:
+        this->config_video.h264_video_profile = eAVEncH264VProfile_High;
+        break;
+    default:
+        throw std::invalid_argument("");
     }
 
     return std::memcmp(
         &this->config_video, 
         &this->ctrl_pipeline->get_current_config().config_video,
-        sizeof(control_video_config)) == 0;
+        sizeof(control_video_config)) != 0;
 }
 
 void gui_configdlg_video::populate_encoders_vector_and_combobox(UINT32 flags)
@@ -155,6 +244,7 @@ LRESULT gui_configdlg_video::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
         + L"x" + std::to_wstring(config.config_video.height_frame)).c_str());
 
     // populate video adapter vector
+    this->wnd_adapter.AddString(L"System Default");
     {
         CComPtr<IDXGIFactory1> dxgifactory;
         CComPtr<IDXGIAdapter1> dxgiadapter;
@@ -169,8 +259,10 @@ LRESULT gui_configdlg_video::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
 
             DXGI_ADAPTER_DESC1 desc;
             CHECK_HR(hr = dxgiadapter->GetDesc1(&desc));
+            this->adapters.push_back(desc.AdapterLuid);
+
             desc.Description[127] = 0;
-            this->adapters.push_back(desc);
+            this->wnd_adapter.AddString(desc.Description);
 
             dxgiadapter = nullptr;
         }
@@ -181,20 +273,16 @@ LRESULT gui_configdlg_video::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
     {
         bool found = false;
         int selection = 1;
-        this->wnd_adapter.AddString(L"System Default");
         for(auto&& item : this->adapters)
         {
-            this->wnd_adapter.AddString(item.Description);
-
-            static_assert(std::is_same_v<LUID, decltype(item.AdapterLuid)>);
+            static_assert(std::is_same_v<LUID, std::decay_t<decltype(item)>>);
             static_assert(std::is_same_v<
-                decltype(item.AdapterLuid),
+                std::decay_t<decltype(item)>,
                 decltype(config.config_video.adapter)>);
 
-            if(!found && 
-                std::memcmp(&item.AdapterLuid, &config.config_video.adapter, sizeof(LUID)) == 0)
+            if(std::memcmp(&item, &config.config_video.adapter, sizeof(LUID)) == 0)
                 found = true;
-            else
+            else if(!found)
                 selection++;
         }
         if(!found || config.config_video.adapter_use_default)
@@ -219,9 +307,9 @@ LRESULT gui_configdlg_video::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
                 std::decay_t<decltype(item)>,
                 decltype(config.config_video.encoder)>);
 
-            if(!found && std::memcmp(&item, &config.config_video.encoder, sizeof(CLSID)) == 0)
+            if(std::memcmp(&item, &config.config_video.encoder, sizeof(CLSID)) == 0)
                 found = true;
-            else
+            else if(!found)
                 selection++;
         }
         if(!found || config.config_video.encoder_use_default)
@@ -274,19 +362,76 @@ bool gui_configdlg_audio::should_update_settings() const
         decltype(config_audio),
         decltype(control_pipeline_config::config_audio)>);
 
-    try
-    {
-        // TODO: read the dialog and update the local audio config
-    }
-    catch(std::exception)
-    {
+    // read the dialog and update the local audio config
 
+    // sample rate
+    switch(this->wnd_sample_rate.GetCurSel())
+    {
+    case 0:
+        this->config_audio.sample_rate = 44100;
+        break;
+    case 1:
+        this->config_audio.sample_rate = 48000;
+        break;
+    default:
+        throw std::invalid_argument("");
+    }
+
+    // channels
+    switch(this->wnd_channels.GetCurSel())
+    {
+    case 0:
+        this->config_audio.channels = 2;
+        break;
+    default:
+        throw std::invalid_argument("");
+    }
+
+    // bitrate
+    switch(this->wnd_bitrate.GetCurSel())
+    {
+    case 0:
+        this->config_audio.bitrate = transform_aac_encoder::rate_96;
+        break;
+    case 1:
+        this->config_audio.bitrate = transform_aac_encoder::rate_128;
+        break;
+    case 2:
+        this->config_audio.bitrate = transform_aac_encoder::rate_160;
+        break;
+    case 3:
+        this->config_audio.bitrate = transform_aac_encoder::rate_196;
+        break;
+    default:
+        throw std::invalid_argument("");
+    }
+
+    // aac profile
+    switch(this->wnd_aac_profile.GetCurSel())
+    {
+    case 0:
+        this->config_audio.profile_level_indication = 0x29;
+        break;
+    case 1:
+        this->config_audio.profile_level_indication = 0x2a;
+        break;
+    case 2:
+        this->config_audio.profile_level_indication = 0x2b;
+        break;
+    case 3:
+        this->config_audio.profile_level_indication = 0x2c;
+        break;
+    case 4:
+        this->config_audio.profile_level_indication = 0x2e;
+        break;
+    default:
+        throw std::invalid_argument("");
     }
 
     return std::memcmp(
         &this->config_audio,
         &this->ctrl_pipeline->get_current_config().config_audio,
-        sizeof(control_audio_config)) == 0;
+        sizeof(control_audio_config)) != 0;
 }
 
 LRESULT gui_configdlg_audio::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
@@ -300,18 +445,12 @@ LRESULT gui_configdlg_audio::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
     this->wnd_sample_rate.AddString(L"44 100 Hz");
     this->wnd_sample_rate.AddString(L"48 000 Hz");
 
-    this->wnd_sample_rate.SetCurSel(0);
-
     this->wnd_channels.AddString(L"2 (Stereo)");
-
-    this->wnd_channels.SetCurSel(0);
 
     this->wnd_bitrate.AddString(L"96");
     this->wnd_bitrate.AddString(L"128");
     this->wnd_bitrate.AddString(L"160");
     this->wnd_bitrate.AddString(L"196");
-
-    this->wnd_bitrate.SetCurSel(0);
 
     this->wnd_aac_profile.AddString(L"AAC Profile L2");
     this->wnd_aac_profile.AddString(L"AAC Profile L4");
@@ -319,9 +458,60 @@ LRESULT gui_configdlg_audio::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
     this->wnd_aac_profile.AddString(L"High Efficiency v1 AAC Profile L2");
     this->wnd_aac_profile.AddString(L"High Efficiency v1 AAC Profile L4");
 
-    this->wnd_aac_profile.SetCurSel(0);
-
     this->set_splitter(this->wnd_static_splitter);
+
+    // populate the fields
+    const control_pipeline_config& config = this->ctrl_pipeline->get_current_config();
+    if(config.config_audio.sample_rate == 44100)
+        this->wnd_sample_rate.SetCurSel(0);
+    else if(config.config_audio.sample_rate == 48000)
+        this->wnd_sample_rate.SetCurSel(1);
+    else
+        throw HR_EXCEPTION(E_UNEXPECTED);
+
+    if(config.config_audio.channels == 2)
+        this->wnd_channels.SetCurSel(0);
+    else
+        throw HR_EXCEPTION(E_UNEXPECTED);
+
+    switch(config.config_audio.bitrate)
+    {
+    case transform_aac_encoder::rate_96:
+        this->wnd_bitrate.SetCurSel(0);
+        break;
+    case transform_aac_encoder::rate_128:
+        this->wnd_bitrate.SetCurSel(1);
+        break;
+    case transform_aac_encoder::rate_160:
+        this->wnd_bitrate.SetCurSel(2);
+        break;
+    case transform_aac_encoder::rate_196:
+        this->wnd_bitrate.SetCurSel(3);
+        break;
+    default:
+        throw HR_EXCEPTION(E_UNEXPECTED);
+    }
+
+    switch(config.config_audio.profile_level_indication)
+    {
+    case 0x29:
+        this->wnd_aac_profile.SetCurSel(0);
+        break;
+    case 0x2a:
+        this->wnd_aac_profile.SetCurSel(1);
+        break;
+    case 0x2b:
+        this->wnd_aac_profile.SetCurSel(2);
+        break;
+    case 0x2c:
+        this->wnd_aac_profile.SetCurSel(3);
+        break;
+    case 0x2e:
+        this->wnd_aac_profile.SetCurSel(4);
+        break;
+    default:
+        throw HR_EXCEPTION(E_UNEXPECTED);
+    }
 
     if(this->ctrl_pipeline->is_recording())
         EnumChildWindows(*this, [](HWND hwnd, LPARAM) -> BOOL

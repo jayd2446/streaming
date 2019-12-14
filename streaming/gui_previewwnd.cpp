@@ -95,7 +95,7 @@ bool gui_previewwnd::select_item(CPoint point, bool& first_selection, bool selec
 
     // unselect all items
     if(!item_selected)
-        this->ctrl_pipeline.set_selected_control(NULL, control_pipeline::CLEAR);
+        this->ctrl_pipeline.set_selected_control(nullptr, control_pipeline::CLEAR);
 
     return item_selected;
 }
@@ -107,116 +107,14 @@ void gui_previewwnd::set_timer(UINT timeout_ms)
 
 int gui_previewwnd::OnCreate(LPCREATESTRUCT)
 {
-    this->d3d11dev = this->ctrl_pipeline.d3d11dev;
-    this->d2d1factory = this->ctrl_pipeline.d2d1factory;
-    this->d2d1dev = this->ctrl_pipeline.d2d1dev;
-
     // create timer
     this->set_timer(USER_TIMER_MAXIMUM);
 
-    // initialize the preview
-    HRESULT hr = S_OK;
-
-    CComPtr<IDXGIAdapter> dxgiadapter;
-    CComPtr<IDXGIFactory2> dxgifactory;
-    CComPtr<ID3D11Texture2D> backbuffer;
-    CComPtr<IDXGISurface> dxgibackbuffer;
-    CComPtr<ID2D1Bitmap1> d2dtarget_bitmap;
-    D2D1_BITMAP_PROPERTIES1 bitmap_props;
-    DXGI_SWAP_CHAIN_DESC1 swapchain_desc = {0};
-    RECT r;
-
-    std::lock(*this->ctrl_pipeline.context_mutex, this->d2d1_context_mutex);
-    scoped_lock lock(*this->ctrl_pipeline.context_mutex, std::adopt_lock);
-    scoped_lock lock2(this->d2d1_context_mutex, std::adopt_lock);
-
-    // obtain the dxgi device of the d3d11 device
-    CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->dxgidev));
-
-    //// obtain the direct2d device
-    //CHECK_HR(hr = this->d2d1factory->CreateDevice(this->dxgidev, &this->d2d1dev));
-
-    // create a direct2d device context
-    CHECK_HR(hr = this->d2d1dev->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-        &this->d2d1devctx));
-
-    // create swap chain for the hwnd
-    swapchain_desc.Width = swapchain_desc.Height = 0; // use automatic sizing
-    // this is the most common swapchain
-    swapchain_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    swapchain_desc.Stereo = false;
-    swapchain_desc.SampleDesc.Count = 1; // dont use multisampling
-    swapchain_desc.SampleDesc.Quality = 0;
-    swapchain_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapchain_desc.BufferCount = 2; // use double buffering to enable flip
-    swapchain_desc.Scaling = DXGI_SCALING_NONE;
-    swapchain_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-    swapchain_desc.Flags = 0/*DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE*/;
-
-    // identify the physical adapter (gpu or card) this device runs on
-    CHECK_HR(hr = this->dxgidev->GetAdapter(&dxgiadapter));
-
-    // get the factory object that created this dxgi device
-    CHECK_HR(hr = dxgiadapter->GetParent(IID_PPV_ARGS(&dxgifactory)));
-
-    // get the final swap chain for this window from the dxgi factory
-    CHECK_HR(hr = dxgifactory->CreateSwapChainForHwnd(
-        this->d3d11dev, *this, &swapchain_desc, NULL, NULL, &this->swapchain));
-
-    // ensure that dxgi doesn't queue more than one frame at a time
-    /*hr = this->dxgidev->SetMaximumFrameLatency(1);*/
-
-    // get the backbuffer for this window which is the final 3d render target
-    CHECK_HR(hr = this->swapchain->GetBuffer(0, IID_PPV_ARGS(&backbuffer)));
-
-    // now we set up the direct2d render target bitmap linked to the swapchain
-    // whenever we render to this bitmap, it is directly rendered to the swap chain associated
-    // with this window
-    bitmap_props = D2D1::BitmapProperties1(
-        D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
-
-    // direct2d needs the dxgi version of the backbuffer surface pointer
-    CHECK_HR(hr = this->swapchain->GetBuffer(0, IID_PPV_ARGS(&dxgibackbuffer)));
-
-    // get the d2d surface from the dxgi back buffer to use as the d2d render target
-    CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
-        dxgibackbuffer, &bitmap_props, &d2dtarget_bitmap));
-
-    // now we can set the direct2d render target
-    this->d2d1devctx->SetTarget(d2dtarget_bitmap);
-
     // set the size
+    RECT r;
     this->GetClientRect(&r);
     this->width = std::abs(r.right - r.left);
     this->height = std::abs(r.bottom - r.top);
-
-    // create the brushes for sizing
-    CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
-        D2D1::ColorF(D2D1::ColorF::Red),
-        &this->box_brush));
-    CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
-        D2D1::ColorF(D2D1::ColorF::LimeGreen),
-        &this->line_brush));
-    CHECK_HR(hr = this->d2d1devctx->CreateSolidColorBrush(
-        D2D1::ColorF(D2D1::ColorF::Red),
-        &this->highlighted_brush));
-
-    // create the stroke style for the box
-    {
-        FLOAT dashes[] = {4.f, 4.f};
-        D2D1_STROKE_STYLE_PROPERTIES1 stroke_props = D2D1::StrokeStyleProperties1();
-        // world transform doesn't affect the stroke width
-        stroke_props.transformType = D2D1_STROKE_TRANSFORM_TYPE_FIXED;
-        stroke_props.dashStyle = D2D1_DASH_STYLE_CUSTOM;
-        /*stroke_props.dashStyle = D2D1_DASH_STYLE_DASH;*/
-        CHECK_HR(hr = this->d2d1factory->CreateStrokeStyle(
-            stroke_props, dashes, ARRAYSIZE(dashes), &this->stroke_style));
-    }
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 
     return 0;
 }
@@ -479,7 +377,7 @@ void gui_previewwnd::OnMouseMove(UINT /*nFlags*/, CPoint point)
                 video_control->scale(clamping_vector.x, clamping_vector.y, this->scale_flags, false);
 
             D2D1_POINT_2F points[8];
-            video_control->get_sizing_points(NULL, points, ARRAYSIZE(points));
+            video_control->get_sizing_points(nullptr, points, ARRAYSIZE(points));
 
             video_control->pop_matrix();
 
@@ -559,7 +457,7 @@ void gui_previewwnd::update_preview()
 
 out:
     using namespace D2D1;
-    scoped_lock lock(this->d2d1_context_mutex);
+    scoped_lock lock(preview_window->d2d1_context_mutex);
 
     D2D1_RECT_F preview_rect = this->get_preview_rect();
     bool invert;
@@ -577,16 +475,16 @@ out:
     if(last_buffer)
         bitmap = last_buffer->bitmap;
 
-    this->d2d1devctx->BeginDraw();
-    this->d2d1devctx->Clear(ColorF(ColorF::DimGray));
+    preview_window->d2d1devctx->BeginDraw();
+    preview_window->d2d1devctx->Clear(ColorF(ColorF::DimGray));
 
     if(preview_rect.left > std::numeric_limits<FLOAT>::epsilon() &&
         preview_rect.top > std::numeric_limits<FLOAT>::epsilon())
     {
         // draw preview rect
-        this->d2d1devctx->SetTransform(canvas_to_preview);
+        preview_window->d2d1devctx->SetTransform(canvas_to_preview);
         if(bitmap)
-            this->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f,
+            preview_window->d2d1devctx->DrawBitmap(bitmap, RectF(0.f, 0.f,
             (FLOAT)canvas_width, (FLOAT)canvas_height));
 
         if(has_video_control)
@@ -601,12 +499,12 @@ out:
                     video_params.rectangle.bottom - video_params.rectangle.top) *
                 Matrix3x2F::Rotation(video_params.rotation) *
                 Matrix3x2F::Translation(video_params.rectangle.left, video_params.rectangle.top);*/
-            this->d2d1devctx->SetTransform(dest_m * canvas_to_preview);
+            preview_window->d2d1devctx->SetTransform(dest_m * canvas_to_preview);
 
             /*D2D1_ANTIALIAS_MODE old_mode = this->d2d1devctx->GetAntialiasMode();*/
             /*this->d2d1devctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);*/
-            this->d2d1devctx->DrawRectangle(dest_rect,
-                this->box_brush, box_stroke, this->stroke_style);
+            preview_window->d2d1devctx->DrawRectangle(dest_rect,
+                preview_window->box_brush, box_stroke, preview_window->stroke_style);
             /*this->d2d1devctx->SetAntialiasMode(old_mode);*/
 
             // draw corners
@@ -614,7 +512,7 @@ out:
             ID2D1SolidColorBrush* brush;
             FLOAT corner_length = this->size_point_radius;
             FLOAT corner_stroke = 1.5f;
-            this->d2d1devctx->SetTransform(Matrix3x2F::Identity());
+            preview_window->d2d1devctx->SetTransform(Matrix3x2F::Identity());
 
             const D2D1_POINT_2F
                 corner = Point2F(dest_rect.left, dest_rect.top) * dest_m * canvas_to_preview,
@@ -624,31 +522,31 @@ out:
 
             if((highlighted & control_video::SCALE_LEFT) &&
                 (highlighted & control_video::SCALE_TOP))
-                brush = this->highlighted_brush, corner_stroke = 3.f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.f;
             else
-                brush = this->line_brush, corner_stroke = 1.5f;
-            this->d2d1devctx->DrawEllipse(Ellipse(corner, corner_length, corner_length),
+                brush = preview_window->line_brush, corner_stroke = 1.5f;
+            preview_window->d2d1devctx->DrawEllipse(Ellipse(corner, corner_length, corner_length),
                 brush, corner_stroke);
             if((highlighted & control_video::SCALE_RIGHT) &&
                 (highlighted & control_video::SCALE_TOP))
-                brush = this->highlighted_brush, corner_stroke = 3.f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.f;
             else
-                brush = this->line_brush, corner_stroke = 1.5f;
-            this->d2d1devctx->DrawEllipse(Ellipse(corner2, corner_length, corner_length),
+                brush = preview_window->line_brush, corner_stroke = 1.5f;
+            preview_window->d2d1devctx->DrawEllipse(Ellipse(corner2, corner_length, corner_length),
                 brush, corner_stroke);
             if((highlighted & control_video::SCALE_LEFT) &&
                 (highlighted & control_video::SCALE_BOTTOM))
-                brush = this->highlighted_brush, corner_stroke = 3.f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.f;
             else
-                brush = this->line_brush, corner_stroke = 1.5f;
-            this->d2d1devctx->DrawEllipse(Ellipse(corner3, corner_length, corner_length),
+                brush = preview_window->line_brush, corner_stroke = 1.5f;
+            preview_window->d2d1devctx->DrawEllipse(Ellipse(corner3, corner_length, corner_length),
                 brush, corner_stroke);
             if((highlighted & control_video::SCALE_RIGHT) &&
                 (highlighted & control_video::SCALE_BOTTOM))
-                brush = this->highlighted_brush, corner_stroke = 3.f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.f;
             else
-                brush = this->line_brush, corner_stroke = 1.5f;
-            this->d2d1devctx->DrawEllipse(Ellipse(corner4, corner_length, corner_length),
+                brush = preview_window->line_brush, corner_stroke = 1.5f;
+            preview_window->d2d1devctx->DrawEllipse(Ellipse(corner4, corner_length, corner_length),
                 brush, corner_stroke);
 
             // draw lines
@@ -663,46 +561,46 @@ out:
                 center4 = Point2F(1.f, 0.5f) * dest_m * canvas_to_preview;
 
             if(highlighted == control_video::SCALE_TOP)
-                brush = this->highlighted_brush, corner_stroke = 3.5f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.5f;
             else
-                brush = this->line_brush, corner_stroke = 2.f;
-            this->d2d1devctx->DrawLine(
+                brush = preview_window->line_brush, corner_stroke = 2.f;
+            preview_window->d2d1devctx->DrawLine(
                 Point2F(center.x - corner_length * y_scale, center.y - corner_length * -x_scale),
                 Point2F(center.x + corner_length * y_scale, center.y + corner_length * -x_scale),
                 brush, corner_stroke);
             if(highlighted == control_video::SCALE_LEFT)
-                brush = this->highlighted_brush, corner_stroke = 3.5f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.5f;
             else
-                brush = this->line_brush, corner_stroke = 2.f;
-            this->d2d1devctx->DrawLine(
+                brush = preview_window->line_brush, corner_stroke = 2.f;
+            preview_window->d2d1devctx->DrawLine(
                 Point2F(center2.x - corner_length * x_scale, center2.y - corner_length * y_scale),
                 Point2F(center2.x + corner_length * x_scale, center2.y + corner_length * y_scale),
                 brush, corner_stroke);
             if(highlighted == control_video::SCALE_BOTTOM)
-                brush = this->highlighted_brush, corner_stroke = 3.5f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.5f;
             else
-                brush = this->line_brush, corner_stroke = 2.f;
-            this->d2d1devctx->DrawLine(
+                brush = preview_window->line_brush, corner_stroke = 2.f;
+            preview_window->d2d1devctx->DrawLine(
                 Point2F(center3.x - corner_length * y_scale, center3.y - corner_length * -x_scale),
                 Point2F(center3.x + corner_length * y_scale, center3.y + corner_length * -x_scale),
                 brush, corner_stroke);
             if(highlighted == control_video::SCALE_RIGHT)
-                brush = this->highlighted_brush, corner_stroke = 3.5f;
+                brush = preview_window->highlighted_brush, corner_stroke = 3.5f;
             else
-                brush = this->line_brush, corner_stroke = 2.f;
-            this->d2d1devctx->DrawLine(
+                brush = preview_window->line_brush, corner_stroke = 2.f;
+            preview_window->d2d1devctx->DrawLine(
                 Point2F(center4.x - corner_length * x_scale, center4.y - corner_length * y_scale),
                 Point2F(center4.x + corner_length * x_scale, center4.y + corner_length * y_scale),
                 brush, corner_stroke);
         }
     }
 
-    CHECK_HR(hr = this->d2d1devctx->EndDraw());
+    CHECK_HR(hr = preview_window->d2d1devctx->EndDraw());
 
     // dxgi functions need to be synchronized with the context mutex
     {
         scoped_lock lock(*this->ctrl_pipeline.context_mutex);
-        CHECK_HR(hr = this->swapchain->Present(0, 0));
+        CHECK_HR(hr = preview_window->swapchain->Present(0, 0));
     }
 
 done:
@@ -739,9 +637,13 @@ D2D1_RECT_F gui_previewwnd::get_preview_rect() const
 
 void gui_previewwnd::update_size()
 {
-    std::lock(*this->ctrl_pipeline.context_mutex, this->d2d1_context_mutex);
+    sink_preview2_t preview_window = this->ctrl_pipeline.preview_control->get_component();
+    if(!preview_window)
+        return;
+
+    std::lock(*this->ctrl_pipeline.context_mutex, preview_window->d2d1_context_mutex);
     scoped_lock lock(*this->ctrl_pipeline.context_mutex, std::adopt_lock);
-    scoped_lock lock2(this->d2d1_context_mutex, std::adopt_lock);
+    scoped_lock lock2(preview_window->d2d1_context_mutex, std::adopt_lock);
 
     RECT r;
     this->GetClientRect(&r);
@@ -756,16 +658,16 @@ void gui_previewwnd::update_size()
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
 
     // reset the device context target
-    this->d2d1devctx->SetTarget(NULL);
-    CHECK_HR(hr = this->swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0));
+    preview_window->d2d1devctx->SetTarget(nullptr);
+    CHECK_HR(hr = preview_window->swapchain->ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, 0));
     // direct2d needs the dxgi version of the backbuffer surface pointer
-    CHECK_HR(hr = this->swapchain->GetBuffer(0, IID_PPV_ARGS(&dxgibackbuffer)));
+    CHECK_HR(hr = preview_window->swapchain->GetBuffer(0, IID_PPV_ARGS(&dxgibackbuffer)));
     // get the d2d surface from the dxgi back buffer to use as the d2d render target
-    CHECK_HR(hr = this->d2d1devctx->CreateBitmapFromDxgiSurface(
+    CHECK_HR(hr = preview_window->d2d1devctx->CreateBitmapFromDxgiSurface(
         dxgibackbuffer, &bitmap_props, &d2dtarget_bitmap));
 
     // now we can set the direct2d render target
-    this->d2d1devctx->SetTarget(d2dtarget_bitmap);
+    preview_window->d2d1devctx->SetTarget(d2dtarget_bitmap);
 
 done:
     if(FAILED(hr))

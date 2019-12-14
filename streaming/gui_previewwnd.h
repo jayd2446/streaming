@@ -32,20 +32,6 @@ private:
     // the radius is in preview window coordinates
     FLOAT size_point_radius;
     UINT width, height;
-    std::recursive_mutex d2d1_context_mutex;
-    CComPtr<ID2D1Factory1> d2d1factory;
-    CComPtr<ID2D1HwndRenderTarget> rendertarget;
-    CComPtr<ID2D1Device> d2d1dev;
-    CComPtr<ID2D1DeviceContext> d2d1devctx;
-    CComPtr<ID3D11Device> d3d11dev;
-    CComPtr<IDXGISwapChain1> swapchain;
-    CComPtr<IDXGIDevice1> dxgidev;
-    CComPtr<ID3D11DeviceContext> d3d11devctx;
-    CComPtr<ID3D11RenderTargetView> render_target_view;
-    CComPtr<ID2D1SolidColorBrush> box_brush;
-    CComPtr<ID2D1SolidColorBrush> line_brush;
-    CComPtr<ID2D1SolidColorBrush> highlighted_brush;
-    CComPtr<ID2D1StrokeStyle1> stroke_style;
 
     bool select_item(CPoint point, bool& first_selection, bool select_next = false);
     void update_size();

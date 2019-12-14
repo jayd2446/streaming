@@ -270,3 +270,4 @@ __pycache__/
 /streaming/LlvmDebug
 /streaming/LlvmReleaseDisabled
 *.zip
+*.dat

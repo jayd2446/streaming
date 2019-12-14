@@ -4,6 +4,7 @@
 #include "control_pipeline.h"
 #include <dxgi.h>
 #include <vector>
+#include <stdexcept>
 
 class gui_configdlg
 {
@@ -18,7 +19,7 @@ public:
 
     virtual void create(HWND parent) = 0;
     virtual CWindow& get_wnd() = 0;
-    // might throw
+    // might throw logic_error
     // TODO: this function should take reference settings as an argument so that
     // applying a new config and saving a config to disk could be separately
     // compared
@@ -57,7 +58,7 @@ class gui_configdlg_video final :
     public gui_configdlg
 {
 private:
-    control_video_config config_video;
+    mutable control_video_config config_video;
 
     CEdit wnd_fps_num, wnd_fps_den;
     CComboBox wnd_video_resolution, wnd_mpeg2_profile;
@@ -65,8 +66,7 @@ private:
     CEdit wnd_bitrate, wnd_quality_vs_speed;
     CComboBox wnd_adapter, wnd_encoder;
 
-    // TODO: adapters vector probably needs only the luid
-    std::vector<DXGI_ADAPTER_DESC1> adapters;
+    std::vector<LUID> adapters;
     std::vector<CLSID> encoders;
 
     void populate_encoders_vector_and_combobox(UINT32 flags);
@@ -93,7 +93,7 @@ class gui_configdlg_audio final :
     public gui_configdlg
 {
 private:
-    control_audio_config config_audio;
+    mutable control_audio_config config_audio;
 
     CComboBox wnd_sample_rate, wnd_channels, wnd_bitrate, wnd_aac_profile;
     CStatic wnd_static_splitter;

@@ -17,6 +17,7 @@ private:
     CTreeViewCtrlEx wnd_settingstree;
     CStatic wnd_static;
 
+    bool should_update_settings_flag;
     std::vector<settings_page_t> settings_pages;
     std::map<HTREEITEM, settings_page_t> settings_pages_map;
 public:
@@ -25,7 +26,7 @@ public:
     explicit gui_settingsdlg(const control_pipeline_t&);
 
     void add_settings_pages(const std::vector<settings_page_t>& pages);
-    bool should_update_settings() const;
+    bool should_update_settings() const { return this->should_update_settings_flag; }
     void update_settings(control_pipeline_config& config);
 
     BEGIN_MSG_MAP(gui_settingsdlg)

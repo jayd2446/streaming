@@ -24,8 +24,7 @@ control_pipeline::control_pipeline() :
     context_mutex(new std::recursive_mutex),
     root_scene(new control_scene(controls, *this)),
     preview_control(new control_preview(controls, *this)),
-    recording(false),
-    restart_pipeline_requested(false)
+    recording(false)
 {
     this->root_scene->parent = this;
 
@@ -128,13 +127,23 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
         return;
     }
 
-    if(this->restart_pipeline_requested)
+    try
     {
-        this->restart_pipeline_requested = false;
-        this->deactivate_components();
+        this->activate_components();
     }
+    catch(streaming::exception err)
+    {
+        // currently only form the preview-recording state transition
+        // can be recovered to a stable state
+        if(this->is_recording())
+        {
+            // this might throw, which will cause a terminal error
+            this->stop_recording();
+            throw control_pipeline_recording_state_transition_exception();
+        }
 
-    this->activate_components();
+        throw err;
+    }
 
     // add this to the new set
     new_set.push_back(this->shared_from_this<control_pipeline>());
@@ -160,10 +169,11 @@ void control_pipeline::activate_components()
     }
     if(!this->session)
         this->session.reset(new media_session(this->time_source,
-            this->config.config_video.fps_num, this->config.config_video.fps_den));
+            this->get_current_config().config_video.fps_num, 
+            this->get_current_config().config_video.fps_den));
     if(!this->audio_session)
         this->audio_session.reset(new media_session(this->time_source,
-            this->config.config_audio.sample_rate, 1));
+            this->get_current_config().config_audio.sample_rate, 1));
 
     // must be called after resetting the video session
     frame_unit fps_num, fps_den;
@@ -176,7 +186,8 @@ void control_pipeline::activate_components()
         transform_videomixer_t videomixer_transform(new transform_videomixer(this->session,
             this->context_mutex));
         videomixer_transform->initialize(this->shared_from_this<control_class>(),
-            transform_h264_encoder::frame_width, transform_h264_encoder::frame_height,
+            this->get_current_config().config_video.width_frame,
+            this->get_current_config().config_video.height_frame,
             this->d2d1factory, this->d2d1dev, this->d3d11dev, this->devctx);
 
         this->videomixer_transform = videomixer_transform;
@@ -196,7 +207,15 @@ void control_pipeline::activate_components()
             h264_encoder_transform.reset(new transform_h264_encoder(
                 this->session, this->context_mutex));
             h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                this->d3d11dev, (UINT32)fps_num, (UINT32)fps_den, false);
+                this->d3d11dev, 
+                (UINT32)fps_num, (UINT32)fps_den,
+                this->get_current_config().config_video.width_frame,
+                this->get_current_config().config_video.height_frame,
+                this->get_current_config().config_video.bitrate * 1000,
+                this->get_current_config().config_video.quality_vs_speed,
+                this->get_current_config().config_video.encoder_use_default ? nullptr :
+                    &this->get_current_config().config_video.encoder,
+                false);
         }
         catch(std::exception)
         {
@@ -208,16 +227,32 @@ void control_pipeline::activate_components()
                 h264_encoder_transform.reset(new transform_h264_encoder(
                     this->session, this->context_mutex));
                 h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                    NULL, (UINT32)fps_num, (UINT32)fps_den);
+                    NULL, (UINT32)fps_num, (UINT32)fps_den,
+                    this->get_current_config().config_video.width_frame,
+                    this->get_current_config().config_video.height_frame,
+                    this->get_current_config().config_video.bitrate * 1000,
+                    this->get_current_config().config_video.quality_vs_speed,
+                    this->get_current_config().config_video.encoder_use_default ? nullptr :
+                        &this->get_current_config().config_video.encoder,
+                    false);
             }
             catch(std::exception)
             {
                 std::cout << "using software encoder" << std::endl;
-                // use software encoder
+
+                // use software encoder;
+                // activate function will catch the failure of this
                 h264_encoder_transform.reset(new transform_h264_encoder(
                     this->session, this->context_mutex));
                 h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                    NULL, (UINT32)fps_num, (UINT32)fps_den, true);
+                    NULL, (UINT32)fps_num, (UINT32)fps_den, 
+                    this->get_current_config().config_video.width_frame,
+                    this->get_current_config().config_video.height_frame,
+                    this->get_current_config().config_video.bitrate * 1000,
+                    this->get_current_config().config_video.quality_vs_speed,
+                    this->get_current_config().config_video.encoder_use_default ? nullptr :
+                        &this->get_current_config().config_video.encoder,
+                    true);
             }
         }
 
@@ -233,6 +268,10 @@ void control_pipeline::activate_components()
         transform_color_converter_t color_converter_transform(
             new transform_color_converter(this->session, this->context_mutex));
         color_converter_transform->initialize(this->shared_from_this<control_class>(),
+            this->get_current_config().config_video.width_frame,
+            this->get_current_config().config_video.height_frame,
+            this->get_current_config().config_video.width_frame,
+            this->get_current_config().config_video.height_frame,
             this->d3d11dev, this->devctx);
         this->color_converter_transform = color_converter_transform;
     }
@@ -479,8 +518,11 @@ void control_pipeline::get_session_frame_rate(frame_unit& num, frame_unit& den) 
 void control_pipeline::apply_config(const control_pipeline_config& new_config)
 {
     this->config = new_config;
-    this->restart_pipeline_requested = true;
 
+    this->disabled = true;
+    this->control_class::activate();
+
+    this->disabled = false;
     this->control_class::activate();
 }
 

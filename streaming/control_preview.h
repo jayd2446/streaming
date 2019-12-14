@@ -31,13 +31,12 @@ public:
     D2D1_RECT_F get_preview_rect() const { return this->wnd_preview.get_preview_rect(); }
     void get_canvas_size(UINT32& width, UINT32& height) const;
 
+    void set_parent(HWND parent) { this->parent = parent; }
+
     void set_fps(frame_unit fps) 
     { this->fps = fps; this->wnd_preview.set_timer(1000 / (UINT)this->fps - 1); }
     frame_unit get_fps() const { return this->fps; }
 
-    // initializes wnd_preview
     void set_state(bool render);
-    void initialize_window(HWND parent);
-    void show_window() { this->wnd_preview.ShowWindow(SW_SHOW); }
     bool is_identical_control(const control_class_t&) const;
 };

@@ -147,7 +147,8 @@ HRESULT transform_h264_encoder::set_input_stream_type()
 
     CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_FRAME_RATE, 
         (UINT32)this->session->frame_rate_num, (UINT32)this->session->frame_rate_den));
-    CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
+    CHECK_HR(hr = MFSetAttributeSize(input_type, MF_MT_FRAME_SIZE, 
+        this->frame_width, this->frame_height));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     CHECK_HR(hr = input_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));
     CHECK_HR(hr = MFSetAttributeRatio(input_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
@@ -164,10 +165,11 @@ HRESULT transform_h264_encoder::set_output_stream_type()
     CHECK_HR(hr = MFCreateMediaType(&this->output_type));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video));
     CHECK_HR(hr = this->output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264));
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AVG_BITRATE, avg_bitrate));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AVG_BITRATE, this->avg_bitrate));
     CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_FRAME_RATE, 
         this->frame_rate_num, this->frame_rate_den));
-    CHECK_HR(hr = MFSetAttributeSize(this->output_type, MF_MT_FRAME_SIZE, frame_width, frame_height));
+    CHECK_HR(hr = MFSetAttributeSize(this->output_type, MF_MT_FRAME_SIZE, 
+        this->frame_width, this->frame_height));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     // intel mft only supports main profile
     // (There is no support for Baseline, Extended, or High-10 Profiles.)
@@ -192,10 +194,10 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     v.ulVal = eAVEncCommonRateControlMode_CBR;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonRateControlMode, &v));
     v.vt = VT_UI4;
-    v.ullVal = quality_vs_speed;
+    v.ullVal = this->quality_vs_speed;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonQualityVsSpeed, &v));
     v.vt = VT_UI4;
-    v.ullVal = avg_bitrate;
+    v.ullVal = this->avg_bitrate;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v));
     /*v.vt = VT_UI4;
     v.ullVal = 1;
@@ -222,6 +224,14 @@ HRESULT transform_h264_encoder::feed_encoder(const media_sample_video_frame& fra
     CComPtr<media_buffer_wrapper> buffer_wrapper;
     CComPtr<IMFSample> sample;
     CComPtr<IUnknown> sample_tracker;
+
+#ifdef _DEBUG
+    {
+        D3D11_TEXTURE2D_DESC desc;
+        frame.buffer->texture->GetDesc(&desc);
+        assert_(desc.Width == this->frame_width && desc.Height == this->frame_height);
+    }
+#endif
 
     // sample tracker should be used for each texture individually
 
@@ -590,6 +600,9 @@ done:
 void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
     const CComPtr<ID3D11Device>& d3d11dev, 
     UINT32 frame_rate_num, UINT32 frame_rate_den,
+    UINT32 frame_width, UINT32 frame_height,
+    UINT32 avg_bitrate, UINT32 quality_vs_speed,
+    const CLSID* clsid,
     bool software)
 {
     HRESULT hr = S_OK;
@@ -599,9 +612,14 @@ void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
     this->software = software;
     this->frame_rate_num = frame_rate_num;
     this->frame_rate_den = frame_rate_den;
+    this->frame_width = frame_width;
+    this->frame_height = frame_height;
+    this->avg_bitrate = avg_bitrate;
+    this->quality_vs_speed = quality_vs_speed;
 
     CComPtr<IMFAttributes> attributes;
     UINT count = 0;
+    UINT activate_index = 0;
     // array must be released with cotaskmemfree
     IMFActivate** activate = NULL;
     MFT_REGISTER_TYPE_INFO info = {MFMediaType_Video, MFVideoFormat_H264};
@@ -616,11 +634,37 @@ void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
         &activate,
         &count));
 
+    // find the requested encoder
+    if(clsid)
+    {
+        bool found = false;
+        for(UINT i = 0; i < count; i++)
+        {
+            static_assert(std::is_same_v<
+                decltype(clsid),
+                const CLSID*>);
+
+            CLSID clsid2;
+            CHECK_HR(hr = activate[i]->GetGUID(MFT_TRANSFORM_CLSID_Attribute, &clsid2));
+
+            if(std::memcmp(clsid, &clsid2, sizeof(CLSID)) == 0)
+            {
+                found = true;
+                activate_index = i;
+                break;
+            }
+        }
+
+        if(!found)
+            CHECK_HR(hr = MF_E_TOPO_CODEC_NOT_FOUND);
+    }
+
     if(!count)
         CHECK_HR(hr = MF_E_TOPO_CODEC_NOT_FOUND);
 
-    // activate the first encoder
-    CHECK_HR(hr = activate[0]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
+    // activate the encoder
+    CHECK_HR(hr = 
+        activate[activate_index]->ActivateObject(__uuidof(IMFTransform), (void**)&this->encoder));
 
     // check if the encoder supports d3d11
     CHECK_HR(hr = this->encoder->GetAttributes(&attributes));

@@ -1,5 +1,4 @@
 #include "transform_color_converter.h"
-#include "transform_h264_encoder.h"
 #include <d3d11_1.h>
 #include <iostream>
 #include <mfapi.h>
@@ -32,6 +31,8 @@ transform_color_converter::~transform_color_converter()
 
 HRESULT transform_color_converter::initialize(
     const control_class_t& ctrl_pipeline,
+    UINT32 frame_width_in, UINT32 frame_height_in,
+    UINT32 frame_width_out, UINT32 frame_height_out,
     const CComPtr<ID3D11Device>& d3d11dev, ID3D11DeviceContext* devctx)
 {
     HRESULT hr = S_OK;
@@ -40,18 +41,22 @@ HRESULT transform_color_converter::initialize(
     this->d3d11dev = d3d11dev;
     CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->videodevice));
     CHECK_HR(hr = devctx->QueryInterface(&this->videocontext));
+    this->frame_width_in = frame_width_in;
+    this->frame_height_in = frame_height_in;
+    this->frame_width_out = frame_width_out;
+    this->frame_height_out = frame_height_out;
     
     // check the supported capabilities of the video processor
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc;
     desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
     desc.InputFrameRate.Numerator = (UINT)this->session->frame_rate_num;
     desc.InputFrameRate.Denominator = (UINT)this->session->frame_rate_den;
-    desc.InputWidth = transform_h264_encoder::frame_width;
-    desc.InputHeight = transform_h264_encoder::frame_height;
+    desc.InputWidth = this->frame_width_in;
+    desc.InputHeight = this->frame_height_in;
     desc.OutputFrameRate.Numerator = (UINT)this->session->frame_rate_num;
     desc.OutputFrameRate.Denominator = (UINT)this->session->frame_rate_den;
-    desc.OutputWidth = transform_h264_encoder::frame_width;
-    desc.OutputHeight = transform_h264_encoder::frame_height;
+    desc.OutputWidth = this->frame_width_out;
+    desc.OutputHeight = this->frame_height_out;
     desc.Usage = D3D11_VIDEO_USAGE_PLAYBACK_NORMAL;
     CHECK_HR(hr = this->videodevice->CreateVideoProcessorEnumerator(&desc, &this->enumerator));
     UINT flags;
@@ -128,21 +133,9 @@ done:
 void stream_color_converter::initialize_buffer(const media_buffer_texture_t& buffer)
 {
     // create output texture with nv12 color format
-    // nv12 format is 1 byte
-    // TODO: figure out the real size of nv12 format
-    // TODO: decide if init_data is necessary
-    static BYTE init_data[transform_h264_encoder::frame_width * transform_h264_encoder::frame_height *
-    sizeof(DWORD)]
-        = {0};
-
-    D3D11_SUBRESOURCE_DATA subrsrc;
-    subrsrc.pSysMem = init_data;
-    subrsrc.SysMemPitch = transform_h264_encoder::frame_width;
-    subrsrc.SysMemSlicePitch = 0;
-
     D3D11_TEXTURE2D_DESC desc;
-    desc.Width = transform_h264_encoder::frame_width;
-    desc.Height = transform_h264_encoder::frame_height;
+    desc.Width = this->transform->frame_width_out;
+    desc.Height = this->transform->frame_height_out;
     desc.MipLevels = 1;
     desc.ArraySize = 1;
     desc.SampleDesc.Count = 1;
@@ -153,7 +146,7 @@ void stream_color_converter::initialize_buffer(const media_buffer_texture_t& buf
     desc.Format = DXGI_FORMAT_NV12;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
 
-    buffer->initialize(this->transform->d3d11dev, desc, &subrsrc);
+    buffer->initialize(this->transform->d3d11dev, desc, nullptr);
 }
 
 media_buffer_texture_t stream_color_converter::acquire_buffer()
@@ -196,6 +189,15 @@ void stream_color_converter::process(media_component_h264_encoder_args_t& this_a
             media_buffer_texture_t output_buffer = this->acquire_buffer();
             assert_(texture);
 
+#ifdef _DEBUG
+            {
+                D3D11_TEXTURE2D_DESC desc;
+                texture->GetDesc(&desc);
+                assert_(desc.Width == this->transform->frame_width_in);
+                assert_(desc.Height == this->transform->frame_height_in);
+            }
+#endif
+
             // create the output view
             CComPtr<ID3D11VideoProcessorOutputView> output_view;
             D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC view_desc;
@@ -219,8 +221,8 @@ void stream_color_converter::process(media_component_h264_encoder_args_t& this_a
             D3D11_VIDEO_PROCESSOR_STREAM stream;
             RECT dst_rect;
             dst_rect.top = dst_rect.left = 0;
-            dst_rect.right = transform_h264_encoder::frame_width;
-            dst_rect.bottom = transform_h264_encoder::frame_height;
+            dst_rect.right = this->transform->frame_width_out;
+            dst_rect.bottom = this->transform->frame_height_out;
 
             stream.Enable = TRUE;
             stream.OutputIndex = 0;

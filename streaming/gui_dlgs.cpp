@@ -549,8 +549,20 @@ LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*w
 
     if(!this->ctrl_pipeline->is_recording())
     {
-        this->ctrl_pipeline->start_recording(L"test.mp4", *this);
-        this->btn_start_recording.SetWindowTextW(L"Stop Recording");
+        try
+        {
+            this->ctrl_pipeline->start_recording(L"test.mp4", *this);
+        }
+        catch(control_pipeline_recording_state_transition_exception)
+        {
+            this->MessageBoxW(
+                L"Could not start recording.\n"
+                L"Make sure that the video device and video encoder settings are valid and compatible.",
+                nullptr, MB_ICONERROR);
+        }
+
+        if(this->ctrl_pipeline->is_recording())
+            this->btn_start_recording.SetWindowTextW(L"Stop Recording");
     }
     else
     {

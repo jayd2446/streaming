@@ -219,6 +219,7 @@ void stream_video::schedule_new(time_unit due_time)
     if(due_time == this->video_next_due_time)
         this->video_next_due_time = this->get_next_due_time(due_time);
 
+    // TODO: with high enough fps, this loop might never break
     for(;;)
     {
         time_unit scheduled_time;

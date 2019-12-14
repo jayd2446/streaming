@@ -1,6 +1,7 @@
 #include "gui_mainwnd.h"
 #include "gui_settingsdlg.h"
 #include "gui_configdlgs.h"
+#include "control_preview.h"
 
 extern CAppModule module_;
 
@@ -111,6 +112,26 @@ void gui_mainwnd::set_statusbar_parts(CSize size)
     this->wnd_statusbar.SetText(2, L"CPU: 0.0%, 60.00 fps");
 }
 
+void gui_mainwnd::on_activate(control_class* activated_control, bool deactivated)
+{
+    control_preview* ctrl_preview = dynamic_cast<control_preview*>(activated_control);
+    if(ctrl_preview)
+    {
+        CWindow splitter_pane = this->wnd_splitter.GetSplitterPane(SPLIT_PANE_TOP);
+
+        if(!deactivated && splitter_pane == nullptr)
+        {
+            this->wnd_splitter.SetSplitterPane(SPLIT_PANE_TOP, ctrl_preview->wnd_preview);
+            ctrl_preview->wnd_preview.ShowWindow(SW_SHOW);
+        }
+        else if(deactivated && splitter_pane != nullptr)
+        {
+            this->wnd_splitter.SetSplitterPane(SPLIT_PANE_TOP, nullptr);
+            splitter_pane.ShowWindow(SW_HIDE);
+        }
+    }
+}
+
 BOOL gui_mainwnd::PreTranslateMessage(MSG* pMsg)
 {
     // this will intentionally freeze the gui if there are errors originating from the pipeline
@@ -132,6 +153,8 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
     
     // create windows and control_pipeline
     this->ctrl_pipeline.reset(new control_pipeline);
+    this->ctrl_pipeline->event_provider.register_event_handler(*this);
+
     /*this->wnd_preview.reset(new gui_previewwnd(this->ctrl_pipeline));*/
     this->wnd_control.reset(new gui_controlwnd(this->ctrl_pipeline));
 
@@ -157,8 +180,11 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
     this->wnd_splitter.SetOrientation(false);
     this->wnd_splitter.SetSplitterPos(rc.bottom - 200);
 
+    // set the parent of the preview window
+    this->ctrl_pipeline->preview_control->set_parent(this->wnd_splitter);
+
     // create preview window
-    this->ctrl_pipeline->preview_control->initialize_window(this->wnd_splitter);
+    /*this->ctrl_pipeline->preview_control->initialize_window(this->wnd_splitter);*/
     //this->wnd_preview->Create(
     //    this->wnd_splitter, rcDefault, L"Preview", 
     //    WS_CHILD /*| WS_CLIPSIBLINGS | WS_CLIPCHILDREN*/);
@@ -169,11 +195,10 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
         WS_CHILD /*| WS_CLIPSIBLINGS | WS_CLIPCHILDREN*/);
 
     // set the splitter panes
-    this->wnd_splitter.SetSplitterPanes(this->ctrl_pipeline->preview_control->wnd_preview, 
-        *this->wnd_control);
+    this->wnd_splitter.SetSplitterPanes(nullptr, *this->wnd_control);
 
     // show the windows
-    this->ctrl_pipeline->preview_control->show_window();
+    /*this->ctrl_pipeline->preview_control->show_window();*/
     /*this->wnd_preview->ShowWindow(SW_SHOW);*/
     this->wnd_control->ShowWindow(SW_SHOW);
 
@@ -187,6 +212,7 @@ int gui_mainwnd::OnCreate(LPCREATESTRUCT /*createstruct*/)
 
 void gui_mainwnd::OnDestroy()
 {
+    this->ctrl_pipeline->event_provider.unregister_event_handler(*this);
     this->ctrl_pipeline->shutdown();
     this->ctrl_pipeline = nullptr;
 
@@ -343,7 +369,7 @@ LRESULT gui_mainwnd::OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*
 
 LRESULT gui_mainwnd::OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    gui_configdlg_general config_general(this->ctrl_pipeline);
+    /*gui_configdlg_general config_general(this->ctrl_pipeline);*/
     gui_configdlg_video config_video(this->ctrl_pipeline);
     gui_configdlg_audio config_audio(this->ctrl_pipeline);
 
@@ -351,7 +377,7 @@ LRESULT gui_mainwnd::OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndC
 
     dlg.add_settings_pages(
         {
-            {L"General", &config_general},
+            /*{L"General", &config_general},*/
             {L"Video", &config_video},
             {L"Audio", &config_audio}
         });

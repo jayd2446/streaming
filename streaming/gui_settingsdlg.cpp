@@ -3,22 +3,14 @@
 extern CAppModule module_;
 
 gui_settingsdlg::gui_settingsdlg(const control_pipeline_t& ctrl_pipeline) :
-    ctrl_pipeline(ctrl_pipeline)
+    ctrl_pipeline(ctrl_pipeline),
+    should_update_settings_flag(false)
 {
 }
 
 void gui_settingsdlg::add_settings_pages(const std::vector<settings_page_t>& pages)
 {
     this->settings_pages.insert(this->settings_pages.end(), pages.begin(), pages.end());
-}
-
-bool gui_settingsdlg::should_update_settings() const
-{
-    for(auto&& item : this->settings_pages)
-        if(item.second->should_update_settings())
-            return true;
-
-    return false;
 }
 
 void gui_settingsdlg::update_settings(control_pipeline_config& config)
@@ -67,7 +59,22 @@ LRESULT gui_settingsdlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /
 
 LRESULT gui_settingsdlg::OnBnClickedOk(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    this->EndDialog(IDOK);
+    try
+    {
+        for(auto&& item : this->settings_pages)
+            if(item.second->should_update_settings())
+            {
+                this->should_update_settings_flag = true;
+                break;
+            }
+
+        this->EndDialog(IDOK);
+    }
+    catch(std::logic_error err)
+    {
+        this->MessageBoxW(L"Invalid settings.", nullptr, MB_ICONERROR);
+    }
+
     return 0;
 }
 

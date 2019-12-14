@@ -63,11 +63,13 @@ typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
 // TODO: these configs need to be refactored
 struct control_video_config
 {
-    frame_unit fps_num, fps_den;
+    int fps_num, fps_den;
 
     bool adapter_use_default; // TODO: default values can be displayed as System Default
     LUID adapter;
 
+    // by default, control pipeline treats these as hardware encoders,
+    // and falls back to software encoders if activation fails
     bool encoder_use_default;
     CLSID encoder;
 
@@ -95,7 +97,7 @@ struct control_video_config
 struct control_audio_config
 {
     // allowed values: 44100 and 48000
-    frame_unit sample_rate;
+    int sample_rate;
 
     UINT32 channels; // must be 1, 2 or 6
     transform_aac_encoder::bitrate_t bitrate;
@@ -133,6 +135,8 @@ struct control_pipeline_config
 };
 #pragma pack(pop)
 
+class control_pipeline_recording_state_transition_exception : public std::exception {};
+
 class control_pipeline final : public control_class
 {
     friend class control_scene;
@@ -155,7 +159,6 @@ private:
     source_buffering_audio_t audio_buffering_source;
 
     control_pipeline_config config;
-    bool restart_pipeline_requested;
 
     // active controls must not have duplicate elements
     control_set_t controls;
@@ -171,6 +174,7 @@ private:
 
     void build_and_switch_topology() override;
 public:
+    // these member variables must not be cached
     UINT d3d11dev_adapter;
     CComPtr<IDXGIFactory1> dxgifactory;
     CComPtr<ID2D1Factory1> d2d1factory;
@@ -222,7 +226,8 @@ public:
     //// TODO: this should return control preview instead of the component
     //const sink_preview2_t& get_preview_window() const {return this->preview_sink;}
 
-    // message is sent to the initiator window when the recording has been stopped
+    // message is sent to the initiator window when the recording has been stopped;
+    // might throw control_pipeline_recording_state_transition_exception
     void start_recording(const std::wstring& filename, ATL::CWindow initiator);
     void stop_recording();
 
