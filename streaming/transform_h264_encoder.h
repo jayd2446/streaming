@@ -52,6 +52,7 @@ private:
     UINT32 frame_rate_num, frame_rate_den;
     UINT32 frame_width, frame_height;
     UINT32 avg_bitrate, quality_vs_speed;
+    eAVEncH264VProfile encoder_profile;
 
     DWORD input_id, output_id;
     MFT_INPUT_STREAM_INFO input_stream_info;
@@ -121,6 +122,7 @@ public:
         UINT32 frame_rate_num, UINT32 frame_rate_den,
         UINT32 frame_width, UINT32 frame_height,
         UINT32 avg_bitrate, UINT32 quality_vs_speed,
+        eAVEncH264VProfile,
         const CLSID*,
         bool software);
     media_stream_t create_stream(media_message_generator_t&&);

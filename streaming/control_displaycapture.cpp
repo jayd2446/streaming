@@ -107,7 +107,7 @@ void control_displaycapture::activate(const control_set_t& last_set, control_set
             source_displaycapture_t displaycapture_source(
                 new source_displaycapture(this->pipeline.session, this->pipeline.context_mutex));
 
-            if(this->params.adapter_ordinal == this->pipeline.d3d11dev_adapter)
+            if(this->params.adapter_ordinal == this->pipeline.get_adapter_ordinal())
                 displaycapture_source->initialize(
                     this->pipeline.shared_from_this<control_pipeline>(),
                     this->params.output_ordinal, 

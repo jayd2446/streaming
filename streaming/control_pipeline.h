@@ -60,12 +60,22 @@ typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
 
 #pragma pack(push, 1)
 
+// TODO: config structs need to have a validate function
+
+// TODO: in memory config might not correspond to the one on the disk,
+// if the configuration was invalid;
+// currently, invalid adapter configuration is not updated in memory
+
+// TODO: settings dialog should take a config as a parameter and the fields are populated
+// according to that;
+// the settings are then compared against the current active configuration
+
 // TODO: these configs need to be refactored
 struct control_video_config
 {
     int fps_num, fps_den;
 
-    bool adapter_use_default; // TODO: default values can be displayed as System Default
+    bool adapter_use_default;
     LUID adapter;
 
     // by default, control pipeline treats these as hardware encoders,
@@ -135,12 +145,14 @@ struct control_pipeline_config
 };
 #pragma pack(pop)
 
-class control_pipeline_recording_state_transition_exception : public std::exception {};
+class control_pipeline_recording_activate_exception : public std::exception {};
 
 class control_pipeline final : public control_class
 {
     friend class control_scene;
 private:
+    bool graphics_initialized;
+    UINT adapter_ordinal;
     bool recording;
     ATL::CWindow recording_initiator_wnd;
     gui_threadwnd wnd_thread;
@@ -172,20 +184,30 @@ private:
     void activate_components();
     void deactivate_components();
 
+    static HRESULT get_adapter(
+        const CComPtr<IDXGIFactory1>&,
+        const LUID&,
+        CComPtr<IDXGIAdapter1>&,
+        UINT& adapter_ordinal);
+    void init_graphics(bool use_default_adapter, bool try_recover = true);
+    void deinit_graphics();
+
     void build_and_switch_topology() override;
 public:
+    context_mutex_t context_mutex;
+
     // these member variables must not be cached
-    UINT d3d11dev_adapter;
     CComPtr<IDXGIFactory1> dxgifactory;
     CComPtr<ID2D1Factory1> d2d1factory;
     CComPtr<IDXGIDevice1> dxgidev;
     CComPtr<ID3D11Device> d3d11dev;
     CComPtr<ID3D11DeviceContext> devctx;
     CComPtr<ID2D1Device> d2d1dev;
-    context_mutex_t context_mutex;
+
     media_session_t session, audio_session;
     // TODO: this should be in control_preview
     transform_videomixer_t videomixer_transform;
+
     // TODO: set root_scene and preview_control to private;
     // TODO: make sure that these controls are always available
     std::shared_ptr<control_scene> root_scene;
@@ -205,6 +227,12 @@ public:
     const std::vector<control_class*>& get_selected_controls() const { return this->selected_controls; }
 
     bool is_recording() const { return this->recording; }
+
+    UINT get_adapter_ordinal() const
+    {
+        assert_(this->graphics_initialized);
+        return this->adapter_ordinal;
+    }
 
     void get_session_frame_rate(frame_unit& num, frame_unit& den) const;
     frame_unit get_session_sample_rate() const { return this->audio_session->frame_rate_num; }

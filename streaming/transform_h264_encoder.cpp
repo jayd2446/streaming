@@ -173,7 +173,7 @@ HRESULT transform_h264_encoder::set_output_stream_type()
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     // intel mft only supports main profile
     // (There is no support for Baseline, Extended, or High-10 Profiles.)
-    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_Main));
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_MPEG2_PROFILE, this->encoder_profile));
     /*CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));*/
     CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
@@ -602,6 +602,7 @@ void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
     UINT32 frame_rate_num, UINT32 frame_rate_den,
     UINT32 frame_width, UINT32 frame_height,
     UINT32 avg_bitrate, UINT32 quality_vs_speed,
+    eAVEncH264VProfile encoder_profile,
     const CLSID* clsid,
     bool software)
 {
@@ -616,6 +617,7 @@ void transform_h264_encoder::initialize(const control_class_t& ctrl_pipeline,
     this->frame_height = frame_height;
     this->avg_bitrate = avg_bitrate;
     this->quality_vs_speed = quality_vs_speed;
+    this->encoder_profile = encoder_profile;
 
     CComPtr<IMFAttributes> attributes;
     UINT count = 0;

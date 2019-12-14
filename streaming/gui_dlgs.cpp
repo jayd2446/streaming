@@ -553,7 +553,7 @@ LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*w
         {
             this->ctrl_pipeline->start_recording(L"test.mp4", *this);
         }
-        catch(control_pipeline_recording_state_transition_exception)
+        catch(control_pipeline_recording_activate_exception)
         {
             this->MessageBoxW(
                 L"Could not start recording.\n"

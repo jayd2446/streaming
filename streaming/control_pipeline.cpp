@@ -20,7 +20,8 @@
 
 control_pipeline::control_pipeline() :
     control_class(controls, event_provider),
-    d3d11dev_adapter(0),
+    graphics_initialized(false),
+    adapter_ordinal((UINT)-1),
     context_mutex(new std::recursive_mutex),
     root_scene(new control_scene(controls, *this)),
     preview_control(new control_preview(controls, *this)),
@@ -30,61 +31,6 @@ control_pipeline::control_pipeline() :
 
     // initialize the thread window
     this->wnd_thread.Create(nullptr);
-
-    // initialize graphics
-    HRESULT hr = S_OK;
-    CComPtr<IDXGIAdapter1> dxgiadapter;
-    D3D_FEATURE_LEVEL feature_levels[] =
-    {
-        D3D_FEATURE_LEVEL_11_1,
-        D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0,
-        D3D_FEATURE_LEVEL_9_3,
-        D3D_FEATURE_LEVEL_9_2,
-        D3D_FEATURE_LEVEL_9_1,
-    };
-    D3D_FEATURE_LEVEL feature_level;
-    CComPtr<ID3D11Multithread> multithread;
-    BOOL was_protected;
-    D2D1_FACTORY_OPTIONS d2d1_options;
-
-    CHECK_HR(hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&this->dxgifactory));
-    CHECK_HR(hr = this->dxgifactory->EnumAdapters1(this->d3d11dev_adapter, &dxgiadapter));
-    CHECK_HR(hr = D3D11CreateDevice(
-        dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
-        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
-        feature_levels, ARRAYSIZE(feature_levels), D3D11_SDK_VERSION, &this->d3d11dev,
-        &feature_level, &this->devctx));
-
-    // use implicit multithreading protection aswell so that the context cannot be
-    // accidentally corrupted;
-    // amd h264 encoder probably caused encoding artifacts because the
-    // context was being corrupted
-    CHECK_HR(hr = this->devctx->QueryInterface(&multithread));
-    was_protected = multithread->SetMultithreadProtected(TRUE);
-
-    // get the dxgi device
-    CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->dxgidev));
-
-    // create d2d1 factory
-    d2d1_options.debugLevel = CREATE_DEVICE_DEBUG_D2D1;
-    CHECK_HR(hr = 
-        D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, d2d1_options, &this->d2d1factory));
-
-    // create d2d1 device
-    CHECK_HR(hr = this->d2d1factory->CreateDevice(this->dxgidev, &this->d2d1dev));
-
-    std::cout << "adapter " << this->d3d11dev_adapter << std::endl;
-
-    // set the gpu thread priority
-    INT old_priority;
-    CHECK_HR(hr = this->dxgidev->GetGPUThreadPriority(&old_priority));
-    CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(7));
-
-done:
-    if(FAILED(hr))
-        throw HR_EXCEPTION(hr);
 }
 
 control_pipeline::~control_pipeline()
@@ -133,13 +79,12 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
     }
     catch(streaming::exception err)
     {
-        // currently only form the preview-recording state transition
-        // can be recovered to a stable state
+        // currently only from the recording state can be recovered to a stable state
         if(this->is_recording())
         {
             // this might throw, which will cause a terminal error
             this->stop_recording();
-            throw control_pipeline_recording_state_transition_exception();
+            throw control_pipeline_recording_activate_exception();
         }
 
         throw err;
@@ -159,6 +104,9 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
 
 void control_pipeline::activate_components()
 {
+    if(!this->graphics_initialized)
+        this->init_graphics(this->get_current_config().config_video.adapter_use_default);
+
     if(!this->time_source)
     {
         this->time_source.reset(new media_clock);
@@ -213,11 +161,12 @@ void control_pipeline::activate_components()
                 this->get_current_config().config_video.height_frame,
                 this->get_current_config().config_video.bitrate * 1000,
                 this->get_current_config().config_video.quality_vs_speed,
+                this->get_current_config().config_video.h264_video_profile,
                 this->get_current_config().config_video.encoder_use_default ? nullptr :
                     &this->get_current_config().config_video.encoder,
                 false);
         }
-        catch(std::exception)
+        catch(streaming::exception)
         {
             std::cout << "using system ram for hardware video encoder" << std::endl;
 
@@ -232,11 +181,12 @@ void control_pipeline::activate_components()
                     this->get_current_config().config_video.height_frame,
                     this->get_current_config().config_video.bitrate * 1000,
                     this->get_current_config().config_video.quality_vs_speed,
+                    this->get_current_config().config_video.h264_video_profile,
                     this->get_current_config().config_video.encoder_use_default ? nullptr :
                         &this->get_current_config().config_video.encoder,
                     false);
             }
-            catch(std::exception)
+            catch(streaming::exception)
             {
                 std::cout << "using software encoder" << std::endl;
 
@@ -250,6 +200,7 @@ void control_pipeline::activate_components()
                     this->get_current_config().config_video.height_frame,
                     this->get_current_config().config_video.bitrate * 1000,
                     this->get_current_config().config_video.quality_vs_speed,
+                    this->get_current_config().config_video.h264_video_profile,
                     this->get_current_config().config_video.encoder_use_default ? nullptr :
                         &this->get_current_config().config_video.encoder,
                     true);
@@ -405,7 +356,140 @@ void control_pipeline::deactivate_components()
     this->audio_session = NULL;
     this->time_source = NULL;
 
-    /*Sleep(INFINITE);*/
+    this->deinit_graphics();
+}
+
+HRESULT control_pipeline::get_adapter(
+    const CComPtr<IDXGIFactory1>& factory,
+    const LUID& luid,
+    CComPtr<IDXGIAdapter1>& dxgiadapter,
+    UINT& adapter_ordinal)
+{
+    assert_(!dxgiadapter);
+
+    HRESULT hr = S_OK;
+
+    for(adapter_ordinal = 0;
+        (hr = factory->EnumAdapters1(adapter_ordinal, &dxgiadapter)) != DXGI_ERROR_NOT_FOUND;
+        adapter_ordinal++)
+    {
+        CHECK_HR(hr);
+
+        DXGI_ADAPTER_DESC1 desc;
+        CHECK_HR(hr = dxgiadapter->GetDesc1(&desc));
+
+        if(std::memcmp(&luid, &desc.AdapterLuid, sizeof(LUID)) == 0)
+            break;
+
+        dxgiadapter = nullptr;
+    }
+
+    hr = S_OK;
+
+done:
+    return hr;
+}
+
+void control_pipeline::init_graphics(bool use_default_adapter, bool try_recover)
+{
+    HRESULT hr = S_OK;
+    CComPtr<IDXGIAdapter1> dxgiadapter;
+    D3D_FEATURE_LEVEL feature_levels[] =
+    {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+        D3D_FEATURE_LEVEL_9_3,
+        D3D_FEATURE_LEVEL_9_2,
+        D3D_FEATURE_LEVEL_9_1,
+    };
+    D3D_FEATURE_LEVEL feature_level;
+    CComPtr<ID3D11Multithread> multithread;
+    BOOL was_protected;
+    D2D1_FACTORY_OPTIONS d2d1_options;
+
+    CHECK_HR(hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void**)&this->dxgifactory));
+
+    if(!use_default_adapter)
+    {
+        CHECK_HR(hr = this->get_adapter(
+            this->dxgifactory,
+            this->get_current_config().config_video.adapter,
+            dxgiadapter,
+            this->adapter_ordinal));
+
+        if(!dxgiadapter)
+            std::cout << "warning: custom adapter not found, falling back to default" << std::endl;
+    }
+
+    if(!dxgiadapter)
+    {
+        this->adapter_ordinal = 0;
+        CHECK_HR(hr = this->dxgifactory->EnumAdapters1(this->adapter_ordinal, &dxgiadapter));
+    }
+
+    CHECK_HR(hr = D3D11CreateDevice(
+        dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
+        feature_levels, ARRAYSIZE(feature_levels), D3D11_SDK_VERSION, &this->d3d11dev,
+        &feature_level, &this->devctx));
+
+    // use implicit multithreading protection aswell so that the context cannot be
+    // accidentally corrupted;
+    // amd h264 encoder probably caused encoding artifacts because the
+    // context was being corrupted
+    CHECK_HR(hr = this->devctx->QueryInterface(&multithread));
+    was_protected = multithread->SetMultithreadProtected(TRUE);
+
+    // get the dxgi device
+    CHECK_HR(hr = this->d3d11dev->QueryInterface(&this->dxgidev));
+
+    // create d2d1 factory
+    d2d1_options.debugLevel = CREATE_DEVICE_DEBUG_D2D1;
+    CHECK_HR(hr =
+        D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, d2d1_options, &this->d2d1factory));
+
+    // create d2d1 device
+    CHECK_HR(hr = this->d2d1factory->CreateDevice(this->dxgidev, &this->d2d1dev));
+
+    // set the gpu thread priority
+    INT old_priority;
+    CHECK_HR(hr = this->dxgidev->GetGPUThreadPriority(&old_priority));
+    CHECK_HR(hr = this->dxgidev->SetGPUThreadPriority(7));
+
+done:
+    if(FAILED(hr))
+    {
+        this->deinit_graphics();
+
+        // fall back to default video device on error
+        if(try_recover)
+        {
+            std::cout <<
+                "warning: custom adapter did not initialize correctly, "
+                "falling back to default" << std::endl;
+            std::cout << "(HRESULT: 0x" << std::hex << hr << std::dec << ")" << std::endl;
+            this->init_graphics(true, false);
+        }
+        else
+            throw HR_EXCEPTION(hr);
+    }
+
+    this->graphics_initialized = true;
+}
+
+void control_pipeline::deinit_graphics()
+{
+    this->graphics_initialized = false;
+
+    this->adapter_ordinal = (UINT)-1;
+    this->dxgifactory = nullptr;
+    this->d3d11dev = nullptr;
+    this->devctx = nullptr;
+    this->dxgidev = nullptr;
+    this->d2d1factory = nullptr;
+    this->d2d1dev = nullptr;
 }
 
 void control_pipeline::build_and_switch_topology()
