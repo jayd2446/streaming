@@ -62,9 +62,9 @@ typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
 
 // TODO: config structs need to have a validate function
 
-// TODO: in memory config might not correspond to the one on the disk,
+// TODO: in memory config might not correspond to the one on the disk
 // if the configuration was invalid;
-// currently, invalid adapter configuration is not updated in memory
+// currently the invalid adapter configuration is not updated in memory
 
 // TODO: settings dialog should take a config as a parameter and the fields are populated
 // according to that;

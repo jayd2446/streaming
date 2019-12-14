@@ -467,7 +467,7 @@ done:
         if(try_recover)
         {
             std::cout <<
-                "warning: custom adapter did not initialize correctly, "
+                "warning: custom adapter failed to initialize, "
                 "falling back to default" << std::endl;
             std::cout << "(HRESULT: 0x" << std::hex << hr << std::dec << ")" << std::endl;
             this->init_graphics(true, false);
