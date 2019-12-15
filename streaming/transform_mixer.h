@@ -243,7 +243,7 @@ frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args, frame_unit
     for(size_t i = 0; i < this->input_streams_props.size(); i++)
     {
         frame_unit leftover_frame_end = std::numeric_limits<frame_unit>::min();
-        for(auto&& item : this->leftover[i].container)
+        for(const auto& item : this->leftover[i].container)
         {
             assert_(item.arg);
 
@@ -311,7 +311,7 @@ void stream_mixer<T>::process(typename request_queue::request_t& request)
 
     for(size_t i = 0; i < this->input_streams_props.size(); i++)
     {
-        auto&& container = this->leftover[i].container;
+        auto& container = this->leftover[i].container;
 
         container.erase(std::remove_if(container.begin(), container.end(),
             [&](packet_t& item)
