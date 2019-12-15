@@ -68,9 +68,6 @@ public:
     };
     typedef std::pair<unsigned short /*samples received*/, args_t> request_t;
 protected:
-    // derived class must call this
-    void initialize(frame_unit frame_rate_num, frame_unit frame_rate_den);
-
     virtual stream_mixer_t create_derived_stream() = 0;
 public:
     explicit transform_mixer(const media_session_t& session);
@@ -128,7 +125,7 @@ private:
     // converts by using the frame rate in component
     frame_unit convert_to_frame_unit(time_unit) const;
     void initialize_packet(packet_t&) const;
-    frame_unit find_common_frame_end(const args_t&) const;
+    frame_unit find_common_frame_end(const args_t&, frame_unit lower_limit) const;
     void process(typename request_queue::request_t&);
     void dispatch(typename request_dispatcher::request_t&);
 
@@ -238,7 +235,7 @@ void stream_mixer<T>::initialize_packet(packet_t& packet) const
 }
 
 template<class T>
-frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args) const
+frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args, frame_unit lower_limit) const
 {
     assert_(args.container.size() == this->input_streams_props.size());
 
@@ -249,17 +246,22 @@ frame_unit stream_mixer<T>::find_common_frame_end(const args_t& args) const
         for(auto&& item : this->leftover[i].container)
         {
             assert_(item.arg);
-            leftover_frame_end = std::max(leftover_frame_end, item.arg->frame_end);
+
+            const frame_unit item_frame_end = std::max(lower_limit, item.arg->frame_end);
+            leftover_frame_end = std::max(leftover_frame_end, item_frame_end);
         }
 
-        auto&& item = args.container[i];
+        const auto& item = args.container[i];
         if(item.arg)
-            frame_end = std::min(frame_end, std::max(item.arg->frame_end, leftover_frame_end));
+        {
+            const frame_unit item_frame_end = std::max(lower_limit, item.arg->frame_end);
+            frame_end = std::min(frame_end, std::max(item_frame_end, leftover_frame_end));
+        }
         else if(!this->leftover[i].container.empty())
             frame_end = std::min(frame_end, leftover_frame_end);
         else
             // common frame end cannot be found if a request is lacking samples
-            return std::numeric_limits<frame_unit>::min();
+            return lower_limit;
     }
 
     return frame_end;
@@ -276,7 +278,7 @@ void stream_mixer<T>::process(typename request_queue::request_t& request)
 
     args_t& packets = request.sample.second;
     const frame_unit old_cutoff = this->cutoff;
-    this->cutoff = std::max(this->find_common_frame_end(packets), old_cutoff);
+    this->cutoff = this->find_common_frame_end(packets, old_cutoff);
     // component is allowed serve samples from zero up to the request point only
     assert_(this->cutoff <= this->convert_to_frame_unit(request.rp.request_time));
 

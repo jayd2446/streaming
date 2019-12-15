@@ -166,8 +166,9 @@ void control_pipeline::activate_components()
                     &this->get_current_config().config_video.encoder,
                 false);
         }
-        catch(streaming::exception)
+        catch(streaming::exception err)
         {
+            std::cout << err.what() << std::flush;
             std::cout << "using system ram for hardware video encoder" << std::endl;
 
             try
@@ -186,8 +187,9 @@ void control_pipeline::activate_components()
                         &this->get_current_config().config_video.encoder,
                     false);
             }
-            catch(streaming::exception)
+            catch(streaming::exception err)
             {
+                std::cout << err.what() << std::flush;
                 std::cout << "using software encoder" << std::endl;
 
                 // use software encoder;

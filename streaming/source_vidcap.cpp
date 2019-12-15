@@ -299,7 +299,7 @@ HRESULT source_vidcap::source_reader_callback_t::OnReadSample(HRESULT hr, DWORD 
 
             // reset the next frame pos if not set or the timestamps have drifted too far apart
             if(source->next_frame_pos < 0 ||
-                std::abs(real_timestamp - calculated_timestamp) >(frame_interval / 2))
+                std::abs(real_timestamp - calculated_timestamp) > (frame_interval / 2))
             {
                 std::cout << "source_vidcap time base reset" << std::endl;
                 source->next_frame_pos = convert_to_frame_unit(real_timestamp, fps_num, fps_den);
