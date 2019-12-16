@@ -435,7 +435,7 @@ void control_pipeline::init_graphics(bool use_default_adapter, bool try_recover)
 
     CHECK_HR(hr = D3D11CreateDevice(
         dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
-        D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT | CREATE_DEVICE_DEBUG,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT /*| D3D11_CREATE_DEVICE_VIDEO_SUPPORT*/ | CREATE_DEVICE_DEBUG,
         feature_levels, ARRAYSIZE(feature_levels), D3D11_SDK_VERSION, &this->d3d11dev,
         &feature_level, &this->devctx));
 

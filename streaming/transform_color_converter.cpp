@@ -29,7 +29,7 @@ transform_color_converter::~transform_color_converter()
     }
 }
 
-HRESULT transform_color_converter::initialize(
+void transform_color_converter::initialize(
     const control_class_t& ctrl_pipeline,
     UINT32 frame_width_in, UINT32 frame_height_in,
     UINT32 frame_width_out, UINT32 frame_height_out,
@@ -66,16 +66,14 @@ HRESULT transform_color_converter::initialize(
     // it must be also supported by texture2d for render target
     CHECK_HR(hr = this->enumerator->CheckVideoProcessorFormat(DXGI_FORMAT_B8G8R8A8_UNORM, &flags));
     if(!(flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT))
-        throw HR_EXCEPTION(hr);
+        CHECK_HR(hr = E_UNEXPECTED);
     CHECK_HR(hr = this->enumerator->CheckVideoProcessorFormat(DXGI_FORMAT_NV12, &flags));
     if(!(flags & D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT))
-        throw HR_EXCEPTION(hr);
+        CHECK_HR(hr = E_UNEXPECTED);
 
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
-
-    return hr;
 }
 
 media_stream_t transform_color_converter::create_stream()
