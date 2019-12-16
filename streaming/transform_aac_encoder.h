@@ -77,7 +77,7 @@ public:
     explicit transform_aac_encoder(const media_session_t& session);
     ~transform_aac_encoder();
 
-    void initialize(bitrate_t bitrate = rate_128);
+    void initialize(bitrate_t bitrate, UINT32 profile_level_indication);
     media_stream_t create_stream(media_message_generator_t&&);
 };
 

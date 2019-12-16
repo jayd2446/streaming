@@ -254,7 +254,7 @@ done:
     return SUCCEEDED(hr);
 }
 
-void transform_aac_encoder::initialize(bitrate_t bitrate)
+void transform_aac_encoder::initialize(bitrate_t bitrate, UINT32 profile_level_indication)
 {
     HRESULT hr = S_OK;
 
@@ -296,6 +296,8 @@ void transform_aac_encoder::initialize(bitrate_t bitrate)
         MF_MT_AUDIO_SAMPLES_PER_SECOND, (UINT32)this->session->frame_rate_num));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, channels));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, bitrate));
+    CHECK_HR(hr = this->output_type->SetUINT32(
+        MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, profile_level_indication));
 
     // get streams
     DWORD input_stream_count, output_stream_count;

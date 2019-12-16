@@ -236,7 +236,9 @@ void control_pipeline::activate_components()
         this->aac_encoder_transform->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
         transform_aac_encoder_t aac_encoder_transform(new transform_aac_encoder(this->audio_session));
-        aac_encoder_transform->initialize();
+        aac_encoder_transform->initialize(
+            this->get_current_config().config_audio.bitrate,
+            this->get_current_config().config_audio.profile_level_indication);
 
         this->aac_encoder_transform = aac_encoder_transform;
     }
@@ -605,10 +607,7 @@ void control_pipeline::apply_config(const control_pipeline_config& new_config)
 {
     this->config = new_config;
 
-    this->disabled = true;
-    this->control_class::activate();
-
-    this->disabled = false;
+    this->deactivate();
     this->control_class::activate();
 }
 
