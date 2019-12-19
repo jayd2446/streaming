@@ -84,7 +84,7 @@ void control_pipeline::activate(const control_set_t& last_set, control_set_t& ne
         {
             // this might throw, which will cause a terminal error
             this->stop_recording();
-            throw control_pipeline_recording_activate_exception();
+            throw control_pipeline_recording_activate_exception(err.what());
         }
 
         throw err;
@@ -168,7 +168,7 @@ void control_pipeline::activate_components()
         }
         catch(streaming::exception err)
         {
-            std::cout << err.what() << std::flush;
+            std::cout << "EXCEPTION THROWN: " << err.what() << std::flush;
             std::cout << "using system ram for hardware video encoder" << std::endl;
 
             try
@@ -189,7 +189,7 @@ void control_pipeline::activate_components()
             }
             catch(streaming::exception err)
             {
-                std::cout << err.what() << std::flush;
+                std::cout << "EXCEPTION THROWN: " << err.what() << std::flush;
                 std::cout << "using software encoder" << std::endl;
 
                 // use software encoder;
@@ -365,7 +365,7 @@ void control_pipeline::deactivate_components()
 
 HRESULT control_pipeline::get_adapter(
     const CComPtr<IDXGIFactory1>& factory,
-    const LUID& luid,
+    UINT device_id,
     CComPtr<IDXGIAdapter1>& dxgiadapter,
     UINT& adapter_ordinal)
 {
@@ -382,7 +382,7 @@ HRESULT control_pipeline::get_adapter(
         DXGI_ADAPTER_DESC1 desc;
         CHECK_HR(hr = dxgiadapter->GetDesc1(&desc));
 
-        if(std::memcmp(&luid, &desc.AdapterLuid, sizeof(LUID)) == 0)
+        if(std::memcmp(&device_id, &desc.DeviceId, sizeof(UINT)) == 0)
             break;
 
         dxgiadapter = nullptr;

@@ -76,7 +76,7 @@ struct control_video_config
     int fps_num, fps_den;
 
     bool adapter_use_default;
-    LUID adapter;
+    UINT adapter; // device id, dx 9 hardware adapters are 0
 
     // by default, control pipeline treats these as hardware encoders,
     // and falls back to software encoders if activation fails
@@ -145,7 +145,11 @@ struct control_pipeline_config
 };
 #pragma pack(pop)
 
-class control_pipeline_recording_activate_exception : public std::exception {};
+class control_pipeline_recording_activate_exception : public std::runtime_error 
+{
+public:
+    using std::runtime_error::runtime_error;
+};
 
 class control_pipeline final : public control_class
 {
@@ -186,7 +190,7 @@ private:
 
     static HRESULT get_adapter(
         const CComPtr<IDXGIFactory1>&,
-        const LUID&,
+        UINT device_id,
         CComPtr<IDXGIAdapter1>&,
         UINT& adapter_ordinal);
     void init_graphics(bool use_default_adapter, bool try_recover = true);

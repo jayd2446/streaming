@@ -556,12 +556,19 @@ LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*w
         {
             this->ctrl_pipeline->start_recording(L"test.mp4", *this);
         }
-        catch(control_pipeline_recording_activate_exception)
+        catch(control_pipeline_recording_activate_exception err)
         {
-            this->MessageBoxW(
+            // TODO: use wstring
+            std::string error_msg =
+                "Could not start recording.\n"
+                "Make sure that the video device and video encoder settings are valid and compatible.\n\n";
+            error_msg += err.what();
+
+            ::MessageBoxA(*this, error_msg.c_str(), nullptr, MB_ICONERROR);
+            /*this->MessageBoxA(
                 L"Could not start recording.\n"
                 L"Make sure that the video device and video encoder settings are valid and compatible.",
-                nullptr, MB_ICONERROR);
+                nullptr, MB_ICONERROR);*/
         }
 
         if(this->ctrl_pipeline->is_recording())

@@ -66,7 +66,7 @@ private:
     CEdit wnd_bitrate, wnd_quality_vs_speed;
     CComboBox wnd_adapter, wnd_encoder;
 
-    std::vector<LUID> adapters;
+    std::vector<UINT> adapters;
     std::vector<CLSID> encoders;
 
     void populate_encoders_vector_and_combobox(UINT32 flags);

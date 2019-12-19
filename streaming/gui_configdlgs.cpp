@@ -259,7 +259,7 @@ LRESULT gui_configdlg_video::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
 
             DXGI_ADAPTER_DESC1 desc;
             CHECK_HR(hr = dxgiadapter->GetDesc1(&desc));
-            this->adapters.push_back(desc.AdapterLuid);
+            this->adapters.push_back(desc.DeviceId);
 
             desc.Description[127] = 0;
             this->wnd_adapter.AddString(desc.Description);
@@ -275,12 +275,12 @@ LRESULT gui_configdlg_video::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
         int selection = 1;
         for(auto&& item : this->adapters)
         {
-            static_assert(std::is_same_v<LUID, std::decay_t<decltype(item)>>);
+            static_assert(std::is_same_v<UINT, std::decay_t<decltype(item)>>);
             static_assert(std::is_same_v<
                 std::decay_t<decltype(item)>,
                 decltype(config.config_video.adapter)>);
 
-            if(std::memcmp(&item, &config.config_video.adapter, sizeof(LUID)) == 0)
+            if(std::memcmp(&item, &config.config_video.adapter, sizeof(UINT)) == 0)
                 found = true;
             else if(!found)
                 selection++;

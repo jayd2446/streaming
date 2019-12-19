@@ -24,9 +24,12 @@ class exception : public std::exception
 {
 private:
     std::string error_str;
+    HRESULT hr;
 public:
     exception(HRESULT, int line_number, const char* filename);
-    const char* what() const override {return this->error_str.c_str();}
+
+    const char* what() const override { return this->error_str.c_str(); }
+    HRESULT get_hresult() const { return this->hr; }
 };
 
 void report_error(std::ostream& stream, HRESULT, int line_number, const char* filename);
@@ -36,4 +39,7 @@ void print_error_and_abort(const char*);
 }
 
 #define HR_EXCEPTION(hr_) streaming::exception(hr_, __LINE__, BASE_FILE)
-#define PRINT_ERROR(hr_) streaming::report_error(std::cout, hr_, __LINE__, BASE_FILE)
+#define PRINT_ERROR(hr_) { \
+    std::cout << "EXCEPTION THROWN: "; \
+    streaming::report_error(std::cout, hr_, __LINE__, BASE_FILE); \
+}
