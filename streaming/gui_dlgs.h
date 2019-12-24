@@ -129,10 +129,12 @@ public:
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         COMMAND_HANDLER(IDC_START_RECORDING, BN_CLICKED, OnBnClickedStartRecording)
         MESSAGE_HANDLER(RECORDING_STOPPED_MESSAGE, OnRecordingStopped)
+        COMMAND_HANDLER(IDC_START_STREAMING, BN_CLICKED, OnBnClickedStartStreaming)
         CHAIN_MSG_MAP(CDialogResize<gui_controldlg>)
     END_MSG_MAP()
 
     BEGIN_DLGRESIZE_MAP(gui_controldlg)
+        DLGRESIZE_CONTROL(IDC_START_STREAMING, DLSZ_SIZE_X | DLSZ_MOVE_Y)
         DLGRESIZE_CONTROL(IDC_START_RECORDING, DLSZ_SIZE_X | DLSZ_MOVE_Y)
     END_DLGRESIZE_MAP()
 
@@ -140,6 +142,7 @@ public:
     LRESULT OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
     LRESULT OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnRecordingStopped(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
+    LRESULT OnBnClickedStartStreaming(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 
     BOOL OnIdle();
 };

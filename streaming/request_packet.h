@@ -32,7 +32,7 @@ struct request_packet
 class media_stream;
 
 template<class Sample>
-class request_queue
+class request_queue final
 {
 public:
     typedef Sample sample_t;
@@ -44,19 +44,6 @@ public:
         request_packet rp;
         // TODO: rename to args and args_t(or payload)
         sample_t sample;
-
-        request_t() = default;
-        // TODO: decide if just remove the explicit defaults;
-        // if there are no user defined special constructors apart from the 'constructor',
-        // the move constructor should be implicitly declared;
-        // same goes for the move assignment
-
-        // implicit copy constructor and assignment are deleted if move semantics are
-        // explicitly declared
-        request_t(const request_t&) = default;
-        request_t& operator=(const request_t&) = default;
-        request_t(request_t&&) = default;
-        request_t& operator=(request_t&&) = default;
     };
     typedef std::lock_guard<std::recursive_mutex> scoped_lock;
 private:

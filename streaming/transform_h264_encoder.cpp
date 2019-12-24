@@ -172,8 +172,11 @@ HRESULT transform_h264_encoder::set_output_stream_type()
         this->frame_width, this->frame_height));
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive));
     // intel mft only supports main profile
-    // (There is no support for Baseline, Extended, or High-10 Profiles.)
+    // (There is no support for Baseline, Extended, or High-10 Profiles.);
+    // twitch requires main/high
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_MPEG2_PROFILE, this->encoder_profile));
+    // twitch requires level 4.2
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_MPEG2_LEVEL, eAVEncH264VLevel4_2));
     /*CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE));*/
     CHECK_HR(hr = MFSetAttributeRatio(this->output_type, MF_MT_PIXEL_ASPECT_RATIO, 1, 1));
 
@@ -186,16 +189,19 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
 {
     HRESULT hr = S_OK;
     CComPtr<ICodecAPI> codec;
-    VARIANT v;
+    VARIANT v = {0};
 
     CHECK_HR(hr = this->encoder->QueryInterface(&codec));
 
+    v = {0};
     v.vt = VT_UI4;
     v.ulVal = eAVEncCommonRateControlMode_CBR;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonRateControlMode, &v));
+    v = {0};
     v.vt = VT_UI4;
     v.ullVal = this->quality_vs_speed;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonQualityVsSpeed, &v));
+    v = {0};
     v.vt = VT_UI4;
     v.ullVal = this->avg_bitrate;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v));
@@ -204,10 +210,20 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncVideoForceKeyFrame, &v));*/
     if(codec->IsSupported(&CODECAPI_AVLowLatencyMode) == S_OK)
     {
+        v = {0};
         v.vt = VT_BOOL;
         v.ulVal = VARIANT_FALSE;
         CHECK_HR(hr = codec->SetValue(&CODECAPI_AVLowLatencyMode, &v));
     }
+
+    if(codec->IsSupported(&CODECAPI_AVEncMPVDefaultBPictureCount) == S_OK)
+    {
+        v = {0};
+        v.vt = VT_UI4;
+        v.uintVal = 0;
+        CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncMPVDefaultBPictureCount, &v));
+    }
+
     /*v.vt = VT_UI4;
     v.ulVal = 0;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncNumWorkerThreads, &v));*/

@@ -65,7 +65,8 @@ void output_file::initialize(
         this->stopped = true;
 }
 
-void output_file::write_sample(bool video, const CComPtr<IMFSample>& sample)
+void output_file::write_sample(bool video, frame_unit, frame_unit,
+    const CComPtr<IMFSample>& sample)
 {
     if(this->stopped)
         return;

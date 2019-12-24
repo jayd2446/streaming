@@ -39,6 +39,8 @@
 #define IDC_EDIT5                       1041
 #define IDC_COMBO2                      1045
 #define IDC_LIST1                       1046
+#define IDC_BUTTON2                     1047
+#define IDC_START_STREAMING             1047
 #define ID_ABOUT                        40001
 #define ID_FILE                         40002
 #define ID_DEBUG                        40003
@@ -50,7 +52,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        128
 #define _APS_NEXT_COMMAND_VALUE         40005
-#define _APS_NEXT_CONTROL_VALUE         1047
+#define _APS_NEXT_CONTROL_VALUE         1048
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

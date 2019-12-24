@@ -19,6 +19,14 @@ struct aac_encoder_transform_packet
     bool drain;
 };
 
+/*
+
+The Microsoft Media Foundation AAC encoder is a Media Foundation Transform that encodes 
+Advanced Audio Coding (AAC) Low Complexity (LC) profile, as defined by ISO/IEC 13818-7 
+(MPEG-2 Audio Part 7).
+
+*/
+
 class transform_aac_encoder : 
     public media_component,
     request_queue_handler<aac_encoder_transform_packet>

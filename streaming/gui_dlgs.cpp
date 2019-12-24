@@ -595,9 +595,18 @@ LRESULT gui_controldlg::OnRecordingStopped(UINT /*uMsg*/, WPARAM /*wParam*/, LPA
     return 0;
 }
 
+LRESULT gui_controldlg::OnBnClickedStartStreaming(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
+{
+    // TODO: Add your control notification handler code here
+
+    return 0;
+}
+
+
 BOOL gui_controldlg::OnIdle()
 {
     return FALSE;
 }
+
 
 #pragma warning(pop)

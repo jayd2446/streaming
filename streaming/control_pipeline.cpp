@@ -1,6 +1,8 @@
 #include "control_pipeline.h"
 #include "wtl.h"
 #include "gui_threadwnd.h"
+#include "output_file.h"
+#include "output_rtmp.h"
 #include <iostream>
 #include <fstream>
 #include <d3d11_4.h>
@@ -177,7 +179,7 @@ void control_pipeline::activate_components()
                 h264_encoder_transform.reset(new transform_h264_encoder(
                     this->session, this->context_mutex));
                 h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                    NULL, (UINT32)fps_num, (UINT32)fps_den,
+                    nullptr, (UINT32)fps_num, (UINT32)fps_den,
                     this->get_current_config().config_video.width_frame,
                     this->get_current_config().config_video.height_frame,
                     this->get_current_config().config_video.bitrate * 1000,
@@ -197,7 +199,7 @@ void control_pipeline::activate_components()
                 h264_encoder_transform.reset(new transform_h264_encoder(
                     this->session, this->context_mutex));
                 h264_encoder_transform->initialize(this->shared_from_this<control_class>(),
-                    NULL, (UINT32)fps_num, (UINT32)fps_den, 
+                    nullptr, (UINT32)fps_num, (UINT32)fps_den, 
                     this->get_current_config().config_video.width_frame,
                     this->get_current_config().config_video.height_frame,
                     this->get_current_config().config_video.bitrate * 1000,
@@ -212,7 +214,7 @@ void control_pipeline::activate_components()
         this->h264_encoder_transform = h264_encoder_transform;
     }
     else if(!this->recording)
-        this->h264_encoder_transform = NULL;
+        this->h264_encoder_transform = nullptr;
 
     // create color converter transform
     if(this->recording && (!this->color_converter_transform ||
@@ -229,7 +231,7 @@ void control_pipeline::activate_components()
         this->color_converter_transform = color_converter_transform;
     }
     else if(!this->recording)
-        this->color_converter_transform = NULL;
+        this->color_converter_transform = nullptr;
 
     // create aac encoder transform
     if(this->recording && (!this->aac_encoder_transform ||
@@ -243,7 +245,7 @@ void control_pipeline::activate_components()
         this->aac_encoder_transform = aac_encoder_transform;
     }
     else if(!this->recording)
-        this->aac_encoder_transform = NULL;
+        this->aac_encoder_transform = nullptr;
 
     // create audiomixer transform
     if(!this->audiomixer_transform || 
@@ -255,40 +257,42 @@ void control_pipeline::activate_components()
         this->audiomixer_transform = audiomixer_transform;
     }
 
-    output_file_t file_output;
+    output_rtmp_t file_output;
 
-    // create mp4 file sink video part
-    if(this->recording && (!this->mp4_sink.first ||
-        this->mp4_sink.first->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
+    // create output sink video part
+    if(this->recording && (!this->output_sink.first ||
+        this->output_sink.first->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
         assert_(!file_output);
-        file_output.reset(new output_file);
-        file_output->initialize(false, this->recording_initiator_wnd,
+        assert_(this->h264_encoder_transform);
+        file_output.reset(new output_rtmp);
+        file_output->initialize("rtmp://", 
+            this->recording_initiator_wnd,
             this->h264_encoder_transform->output_type,
             this->aac_encoder_transform->output_type);
 
-        sink_file_video_t file_sink(new sink_file_video(this->session));
-        file_sink->initialize(file_output, true);
+        sink_output_video_t output_sink(new sink_file_video(this->session));
+        output_sink->initialize(file_output, true);
 
-        this->mp4_sink.first = file_sink;
+        this->output_sink.first = output_sink;
     }
     else if(!this->recording)
-        this->mp4_sink.first = NULL;
+        this->output_sink.first = nullptr;
 
-    // create mp4 file sink audio part
-    if(this->recording && (!this->mp4_sink.second ||
-        this->mp4_sink.second->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
+    // create output sink audio part
+    if(this->recording && (!this->output_sink.second ||
+        this->output_sink.second->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
         if(!file_output)
             throw HR_EXCEPTION(E_UNEXPECTED);
 
-        sink_file_audio_t file_sink(new sink_file_audio(this->audio_session));
-        file_sink->initialize(file_output, false);
+        sink_output_audio_t output_sink(new sink_file_audio(this->audio_session));
+        output_sink->initialize(file_output, false);
 
-        this->mp4_sink.second = file_sink;
+        this->output_sink.second = output_sink;
     }
     else if(!this->recording)
-        this->mp4_sink.second = NULL;
+        this->output_sink.second = nullptr;
 
     // create video sink(the main/real pull sink)
     if(!this->video_sink)
@@ -345,20 +349,20 @@ void control_pipeline::deactivate_components()
         this->video_sink->switch_topologies(this->video_topology, this->audio_topology, true);
     }
 
-    this->videomixer_transform = NULL;
-    this->h264_encoder_transform = NULL;
-    this->color_converter_transform = NULL;
-    this->mp4_sink = sink_mp4_t(NULL, NULL);
-    this->video_sink = NULL;
-    this->aac_encoder_transform = NULL;
-    this->audiomixer_transform = NULL;
-    this->audio_sink = NULL;
-    this->video_buffering_source = NULL;
-    this->audio_buffering_source = NULL;
+    this->videomixer_transform = nullptr;
+    this->h264_encoder_transform = nullptr;
+    this->color_converter_transform = nullptr;
+    this->output_sink = {};
+    this->video_sink = nullptr;
+    this->aac_encoder_transform = nullptr;
+    this->audiomixer_transform = nullptr;
+    this->audio_sink = nullptr;
+    this->video_buffering_source = nullptr;
+    this->audio_buffering_source = nullptr;
 
-    this->session = NULL;
-    this->audio_session = NULL;
-    this->time_source = NULL;
+    this->session = nullptr;
+    this->audio_session = nullptr;
+    this->time_source = nullptr;
 
     this->deinit_graphics();
 }
@@ -434,7 +438,7 @@ void control_pipeline::init_graphics(bool use_default_adapter, bool try_recover)
     }
 
     CHECK_HR(hr = D3D11CreateDevice(
-        dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, NULL,
+        dxgiadapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT /*| D3D11_CREATE_DEVICE_VIDEO_SUPPORT*/ | CREATE_DEVICE_DEBUG,
         feature_levels, ARRAYSIZE(feature_levels), D3D11_SDK_VERSION, &this->d3d11dev,
         &feature_level, &this->devctx));
@@ -536,8 +540,8 @@ void control_pipeline::build_and_switch_topology()
     video_buffering_stream->connect_streams(video_stream, this->video_topology);
     audio_buffering_stream->connect_streams(audio_stream, this->audio_topology);
 
-    videomixer_stream->connect_streams(video_buffering_stream, NULL, this->video_topology);
-    audiomixer_stream->connect_streams(audio_buffering_stream, NULL, this->audio_topology);
+    videomixer_stream->connect_streams(video_buffering_stream, nullptr, this->video_topology);
+    audiomixer_stream->connect_streams(audio_buffering_stream, nullptr, this->audio_topology);
 
     if(!this->recording)
     {
@@ -550,12 +554,12 @@ void control_pipeline::build_and_switch_topology()
         media_stream_t encoder_stream_video =
             this->h264_encoder_transform->create_stream(this->video_topology->get_message_generator());
         media_stream_t color_converter_stream = this->color_converter_transform->create_stream();
-        media_stream_t mp4_stream_video = 
-            this->mp4_sink.first->create_stream(this->video_topology->get_message_generator());
+        media_stream_t output_stream_video = 
+            this->output_sink.first->create_stream(this->video_topology->get_message_generator());
         media_stream_t encoder_stream_audio =
             this->aac_encoder_transform->create_stream(this->audio_topology->get_message_generator());
-        media_stream_t mp4_stream_audio = 
-            this->mp4_sink.second->create_stream(this->audio_topology->get_message_generator());
+        media_stream_t output_stream_audio = 
+            this->output_sink.second->create_stream(this->audio_topology->get_message_generator());
 
         // TODO: encoder stream is redundant
         video_stream->encoder_stream = 
@@ -563,14 +567,13 @@ void control_pipeline::build_and_switch_topology()
 
         this->preview_control->build_video_topology(
             videomixer_stream, color_converter_stream, this->video_topology);
-        /*color_converter_stream->connect_streams(preview_stream, this->video_topology);*/
         encoder_stream_video->connect_streams(color_converter_stream, this->video_topology);
-        mp4_stream_video->connect_streams(encoder_stream_video, this->video_topology);
-        video_stream->connect_streams(mp4_stream_video, this->video_topology);
+        output_stream_video->connect_streams(encoder_stream_video, this->video_topology);
+        video_stream->connect_streams(output_stream_video, this->video_topology);
 
         encoder_stream_audio->connect_streams(audiomixer_stream, this->audio_topology);
-        mp4_stream_audio->connect_streams(encoder_stream_audio, this->audio_topology);
-        audio_stream->connect_streams(mp4_stream_audio, this->audio_topology);
+        output_stream_audio->connect_streams(encoder_stream_audio, this->audio_topology);
+        audio_stream->connect_streams(output_stream_audio, this->audio_topology);
     }
 
     // video sink ensures atomic topology starting/switching for audio and video
@@ -586,7 +589,7 @@ void control_pipeline::build_and_switch_topology()
 
 void control_pipeline::set_selected_control(control_class* control, selection_type type)
 {
-    assert_(control != NULL || type == CLEAR);
+    assert_(control != nullptr || type == CLEAR);
 
     if(type == SET || type == CLEAR)
         this->selected_controls.clear();

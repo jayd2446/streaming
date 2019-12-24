@@ -15,7 +15,6 @@
 #include "sink_audio.h"
 #include "sink_file.h"
 #include "source_buffering.h"
-#include "output_file.h"
 #include "enable_shared_from_this.h"
 #include "wtl.h"
 #include <atlbase.h>
@@ -35,7 +34,7 @@
 #pragma comment(lib, "DXGI.lib")
 #pragma comment(lib, "D2d1.lib")
 
-typedef std::pair<sink_file_video_t, sink_file_audio_t> sink_mp4_t;
+typedef std::pair<sink_output_video_t, sink_output_audio_t> sink_output_t;
 
 //struct control_session_config
 //{
@@ -92,7 +91,7 @@ struct control_video_config
         fps_num(60),
         fps_den(1),
         adapter_use_default(true),
-        adapter{0},
+        adapter(0),
         encoder_use_default(true),
         encoder{0},
         width_frame(1920),
@@ -168,7 +167,7 @@ private:
     transform_color_converter_t color_converter_transform;
     transform_aac_encoder_t aac_encoder_transform;
     transform_audiomixer2_t audiomixer_transform;
-    sink_mp4_t mp4_sink;
+    sink_output_t output_sink;
     sink_video_t video_sink;
     sink_audio_t audio_sink;
     source_buffering_video_t video_buffering_source;

@@ -4,15 +4,17 @@
 #include "media_sample.h"
 #include "request_packet.h"
 #include "request_queue_handler.h"
-#include "output_file.h"
+#include "output_class.h"
 #include <memory>
 #include <limits>
+
+// TODO: rename to sink_output or similar
 
 template<class SinkFile>
 class stream_file;
 
 template<class Request>
-class sink_file : public media_component, request_queue_handler<Request>
+class sink_file final : public media_component, request_queue_handler<Request>
 {
     friend class stream_file<sink_file>;
 public:
@@ -20,28 +22,28 @@ public:
     typedef typename request_queue_handler<Request>::request_t request_t;
     typedef typename request_queue_handler<Request>::request_queue request_queue;
 private:
-    output_file_t file_output;
+    output_class_t output;
     LONGLONG last_timestamp;
     bool video;
 
     // request_queue_handler
-    bool on_serve(typename request_queue::request_t&);
-    typename request_queue::request_t* next_request();
+    bool on_serve(typename request_queue::request_t&) override;
+    typename request_queue::request_t* next_request() override;
 public:
     explicit sink_file(const media_session_t& session);
 
-    void initialize(const output_file_t& file_output, bool video);
+    void initialize(const output_class_t& output, bool video);
     media_stream_t create_stream(media_message_generator_t&&);
 };
 
 typedef sink_file<media_component_h264_video_args_t> sink_file_video;
-typedef std::shared_ptr<sink_file_video> sink_file_video_t;
+typedef std::shared_ptr<sink_file_video> sink_output_video_t;
 
 typedef sink_file<media_component_aac_audio_args_t> sink_file_audio;
-typedef std::shared_ptr<sink_file_audio> sink_file_audio_t;
+typedef std::shared_ptr<sink_file_audio> sink_output_audio_t;
 
 template<class SinkFile>
-class stream_file : public media_stream_message_listener
+class stream_file final : public media_stream_message_listener
 {
     friend typename SinkFile;
 public:
@@ -53,8 +55,9 @@ private:
 public:
     explicit stream_file(const sink_file_t&);
 
-    result_t request_sample(const request_packet&, const media_stream*);
-    result_t process_sample(const media_component_args*, const request_packet&, const media_stream*);
+    result_t request_sample(const request_packet&, const media_stream*) override;
+    result_t process_sample(
+        const media_component_args*, const request_packet&, const media_stream*) override;
 };
 
 typedef stream_file<sink_file_video> stream_file_video;
@@ -83,9 +86,9 @@ sink_file<T>::sink_file(const media_session_t& session) :
 }
 
 template<typename T>
-void sink_file<T>::initialize(const output_file_t& file_output, bool video)
+void sink_file<T>::initialize(const output_class_t& output, bool video)
 {
-    this->file_output = file_output;
+    this->output = output;
     this->video = video;
 }
 
@@ -106,7 +109,7 @@ bool sink_file<T>::on_serve(typename request_queue::request_t& request)
 {
     if(request.sample)
     {
-        for(auto&& frame : request.sample->sample->frames)
+        for(const auto& frame : request.sample->sample->frames)
         {
             const LONGLONG timestamp = (LONGLONG)frame.ts;
             const LONGLONG dur = (LONGLONG)frame.dur;
@@ -114,7 +117,11 @@ bool sink_file<T>::on_serve(typename request_queue::request_t& request)
             // TODO: print if frames in wrong order
 
             this->last_timestamp = timestamp;
-            this->file_output->write_sample(this->video, frame.sample);
+            this->output->write_sample(
+                this->video, 
+                this->session->frame_rate_num,
+                this->session->frame_rate_den,
+                frame.sample);
         }
 
         // currently it is assumed that the sink file is connected directly to the video_sink

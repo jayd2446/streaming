@@ -1,4 +1,5 @@
 #include <iostream>
+#include <WinSock2.h>
 #include <Windows.h>
 #include <mfapi.h>
 #include <d3d11.h>
@@ -61,6 +62,11 @@ also some components should also be shared between topologies
 CAppModule module_;
 
 #ifdef _DEBUG
+
+// librtmp debug prints
+extern "C" FILE* netstackdump = nullptr;
+extern "C" FILE* netstackdump_read = nullptr;
+
 int YourReportHook( int reportType, char *message, int *returnValue )
 {
     OutputDebugStringA(message);
@@ -69,6 +75,7 @@ int YourReportHook( int reportType, char *message, int *returnValue )
     *returnValue = TRUE;
     return TRUE;
 }
+
 #endif
 
 //DWORD capture_work_queue_id;
@@ -79,10 +86,16 @@ int main()
 {
     try
     {
-
         HRESULT hr = S_OK;
+        WSADATA wsa_data = {0};
+
         CHECK_HR(hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY | COINIT_MULTITHREADED));
         AtlInitCommonControls(ICC_COOL_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES);
+
+        const int wsa_init_res = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+        if(wsa_init_res != 0)
+            throw HR_EXCEPTION(E_UNEXPECTED);
+
         CHECK_HR(hr = MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET));
         CHECK_HR(hr = module_.Init(NULL, NULL));
 
@@ -95,8 +108,11 @@ int main()
         if(FAILED(MFRegisterPlatformWithMMCSS(L"Capture", &taskgroup_id, AVRT_PRIORITY_NORMAL)))
             throw HR_EXCEPTION(hr);*/
 
-            // make atl/wtl asserts to break immediately
 #ifdef _DEBUG
+        fopen_s(&netstackdump, "nul", "w");
+        fopen_s(&netstackdump_read, "nul", "w");
+
+        // make atl/wtl asserts to break immediately
         _CrtSetReportHook(YourReportHook);
 #endif
 
@@ -127,6 +143,7 @@ done:
         /*hr = MFUnlockWorkQueue(capture_work_queue_id);*/
 
 #ifdef _DEBUG
+        WSACleanup();
         module_.Term();
         hr = MFShutdown();
         CoUninitialize();

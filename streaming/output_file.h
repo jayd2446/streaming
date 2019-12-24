@@ -1,5 +1,6 @@
 #pragma once
 
+#include "output_class.h"
 #include "media_sample.h"
 #include "wtl.h"
 #include <mfidl.h>
@@ -11,7 +12,7 @@
 
 #define RECORDING_STOPPED_MESSAGE (WM_APP + 1)
 
-class output_file
+class output_file final : public output_class
 {
 public:
     typedef std::lock_guard<std::mutex> scoped_lock;
@@ -36,7 +37,8 @@ public:
         const CComPtr<IMFMediaType>& video_type,
         const CComPtr<IMFMediaType>& audio_type);
 
-    void write_sample(bool video, const CComPtr<IMFSample>& sample);
+    void write_sample(bool video, frame_unit fps_num, frame_unit fps_den,
+        const CComPtr<IMFSample>& sample) override;
     void force_stop();
 };
 

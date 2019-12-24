@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <vector>
 
 // h264 encoder
 class stream_h264_encoder;
@@ -24,6 +25,12 @@ struct h264_encoder_transform_packet
     bool drain, already_served; 
     media_component_h264_encoder_args_t args; 
 };
+
+/*
+
+does not use b frames by default
+
+*/
 
 class transform_h264_encoder : 
     public media_component,
