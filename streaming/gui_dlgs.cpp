@@ -522,6 +522,83 @@ gui_controldlg::gui_controldlg(const control_pipeline_t& ctrl_pipeline) :
 {
 }
 
+void gui_controldlg::start_recording(bool streaming)
+{
+    if(!this->ctrl_pipeline->root_scene->get_selected_scene())
+    {
+        this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
+        return;
+    }
+
+    if(!this->ctrl_pipeline->is_recording())
+    {
+        try
+        {
+            if(streaming)
+                this->ctrl_pipeline->start_recording(L"", *this, true);
+            else
+                this->ctrl_pipeline->start_recording(L"test.mp4", *this);
+        }
+        catch(control_pipeline_recording_activate_exception err)
+        {
+            // TODO: use wstring
+            std::string error_msg =
+                "Could not start recording.\n"
+                "Make sure that the video device and video encoder settings are valid and compatible.\n\n";
+            error_msg += err.what();
+
+            ::MessageBoxA(*this, error_msg.c_str(), nullptr, MB_ICONERROR);
+        }
+
+        if(this->ctrl_pipeline->is_recording())
+        {
+            if(this->ctrl_pipeline->is_streaming())
+            {
+                this->btn_start_streaming.SetWindowTextW(L"Stop Streaming");
+                this->btn_start_recording.EnableWindow(FALSE);
+            }
+            else
+            {
+                this->btn_start_recording.SetWindowTextW(L"Stop Recording");
+                this->btn_start_streaming.EnableWindow(FALSE);
+            }
+        }
+    }
+    else
+    {
+        const bool was_streaming = this->ctrl_pipeline->is_streaming();
+
+        this->ctrl_pipeline->stop_recording();
+
+        if(was_streaming)
+        {
+            this->btn_start_streaming.EnableWindow(FALSE);
+            this->btn_start_streaming.SetWindowTextW(L"Stopping...");
+        }
+        else
+        {
+            this->btn_start_recording.EnableWindow(FALSE);
+            this->btn_start_recording.SetWindowTextW(L"Stopping...");
+        }
+    }
+}
+
+void gui_controldlg::stop_recording(bool streaming)
+{
+    if(!streaming)
+    {
+        this->btn_start_recording.SetWindowTextW(L"Start Recording");
+        this->btn_start_recording.EnableWindow(TRUE);
+        this->btn_start_streaming.EnableWindow(TRUE);
+    }
+    else
+    {
+        this->btn_start_streaming.SetWindowTextW(L"Start Streaming");
+        this->btn_start_streaming.EnableWindow(TRUE);
+        this->btn_start_recording.EnableWindow(TRUE);
+    }
+}
+
 void gui_controldlg::OnDestroy()
 {
     extern CAppModule module_;
@@ -538,67 +615,32 @@ LRESULT gui_controldlg::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*
     this->DlgResize_Init(false);
 
     this->btn_start_recording.Attach(this->GetDlgItem(IDC_START_RECORDING));
+    this->btn_start_streaming.Attach(this->GetDlgItem(IDC_START_STREAMING));
 
     return TRUE;
 }
 
 LRESULT gui_controldlg::OnBnClickedStartRecording(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    if(!this->ctrl_pipeline->root_scene->get_selected_scene())
-    {
-        this->MessageBoxW(L"Add some sources first", NULL, MB_ICONINFORMATION);
-        return 0;
-    }
-
-    if(!this->ctrl_pipeline->is_recording())
-    {
-        try
-        {
-            this->ctrl_pipeline->start_recording(L"test.mp4", *this);
-        }
-        catch(control_pipeline_recording_activate_exception err)
-        {
-            // TODO: use wstring
-            std::string error_msg =
-                "Could not start recording.\n"
-                "Make sure that the video device and video encoder settings are valid and compatible.\n\n";
-            error_msg += err.what();
-
-            ::MessageBoxA(*this, error_msg.c_str(), nullptr, MB_ICONERROR);
-            /*this->MessageBoxA(
-                L"Could not start recording.\n"
-                L"Make sure that the video device and video encoder settings are valid and compatible.",
-                nullptr, MB_ICONERROR);*/
-        }
-
-        if(this->ctrl_pipeline->is_recording())
-            this->btn_start_recording.SetWindowTextW(L"Stop Recording");
-    }
-    else
-    {
-        this->ctrl_pipeline->stop_recording();
-
-        this->btn_start_recording.EnableWindow(FALSE);
-        this->btn_start_recording.SetWindowTextW(L"Stopping...");
-    }
-
+    this->start_recording(false);
     return 0;
 }
 
-LRESULT gui_controldlg::OnRecordingStopped(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& bHandled)
+LRESULT gui_controldlg::OnRecordingStopped(UINT /*uMsg*/, WPARAM wParam, LPARAM /*lParam*/, BOOL& bHandled)
 {
     bHandled = TRUE;
 
-    this->btn_start_recording.SetWindowTextW(L"Start Recording");
-    this->btn_start_recording.EnableWindow(TRUE);
+    if(wParam == 1)
+        this->stop_recording(false);
+    else if(wParam == 0)
+        this->stop_recording(true);
 
     return 0;
 }
 
 LRESULT gui_controldlg::OnBnClickedStartStreaming(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
 {
-    // TODO: Add your control notification handler code here
-
+    this->start_recording(true);
     return 0;
 }
 

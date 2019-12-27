@@ -117,11 +117,7 @@ bool sink_file<T>::on_serve(typename request_queue::request_t& request)
             // TODO: print if frames in wrong order
 
             this->last_timestamp = timestamp;
-            this->output->write_sample(
-                this->video, 
-                this->session->frame_rate_num,
-                this->session->frame_rate_den,
-                frame.sample);
+            this->output->write_sample(this->video, frame.sample);
         }
 
         // currently it is assumed that the sink file is connected directly to the video_sink

@@ -27,7 +27,7 @@ control_pipeline::control_pipeline() :
     context_mutex(new std::recursive_mutex),
     root_scene(new control_scene(controls, *this)),
     preview_control(new control_preview(controls, *this)),
-    recording(false)
+    recording(false), streaming(false)
 {
     this->root_scene->parent = this;
 
@@ -257,22 +257,40 @@ void control_pipeline::activate_components()
         this->audiomixer_transform = audiomixer_transform;
     }
 
-    output_rtmp_t file_output;
+    output_class_t class_output;
 
     // create output sink video part
     if(this->recording && (!this->output_sink.first ||
         this->output_sink.first->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
-        assert_(!file_output);
+        assert_(!class_output);
         assert_(this->h264_encoder_transform);
-        file_output.reset(new output_rtmp);
-        file_output->initialize("rtmp://", 
-            this->recording_initiator_wnd,
-            this->h264_encoder_transform->output_type,
-            this->aac_encoder_transform->output_type);
+        if(this->streaming)
+        {
+            output_rtmp_t rtmp_output(new output_rtmp);
+            rtmp_output->initialize(
+                "rtmp://",
+                "",
+                this->recording_initiator_wnd,
+                this->h264_encoder_transform->output_type,
+                this->aac_encoder_transform->output_type);
+
+            class_output = rtmp_output;
+        }
+        else
+        {
+            output_file_t file_output(new output_file);
+            file_output->initialize(
+                false,
+                this->recording_initiator_wnd,
+                this->h264_encoder_transform->output_type,
+                this->aac_encoder_transform->output_type);
+
+            class_output = file_output;
+        }
 
         sink_output_video_t output_sink(new sink_file_video(this->session));
-        output_sink->initialize(file_output, true);
+        output_sink->initialize(class_output, true);
 
         this->output_sink.first = output_sink;
     }
@@ -283,11 +301,11 @@ void control_pipeline::activate_components()
     if(this->recording && (!this->output_sink.second ||
         this->output_sink.second->get_instance_type() == media_component::INSTANCE_NOT_SHAREABLE))
     {
-        if(!file_output)
+        if(!class_output)
             throw HR_EXCEPTION(E_UNEXPECTED);
 
         sink_output_audio_t output_sink(new sink_file_audio(this->audio_session));
-        output_sink->initialize(file_output, false);
+        output_sink->initialize(class_output, false);
 
         this->output_sink.second = output_sink;
     }
@@ -678,22 +696,33 @@ void control_pipeline::save_config(const control_pipeline_config& config,
     }
 }
 
-void control_pipeline::start_recording(const std::wstring& /*filename*/, ATL::CWindow initiator)
+void control_pipeline::start_recording(
+    const std::wstring& /*filename*/, ATL::CWindow initiator, bool streaming)
 {
     assert_(!this->is_recording());
     assert_(!this->is_disabled());
 
     this->recording_initiator_wnd = initiator;
     this->recording = true;
+    this->streaming = streaming;
     this->control_class::activate();
 
-    std::cout << "recording started" << std::endl;
+    if(this->streaming)
+        std::cout << "streaming started" << std::endl;
+    else
+        std::cout << "recording started" << std::endl;
 }
 
 void control_pipeline::stop_recording()
 {
+    const bool was_streaming = this->streaming;
+
     this->recording = false;
+    this->streaming = false;
     this->control_class::activate();
 
-    std::cout << "recording stopped" << std::endl;
+    if(was_streaming)
+        std::cout << "streaming stopped" << std::endl;
+    else
+        std::cout << "recording stopped" << std::endl;
 }

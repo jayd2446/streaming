@@ -118,7 +118,10 @@ class gui_controldlg :
 {
 private:
     control_pipeline_t ctrl_pipeline;
-    CButton btn_start_recording;
+    CButton btn_start_recording, btn_start_streaming;
+
+    void start_recording(bool streaming);
+    void stop_recording(bool streaming);
 public:
     enum {IDD = IDD_CTRLDLG};
 

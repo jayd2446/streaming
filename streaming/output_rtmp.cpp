@@ -1,5 +1,8 @@
-#include "output_rtmp.h"
+#include <librtmp/rtmp.h>
 #include <librtmp/log.h>
+#include <librtmp/amf.h>
+
+#include "output_rtmp.h"
 #include <codecapi.h>
 #include <intrin.h>
 #include <iostream>
@@ -34,30 +37,142 @@ output_rtmp::~output_rtmp()
         RTMP_Free(this->rtmp);
     }
 
-    this->recording_initiator.SendNotifyMessageW(RECORDING_STOPPED_MESSAGE);
+    this->recording_initiator.SendNotifyMessageW(RECORDING_STOPPED_MESSAGE, 0);
 }
 
-bool output_rtmp::send_flv_metadata()
+void output_rtmp::send_flv_metadata()
 {
+    // sends a scriptdata tag named onMetaData
+
     assert_(RTMP_IsConnected(this->rtmp));
 
-#pragma pack(push, 1)
-    struct flv_header
-    {
-        uint8_t signature_f;
-        uint8_t signature_l;
-        uint8_t signature_v;
-        uint8_t version;
-        uint8_t flags;
-        uint32_t data_offset;
-    };
-#pragma pack(pop)
+    HRESULT hr = S_OK;
 
-    const uint32_t rtmp_body_size = sizeof(flv_header);
+    constexpr std::string_view onMetaData_str = "onMetaData";
+    constexpr int elem_count = 20;
+    constexpr std::string_view encoder = "obs-output module (libobs version 24.0.6)";
+
+    auto enc_num_val = [](char*& p, char* end, const std::string_view& name, double val)
+    {
+        const AVal s = {const_cast<char*>(name.data()), (int)name.size()};
+        p = AMF_EncodeNamedNumber(p, end, &s, val);
+    };
+    auto enc_str_val = [](char*& p, char* end, const std::string_view& name,
+        const std::string_view& val)
+    {
+        const AVal s = {const_cast<char*>(name.data()), (int)name.size()},
+            s2 = {const_cast<char*>(val.data()), (int)val.size()};
+        p = AMF_EncodeNamedString(p, end, &s, &s2);
+    };
+    auto enc_bool_val = [](char*& p, char* end, const std::string_view& name, bool val)
+    {
+        const AVal s = {const_cast<char*>(name.data()), (int)name.size()};
+        p = AMF_EncodeNamedBoolean(p, end, &s, val);
+    };
+
+    char buffer[4096];
+    char* p = buffer;
+    char* end = p + sizeof(buffer);
+
+    constexpr AVal name = {const_cast<char*>(onMetaData_str.data()), (int)onMetaData_str.size()};
+    p = AMF_EncodeString(p, end, &name);
+
+    *p++ = AMF_ECMA_ARRAY;
+    p = AMF_EncodeInt32(p, end, elem_count);
+
+    enc_num_val(p, end, "duration", 0.0);
+    enc_num_val(p, end, "fileSize", 0.0);
+    
+    UINT32 frame_width, frame_height;
+    CHECK_HR(hr = MFGetAttributeSize(this->video_type, MF_MT_FRAME_SIZE, &frame_width, &frame_height));
+    enc_num_val(p, end, "width", frame_width);
+    enc_num_val(p, end, "height", frame_height);
+
+    enc_str_val(p, end, "videocodecid", "avc1");
+
+    UINT32 avg_bitrate;
+    CHECK_HR(hr = this->video_type->GetUINT32(MF_MT_AVG_BITRATE, &avg_bitrate));
+    enc_num_val(p, end, "videodatarate", avg_bitrate / 1000);
+
+    UINT32 fps_num, fps_den;
+    CHECK_HR(hr = MFGetAttributeRatio(this->video_type, MF_MT_FRAME_RATE, &fps_num, &fps_den));
+    enc_num_val(p, end, "framerate", (double)fps_num / fps_den);
+
+    enc_str_val(p, end, "audiocodecid", "mp4a");
+
+    CHECK_HR(hr = this->audio_type->GetUINT32(MF_MT_AVG_BITRATE, &avg_bitrate));
+    enc_num_val(p, end, "audiodatarate", avg_bitrate / 1000);
+
+    UINT32 sample_rate;
+    CHECK_HR(hr = this->audio_type->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &sample_rate));
+    enc_num_val(p, end, "audiosamplerate", sample_rate);
+
+    UINT32 audio_bits_per_sample;
+    CHECK_HR(hr = this->audio_type->GetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, &audio_bits_per_sample));
+    enc_num_val(p, end, "audiosamplesize", audio_bits_per_sample);
+
+    UINT32 audio_num_channels;
+    CHECK_HR(hr = this->audio_type->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &audio_num_channels));
+    enc_num_val(p, end, "audiochannels", audio_num_channels);
+
+    enc_bool_val(p, end, "stereo", audio_num_channels == 2);
+    enc_bool_val(p, end, "2.1", audio_num_channels == 3);
+    enc_bool_val(p, end, "3.1", audio_num_channels == 4);
+    enc_bool_val(p, end, "4.0", audio_num_channels == 4);
+    enc_bool_val(p, end, "4.1", audio_num_channels == 5);
+    enc_bool_val(p, end, "5.1", audio_num_channels == 6);
+    enc_bool_val(p, end, "7.1", audio_num_channels == 8);
+
+    enc_str_val(p, end, "encoder", encoder);
+
+    assert_((p + 2) < end);
+
+    *p++ = 0;
+    *p++ = 0;
+    *p++ = AMF_OBJECT_END;
+
+    // write to stream
+    {
+        const uint32_t metadata_len = (uint32_t)(p - buffer);
+        const uint32_t rtmp_body_size = sizeof(flv_tag) + metadata_len;
+        const uint32_t flv_data_size = rtmp_body_size - sizeof(flv_tag);
+
+        std::string packet(rtmp_body_size + 4, '\0');
+
+        flv_tag* tag = (flv_tag*)packet.data();
+        tag->tag_type = RTMP_PACKET_TYPE_INFO;
+        tag->data_size[2] = (uint8_t)flv_data_size;
+        tag->data_size[1] = (uint8_t)(flv_data_size >> 8);
+        tag->data_size[0] = (uint8_t)(flv_data_size >> 16);
+        tag->timestamp[2] = 0;
+        tag->timestamp[1] = 0;
+        tag->timestamp[0] = 0;
+        tag->timestamp_extended = 0;
+        tag->stream_id[2] = 0;
+        tag->stream_id[1] = 0;
+        tag->stream_id[0] = 0;
+
+        assert_(sizeof(flv_tag) + metadata_len == rtmp_body_size);
+        memcpy(
+            packet.data() + sizeof(flv_tag),
+            buffer,
+            metadata_len);
+
+        *(uint32_t*)(packet.data() + rtmp_body_size) = _byteswap_ulong(rtmp_body_size - 0);
+
+        const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size(), 0);
+        if(!res)
+            CHECK_HR(hr = E_UNEXPECTED);
+    }
+
+done:
+    if(FAILED(hr))
+        throw HR_EXCEPTION(hr);
 }
 
 void output_rtmp::initialize(
-    const char* url,
+    const std::string_view& url,
+    const std::string_view& streaming_key,
     CWindow recording_initiator,
     const CComPtr<IMFMediaType>& video_type,
     const CComPtr<IMFMediaType>& audio_type)
@@ -67,8 +182,6 @@ void output_rtmp::initialize(
     assert_(audio_type);
 
     HRESULT hr = S_OK;
-    std::string str = url;
-
     this->video_type = video_type;
     this->audio_type = audio_type;
     this->recording_initiator = recording_initiator;
@@ -96,51 +209,52 @@ void output_rtmp::initialize(
         });
 
     // Additional options may be specified by appending space-separated key=value pairs to the URL.
-    str += " live=1";
+    /*str += " live=1";*/
 
-    if(!RTMP_SetupURL(this->rtmp, str.data()))
+    if(!RTMP_SetupURL(this->rtmp, const_cast<char*>(url.data())))
         CHECK_HR(hr = E_UNEXPECTED);
     RTMP_EnableWrite(this->rtmp);
+
+    {
+        static constexpr std::string_view str = "FMLE/3.0 (compatible; FMSc/1.0)";
+        AVal val = {const_cast<char*>(str.data()), (int)str.size()};
+        this->rtmp->Link.flashVer = val;
+    }
+    this->rtmp->Link.swfUrl = this->rtmp->Link.tcUrl;
+
+    RTMP_AddStream(this->rtmp, streaming_key.data());
+    
+    this->rtmp->m_outChunkSize = 4096;
+    this->rtmp->m_bSendChunkSizeInfo = true;
+    this->rtmp->m_bUseNagle = true;
+
     if(!RTMP_Connect(this->rtmp, nullptr))
         CHECK_HR(hr = E_UNEXPECTED);
     if(!RTMP_ConnectStream(this->rtmp, 0))
         CHECK_HR(hr = E_UNEXPECTED);
+
+    this->send_flv_metadata();
 
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
 }
 
+// potentially uninitialized local variable (samplingFrequencyIndex, channelConfiguration)
+#pragma warning(push)
+#pragma warning(disable: 4701)
 std::string output_rtmp::create_audio_specific_config() const
 {
     HRESULT hr = S_OK;
 
-#pragma pack(push, 1)
-    // in big endian format;
-    // ms specific: the ordering of data declared as bit fields is from low to high bit
-    struct AudioSpecificConfig
-    {
-        /*uint8_t audioObjectType : 5;
-        uint8_t samplingFrequencyIndex : 4;
-        uint32_t samplingFrequency : 24;
-        uint8_t channelConfiguration : 4;
-        uint8_t epConfig : 2;
-        bool directMapping : 1;*/
-    };
-#pragma pack(pop)
+    // audio specific config size: 16 bits
+    uint16_t audioObjectType;           // 5 bits
+    uint16_t samplingFrequencyIndex;    // 4 bits
+    uint16_t channelConfiguration;      // 4 bits
+    uint16_t padding;                   // 3 bits
 
-    // audio specific config size: 40 bits
-    uint64_t audioObjectType;           // 5 bits
-    uint64_t samplingFrequencyIndex;    // 4 bits
-    uint64_t samplingFrequency;         // 24 bits
-    uint64_t channelConfiguration;      // 4 bits
-    uint64_t epConfig;                  // 2 bits
-    uint64_t directMapping;             // 1 bit
-
-    /*std::string config_str(sizeof(AudioSpecificConfig), '\0');*/
     UINT32 samples_per_second, audio_num_channels;
 
-    /*AudioSpecificConfig* config = (AudioSpecificConfig*)config_str.data();*/
     audioObjectType = 2; // AAC LC
 
     CHECK_HR(hr = this->audio_type->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &samples_per_second));
@@ -151,8 +265,6 @@ std::string output_rtmp::create_audio_specific_config() const
         samplingFrequencyIndex = 0x3; // 48000
     else
         CHECK_HR(hr = E_UNEXPECTED);
-
-    samplingFrequency = 0;
     
     CHECK_HR(hr = this->audio_type->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &audio_num_channels));
 
@@ -161,34 +273,32 @@ std::string output_rtmp::create_audio_specific_config() const
     else
         CHECK_HR(hr = E_UNEXPECTED);
 
-    epConfig = 0;       // not used
-    directMapping = 0;  // not used
+    padding = 0;
 
-    uint64_t audio_specific_config = 0;
-    audio_specific_config |= audioObjectType        << (40 - 5);
-    audio_specific_config |= samplingFrequencyIndex << (40 - 5 - 4);
-    audio_specific_config |= samplingFrequency      << (40 - 5 - 4 - 24);
-    audio_specific_config |= channelConfiguration   << (40 - 5 - 4 - 24 - 4);
-    audio_specific_config |= epConfig               << (40 - 5 - 4 - 24 - 4 - 2);
-    audio_specific_config |= directMapping          << (40 - 5 - 4 - 24 - 4 - 2 - 1);
+    uint16_t audio_specific_config = 0;
+    audio_specific_config |= audioObjectType        << (16 - 5);
+    audio_specific_config |= samplingFrequencyIndex << (16 - 5 - 4);
+    audio_specific_config |= channelConfiguration   << (16 - 5 - 4 - 4);
+    audio_specific_config |= padding                << (16 - 5 - 4 - 4 - 3);
 
-    audio_specific_config = _byteswap_uint64(audio_specific_config);
+    audio_specific_config = _byteswap_ushort(audio_specific_config);
 
     {
-        std::string config_str((const char*)&audio_specific_config + 24 / 8, 40 / 8);
+        std::string config_str((const char*)&audio_specific_config, sizeof(audio_specific_config));
         return config_str;
     }
 
 done:
     throw HR_EXCEPTION(hr);
 }
+#pragma warning(pop)
 
 void output_rtmp::send_rtmp_audio_packets(const std::string_view& data, LONGLONG ts)
 {
     if(ts < 0)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
-    const uint32_t timestamp_ms = RTMP_GetTime();//(uint32_t)((double)ts / SECOND_IN_TIME_UNIT * 1000.0);
+    const uint32_t timestamp_ms = (uint32_t)((double)ts / SECOND_IN_TIME_UNIT * 1000.0);
 
 #pragma pack(push, 1)
     // ms specific: the ordering of data declared as bit fields is from low to high bit
@@ -237,7 +347,7 @@ void output_rtmp::send_rtmp_audio_packets(const std::string_view& data, LONGLONG
         flv_audio_tag* audio_tag = (flv_audio_tag*)(packet.data() + sizeof(flv_tag));
         audio_tag->sound_format = 10; // aac
         audio_tag->sound_rate = 3; // for aac always 3
-        audio_tag->sound_size = 0; // only pertains to uncompressed formats
+        audio_tag->sound_size = 1; // only pertains to uncompressed formats
         audio_tag->sound_type = 1; // for aac always 1
         audio_tag->aac_audio_data.aac_packet_type = 0; // aac sequence header
 
@@ -248,9 +358,9 @@ void output_rtmp::send_rtmp_audio_packets(const std::string_view& data, LONGLONG
             audio_specific_config.data(),
             audio_specific_config.size());
 
-        *(uint32_t*)(packet.data() + packet.size() - 4) = _byteswap_ulong(rtmp_body_size - 1);
+        *(uint32_t*)(packet.data() + rtmp_body_size) = _byteswap_ulong(rtmp_body_size - 0);
 
-        const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size());
+        const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size(), 0);
         if(!res)
             throw HR_EXCEPTION(E_UNEXPECTED);
     }
@@ -287,9 +397,9 @@ void output_rtmp::send_rtmp_audio_packets(const std::string_view& data, LONGLONG
         data.data(),
         data.size());
 
-    *(uint32_t*)(packet.data() + packet.size() - 4) = _byteswap_ulong(rtmp_body_size - 1);
+    *(uint32_t*)(packet.data() + rtmp_body_size) = _byteswap_ulong(rtmp_body_size - 0);
 
-    const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size());
+    const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size(), 0);
     if(!res)
         throw HR_EXCEPTION(E_UNEXPECTED);
 }
@@ -383,7 +493,7 @@ std::string output_rtmp::create_avc_decoder_configuration_record(
     record->numOfSequenceParameterSets = 1;
     record->sequenceParameterSetLength = _byteswap_ushort((uint16_t)sps_nalu.size());
 
-    uint8_t* p = (uint8_t*)memcpy(
+    char* p = (char*)memcpy(
         record_str.data() + sizeof(AVCDecoderConfigurationRecord),
         sps_nalu.data(),
         sps_nalu.size());
@@ -395,6 +505,8 @@ std::string output_rtmp::create_avc_decoder_configuration_record(
     
     memcpy(p, pps_nalu.data(), pps_nalu.size());
 
+    assert_(p + pps_nalu.size() == record_str.data() + record_str.size());
+
 done:
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
@@ -402,10 +514,60 @@ done:
     return record_str;
 }
 
+// from ffmpeg(LGPL)
+const uint8_t* ff_avc_find_startcode_internal(const uint8_t* p,
+    const uint8_t* end)
+{
+    const uint8_t* a = p + 4 - ((intptr_t)p & 3);
+
+    for(end -= 3; p < a && p < end; p++) {
+        if(p[0] == 0 && p[1] == 0 && p[2] == 1)
+            return p;
+    }
+
+    for(end -= 3; p < end; p += 4) {
+        uint32_t x = *(const uint32_t*)p;
+
+        if((x - 0x01010101) & (~x) & 0x80808080) {
+            if(p[1] == 0) {
+                if(p[0] == 0 && p[2] == 1)
+                    return p;
+                if(p[2] == 0 && p[3] == 1)
+                    return p + 1;
+            }
+
+            if(p[3] == 0) {
+                if(p[2] == 0 && p[4] == 1)
+                    return p + 2;
+                if(p[4] == 0 && p[5] == 1)
+                    return p + 3;
+            }
+        }
+    }
+
+    for(end += 3; p < end; p++) {
+        if(p[0] == 0 && p[1] == 0 && p[2] == 1)
+            return p;
+    }
+
+    return end + 3;
+}
+
 std::size_t output_rtmp::find_start_code_prefix(
     const std::string_view& data, int& start_code_prefix_len)
 {
-    std::size_t pos = data.find("\0\0", 0, 2);
+    start_code_prefix_len = 4;
+
+    const uint8_t* end = ff_avc_find_startcode_internal(
+        (uint8_t*)data.data(),
+        (uint8_t*)data.data() + data.size());
+
+    if(end >= (const uint8_t*)data.data() + data.size())
+        return std::string_view::npos;
+    else
+        return end - (uint8_t*)data.data();
+
+    /*std::size_t pos = data.find("\0\0", 0, 2);
 
     for(; pos != std::string_view::npos; pos = data.find("\0\0", pos + 2, 2))
     {
@@ -422,7 +584,7 @@ std::size_t output_rtmp::find_start_code_prefix(
         }
     }
 
-    return pos;
+    return pos;*/
 }
 
 void output_rtmp::send_rtmp_video_packets(
@@ -430,23 +592,22 @@ void output_rtmp::send_rtmp_video_packets(
 {
     if(pts < 0 || dts < 0)
         throw HR_EXCEPTION(E_UNEXPECTED);
-    assert_(pts >= dts);
 
-    const uint32_t timestamp_ms = RTMP_GetTime();//(uint32_t)((double)pts / SECOND_IN_TIME_UNIT * 1000.0);
+    const uint32_t timestamp_ms = (uint32_t)((double)pts / SECOND_IN_TIME_UNIT * 1000.0);
 
     // nalu start code prefix is either 00 00 00 01 or 00 00 01;
     // these are unique in the data
     int start_code_prefix_len;
-    std::size_t start_code_prefix_pos = find_start_code_prefix(data, start_code_prefix_len);
-    if(start_code_prefix_pos != 0)
-        std::cout << "warning: h264 data stream contains unexpected data" << std::endl;
-    if(start_code_prefix_pos == std::string_view::npos)
+    std::size_t nalu_start = find_start_code_prefix(data, start_code_prefix_len);
+    if(nalu_start == std::string_view::npos)
         throw HR_EXCEPTION(E_UNEXPECTED);
 
-    // https://www.adobe.com/content/dam/acom/en/devnet/flv/video_file_format_spec_v10.pdf
+    // https://www.adobe.com/content/dam/acom/en/devnet/flv/video_file_format_spec_v10_1.pdf
 #pragma pack(push, 1)
-        // big endian
-        // ms specific: the ordering of data declared as bit fields is from low to high bit
+    // big endian
+    // ms specific: the ordering of data declared as bit fields is from low to high bit;
+    // evidently the rule above doesn't apply in every situation;
+    // bits in avc_video_packet aren't swapped
     struct flv_video_tag
     {
         struct
@@ -455,37 +616,31 @@ void output_rtmp::send_rtmp_video_packets(
             uint8_t frame_type : 4;
         };
 
-        /*struct
-        {
-            uint8_t frame_type : 4;
-            uint8_t codec_id : 4;
-        };*/
         struct avc_video_packet_t
         {
-            // avc_packet_type: 8 bits
-            // composition time: 24 bits
-            int32_t avc_packet_type_and_composition_time;
-            //uint8_t avc_packet_type;
-            //int32_t composition_time : 24; // composition time offset in milliseconds
+            uint32_t avc_packet_type : 8;
+            uint32_t composition_time : 24; // composition time offset in milliseconds
             // unsigned char data[]
         } avc_video_packet;
     };
 #pragma pack(pop)
 
+    // TODO: padding nalus could be used to stabilize the output bitrate
+
+    std::string payload;
+
     std::string_view data_chunk = data;
-    while(start_code_prefix_pos != std::string_view::npos)
+    while(nalu_start != std::string_view::npos)
     {
-        data_chunk = data_chunk.substr(start_code_prefix_pos + start_code_prefix_len);
+        data_chunk = data_chunk.substr(nalu_start);
+        for(int i = 0; !data_chunk.at(0); i++)
+            data_chunk = data_chunk.substr(i + 1);
 
         int next_start_code_prefix_len;
-        const std::size_t next_start_code_prefix_pos = 
+        const std::size_t next_nalu_start = 
             find_start_code_prefix(data_chunk, next_start_code_prefix_len);
 
-        if(next_start_code_prefix_pos != std::string_view::npos)
-            if(next_start_code_prefix_len != start_code_prefix_len)
-                throw HR_EXCEPTION(E_UNEXPECTED);
-
-        const std::string_view nalu = data_chunk.substr(0, next_start_code_prefix_pos);
+        const std::string_view nalu = data_chunk.substr(0, next_nalu_start - 1);
         const unsigned char nalu_header = nalu.at(0);
 
         // check that the forbidden zero isn't set
@@ -536,9 +691,8 @@ void output_rtmp::send_rtmp_video_packets(
             video_tag->frame_type = key_frame ? 1 : 2;
             video_tag->codec_id = 7;
 
-            constexpr uint32_t avc_packet_type = 0, composition_time = 0;
-            video_tag->avc_video_packet.avc_packet_type_and_composition_time =
-                _byteswap_ulong((avc_packet_type << 24) | composition_time);
+            video_tag->avc_video_packet.avc_packet_type = 0;
+            video_tag->avc_video_packet.composition_time = 0;
 
             assert_(
                 sizeof(flv_tag) + sizeof(flv_video_tag) + avc_decoder_configuration_record.size() ==
@@ -548,143 +702,28 @@ void output_rtmp::send_rtmp_video_packets(
                 avc_decoder_configuration_record.data(),
                 avc_decoder_configuration_record.size());
 
-            *(uint32_t*)(packet.data() + packet.size() - 4) = _byteswap_ulong(rtmp_body_size - 1);
+            *(uint32_t*)(packet.data() + rtmp_body_size) = _byteswap_ulong(rtmp_body_size - 0);
 
-            const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size());
-            /*const int res = RTMP_SendPacket(this->rtmp, &packet, 0);
-            RTMPPacket_Free(&packet);*/
+            const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size(), 0);
             if(!res)
                 throw HR_EXCEPTION(E_UNEXPECTED);
         }
 
-        /*const uint32_t rtmp_body_size = 
-            sizeof(flv_tag) + sizeof(flv_video_tag) + (uint32_t)nalu.size();
-        const uint32_t flv_data_size = rtmp_body_size - sizeof(flv_tag);
+        if(nalu_type <= 5 || nalu_type == 6)
+        {
+            const uint32_t size = (uint32_t)payload.size();
+            const uint32_t nalu_size = _byteswap_ulong((uint32_t)nalu.size());
 
-        std::string packet(rtmp_body_size + 4, '\0');
+            payload.append((const char*)&nalu_size, sizeof(uint32_t));
+            payload += nalu;
+        }
 
-        flv_tag* tag = (flv_tag*)packet.data();
-        tag->tag_type = RTMP_PACKET_TYPE_VIDEO;
-        tag->data_size[2] = (uint8_t)flv_data_size;
-        tag->data_size[1] = (uint8_t)(flv_data_size >> 8);
-        tag->data_size[0] = (uint8_t)(flv_data_size >> 16);
-        tag->timestamp[2] = (uint8_t)timestamp_ms;
-        tag->timestamp[1] = (uint8_t)(timestamp_ms >> 8);
-        tag->timestamp[0] = (uint8_t)(timestamp_ms >> 16);
-        tag->timestamp_extended = (uint8_t)(timestamp_ms >> 24);
-        tag->stream_id[2] = 0;
-        tag->stream_id[1] = 0;
-        tag->stream_id[0] = 0;
-
-        flv_video_tag* video_tag = (flv_video_tag*)(packet.data() + sizeof(flv_tag));
-        video_tag->frame_type = key_frame ? 1 : 2;
-        video_tag->codec_id = 7;
-
-        const uint32_t avc_packet_type = 1,
-            composition_time = 
-            (uint32_t)((double)(pts - dts) / SECOND_IN_TIME_UNIT * 1000.0) & 0x00ffffff;
-        video_tag->avc_video_packet.avc_packet_type_and_composition_time =
-            _byteswap_ulong((avc_packet_type << 24) | composition_time);
-
-        assert_(sizeof(flv_tag) + sizeof(flv_video_tag) + (uint32_t)nalu.size() == rtmp_body_size);
-        memcpy(
-            packet.data() + sizeof(flv_tag) + sizeof(flv_video_tag),
-            nalu.data(),
-            nalu.size());
-
-        *(uint32_t*)(packet.data() + packet.size() - 4) = _byteswap_ulong(rtmp_body_size - 1);
-
-        const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size());
-        if(!res)
-            throw HR_EXCEPTION(E_UNEXPECTED);*/
-
-        //uint32_t rtmp_body_size;
-        //std::string avc_decoder_configuration_record;
-
-        //if(!this->video_headers_sent && !this->sps_nalu.empty() && !this->pps_nalu.empty())
-        //    avc_decoder_configuration_record =
-        //    this->create_avc_decoder_configuration_record(this->sps_nalu, this->pps_nalu,
-        //        start_code_prefix_len);
-
-        //if(this->video_headers_sent)
-        //    rtmp_body_size = sizeof(flv_video_tag) + nalu_size;
-        //else if(!avc_decoder_configuration_record.empty())
-        //    rtmp_body_size = sizeof(flv_video_tag) + (uint32_t)avc_decoder_configuration_record.size();
-        //else
-        //    rtmp_body_size = 0;
-
-        //if(rtmp_body_size)
-        //{
-        //    RTMPPacket packet = {0};
-        //    if(!RTMPPacket_Alloc(&packet, rtmp_body_size))
-        //        throw HR_EXCEPTION(E_UNEXPECTED);
-
-        //    packet.m_packetType = RTMP_PACKET_TYPE_VIDEO;
-        //    packet.m_hasAbsTimestamp = TRUE;
-        //    packet.m_nChannel = 4;
-        //    packet.m_nInfoField2 = this->rtmp->m_stream_id;
-        //    packet.m_nBodySize = rtmp_body_size;
-        //    packet.m_nTimeStamp = RTMP_GetTime();//(uint32_t)((double)pts / SECOND_IN_TIME_UNIT * 1000.0);
-
-        //    flv_video_tag* video_tag = (flv_video_tag*)packet.m_body;
-        //    video_tag->frame_type = key_frame ? 1 : 2;
-        //    video_tag->codec_id = 7;
-
-        //    if(!this->video_headers_sent)
-        //    {
-        //        packet.m_headerType = RTMP_PACKET_SIZE_MEDIUM;
-
-        //        constexpr uint32_t avc_packet_type = 0,
-        //            composition_time = 0;
-
-        //        this->video_headers_sent = true;
-        //        video_tag->avc_video_packet.avc_packet_type_and_composition_time =
-        //            _byteswap_ulong((avc_packet_type << 24) | composition_time);
-
-        //        assert_(sizeof(flv_video_tag) + avc_decoder_configuration_record.size() ==
-        //            rtmp_body_size);
-        //        memcpy(
-        //            packet.m_body + sizeof(flv_video_tag),
-        //            avc_decoder_configuration_record.data(),
-        //            avc_decoder_configuration_record.size());
-
-        //        const int res = RTMP_SendPacket(this->rtmp, &packet, 0);
-        //    }
-        //    /*else*/
-        //    {
-        //        // TODO: handle end of sequence, this should be sent when the stream is
-        //        // ending
-
-        //        packet.m_headerType = RTMP_PACKET_SIZE_LARGE;
-
-        //        const uint32_t avc_packet_type = 1,
-        //            composition_time = 
-        //            (uint32_t)((double)(pts - dts) / SECOND_IN_TIME_UNIT * 1000.0) & 0x00ffffff;
-
-        //        video_tag->avc_video_packet.avc_packet_type_and_composition_time =
-        //            _byteswap_ulong((avc_packet_type << 24) | composition_time);
-
-        //        assert_(sizeof(flv_video_tag) + nalu.size() == rtmp_body_size);
-        //        memcpy(
-        //            packet.m_body + sizeof(flv_video_tag),
-        //            nalu.data(),
-        //            nalu.size());
-
-        //        const int res = RTMP_SendPacket(this->rtmp, &packet, 0);
-        //    }
-
-        //    const int res = 1;//RTMP_SendPacket(this->rtmp, &packet, 0);
-        //    RTMPPacket_Free(&packet);
-        //    if(!res)
-        //        throw HR_EXCEPTION(E_UNEXPECTED);
-        //}
-
-        start_code_prefix_pos = next_start_code_prefix_pos;
+        nalu_start = next_nalu_start;
     }
 
-    // send all data
+    // send the payload
     const uint32_t rtmp_body_size =
-        sizeof(flv_tag) + sizeof(flv_video_tag) + (uint32_t)data.size();
+        sizeof(flv_tag) + sizeof(flv_video_tag) + (uint32_t)payload.size();
     const uint32_t flv_data_size = rtmp_body_size - sizeof(flv_tag);
 
     std::string packet(rtmp_body_size + 4, '\0');
@@ -706,133 +745,122 @@ void output_rtmp::send_rtmp_video_packets(
     video_tag->frame_type = key_frame ? 1 : 2;
     video_tag->codec_id = 7;
 
-    const uint32_t avc_packet_type = 1,
-        composition_time =
-        (uint32_t)((double)(pts - dts) / SECOND_IN_TIME_UNIT * 1000.0) & 0x00ffffff;
-    video_tag->avc_video_packet.avc_packet_type_and_composition_time =
-        _byteswap_ulong((avc_packet_type << 24) | composition_time);
+    video_tag->avc_video_packet.avc_packet_type = 1;
+    int32_t composition_time = (int32_t)((double)(pts - dts) / SECOND_IN_TIME_UNIT * 1000.0);
+    video_tag->avc_video_packet.composition_time = _byteswap_ulong(composition_time) >> 8;
 
-    assert_(sizeof(flv_tag) + sizeof(flv_video_tag) + (uint32_t)data.size() == rtmp_body_size);
+    assert_(sizeof(flv_tag) + sizeof(flv_video_tag) + (uint32_t)payload.size() == rtmp_body_size);
     memcpy(
         packet.data() + sizeof(flv_tag) + sizeof(flv_video_tag),
-        data.data(),
-        data.size());
+        payload.data(),
+        payload.size());
 
-    *(uint32_t*)(packet.data() + packet.size() - 4) = _byteswap_ulong(rtmp_body_size - 1);
+    *(uint32_t*)(packet.data() + rtmp_body_size) = _byteswap_ulong(rtmp_body_size - 0);
 
-    const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size());
+    const int res = RTMP_Write(this->rtmp, packet.data(), (int)packet.size(), 0);
     if(!res)
         throw HR_EXCEPTION(E_UNEXPECTED);
-
-
-
-
-    //// send all nalus
-    //if(this->video_headers_sent)
-    //{
-    //    const uint32_t rtmp_body_size = sizeof(flv_video_tag) + (uint32_t)data.size();
-    //    RTMPPacket packet = {0};
-    //    if(!RTMPPacket_Alloc(&packet, rtmp_body_size))
-    //        throw HR_EXCEPTION(E_UNEXPECTED);
-
-    //    packet.m_packetType = RTMP_PACKET_TYPE_VIDEO;
-    //    packet.m_hasAbsTimestamp = TRUE;
-    //    packet.m_nChannel = 4;
-    //    packet.m_nInfoField2 = this->rtmp->m_stream_id;
-    //    packet.m_nBodySize = rtmp_body_size;
-    //    packet.m_nTimeStamp = RTMP_GetTime();//(uint32_t)((double)pts / SECOND_IN_TIME_UNIT * 1000.0);
-    //    packet.m_headerType = RTMP_PACKET_SIZE_LARGE;
-
-    //    flv_video_tag* video_tag = (flv_video_tag*)packet.m_body;
-    //    video_tag->frame_type = key_frame ? 1 : 2;
-    //    video_tag->codec_id = 7;
-
-    //    const uint32_t avc_packet_type = 1,
-    //        composition_time =
-    //        (uint32_t)((double)(pts - dts) / SECOND_IN_TIME_UNIT * 1000.0) & 0x00ffffff;
-
-    //    video_tag->avc_video_packet.avc_packet_type_and_composition_time =
-    //        _byteswap_ulong((avc_packet_type << 24) | composition_time);
-
-    //    memcpy(
-    //        packet.m_body + sizeof(flv_video_tag),
-    //        data.data(),
-    //        data.size());
-
-    //    const int res = RTMP_SendPacket(this->rtmp, &packet, 0);
-    //    RTMPPacket_Free(&packet);
-    //    if(!res)
-    //        throw HR_EXCEPTION(E_UNEXPECTED);
-    //}
 }
 
-void output_rtmp::write_sample(
-    bool video, 
-    frame_unit fps_num, 
-    frame_unit fps_den,
-    const CComPtr<IMFSample>& sample)
+void output_rtmp::send_rtmp_packets()
 {
-    assert_(sample);
-
     HRESULT hr = S_OK;
-    CComPtr<IMFMediaBuffer> buffer;
-    BYTE* buffer_char = nullptr;
-    DWORD buffer_len;
-    LONGLONG sample_time, sample_duration;
+    LONGLONG video_ts, audio_ts;
+    LONGLONG video_dur, audio_dur;
 
-    CHECK_HR(hr = sample->GetSampleTime(&sample_time));
-    CHECK_HR(hr = sample->GetSampleDuration(&sample_duration)); sample_duration;
-    CHECK_HR(hr = sample->GetBufferByIndex(0, &buffer));
-    CHECK_HR(hr = buffer->GetCurrentLength(&buffer_len));
+    CComPtr<IMFMediaBuffer> media_buffer;
+    BYTE* buffer = nullptr;
 
-    if(!buffer_len)
-        return;
-
-    CHECK_HR(hr = buffer->Lock(&buffer_char, nullptr, nullptr));
-
-    if(video)
+    while(!this->video_samples.empty() && !this->audio_samples.empty())
     {
-        UINT32 key_frame;
-        LONGLONG dts;
+        DWORD buffer_len;
 
-        CHECK_HR(hr = sample->GetUINT32(MFSampleExtension_CleanPoint, &key_frame));
-        dts = MFGetAttributeUINT64(sample, MFSampleExtension_DecodeTimestamp, sample_time);
+        auto&& video_sample = this->video_samples[0];
+        auto&& audio_sample = this->audio_samples[0];
 
-        try
-        {
-            const std::string_view data((char*)buffer_char, buffer_len);
-            this->send_rtmp_video_packets(data, sample_time, dts, (bool)key_frame);
-        }
-        catch(streaming::exception err)
-        {
-            CHECK_HR(hr = err.get_hresult());
-        }
-        catch(std::exception)
-        {
+        CHECK_HR(hr = video_sample->GetSampleTime(&video_ts));
+        CHECK_HR(hr = video_sample->GetSampleDuration(&video_dur));
+        CHECK_HR(hr = audio_sample->GetSampleTime(&audio_ts));
+        CHECK_HR(hr = audio_sample->GetSampleDuration(&audio_dur));
+
+        auto& selected_sample = (video_ts <= audio_ts) ? video_sample : audio_sample;
+
+        CHECK_HR(hr = selected_sample->GetBufferByIndex(0, &media_buffer));
+        CHECK_HR(hr = media_buffer->GetCurrentLength(&buffer_len));
+        if(buffer_len == 0)
             CHECK_HR(hr = E_UNEXPECTED);
-        }
-    }
-    else
-    {
-        try
+        CHECK_HR(hr = media_buffer->Lock(&buffer, nullptr, nullptr));
+
+        if(video_ts <= audio_ts)
         {
-            const std::string_view data((char*)buffer_char, buffer_len);
-            this->send_rtmp_audio_packets(data, sample_time);
+            const std::string_view data((char*)buffer, buffer_len);
+            UINT32 key_frame;
+            LONGLONG dts;
+
+            CHECK_HR(hr = video_sample->GetUINT32(MFSampleExtension_CleanPoint, &key_frame));
+            dts = MFGetAttributeUINT64(
+                video_sample, MFSampleExtension_DecodeTimestamp, video_ts);
+
+            try
+            {
+                this->send_rtmp_video_packets(data, video_ts, dts, (bool)key_frame);
+            }
+            catch(streaming::exception err)
+            {
+                CHECK_HR(hr = err.get_hresult());
+            }
+            catch(std::exception)
+            {
+                CHECK_HR(hr = E_UNEXPECTED);
+            }
+
+            this->video_samples.pop_front();
         }
-        catch(streaming::exception err)
+        else
         {
-            CHECK_HR(hr = err.get_hresult());
+            const std::string_view data((char*)buffer, buffer_len);
+
+            try
+            {
+                this->send_rtmp_audio_packets(data, audio_ts);
+            }
+            catch(streaming::exception err)
+            {
+                CHECK_HR(hr = err.get_hresult());
+            }
+            catch(std::exception)
+            {
+                CHECK_HR(hr = E_UNEXPECTED);
+            }
+
+            this->audio_samples.pop_front();
         }
-        catch(std::exception)
-        {
-            CHECK_HR(hr = E_UNEXPECTED);
-        }
+
+        media_buffer->Unlock();
+        buffer = nullptr;
+        media_buffer = nullptr;
     }
 
 done:
-    if(buffer && buffer_char)
-        buffer->Unlock();
+    if(media_buffer && buffer)
+        media_buffer->Unlock();
 
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);
+}
+
+void output_rtmp::write_sample(bool video, const CComPtr<IMFSample>& sample)
+{
+    assert_(sample);
+
+    // rtmp most likely isn't multithread safe;
+    // output_rtmp itself isn't multithread safe either
+    scoped_lock lock(this->write_lock);
+
+    if(video)
+        this->video_samples.push_back(sample);
+    else
+        this->audio_samples.push_back(sample);
+
+    this->send_rtmp_packets();
 }

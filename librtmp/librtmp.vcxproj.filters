@@ -42,6 +42,12 @@
     <ClInclude Include="..\third-party\rtmpdump\librtmp\rtmp_sys.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\third-party\rtmpdump\librtmp\cencode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\third-party\rtmpdump\librtmp\md5.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\third-party\rtmpdump\librtmp\amf.c">
@@ -57,6 +63,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\third-party\rtmpdump\librtmp\rtmp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\third-party\rtmpdump\librtmp\cencode.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\third-party\rtmpdump\librtmp\md5.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

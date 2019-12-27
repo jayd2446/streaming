@@ -37,8 +37,7 @@ public:
         const CComPtr<IMFMediaType>& video_type,
         const CComPtr<IMFMediaType>& audio_type);
 
-    void write_sample(bool video, frame_unit fps_num, frame_unit fps_den,
-        const CComPtr<IMFSample>& sample) override;
+    void write_sample(bool video, const CComPtr<IMFSample>& sample) override;
     void force_stop();
 };
 

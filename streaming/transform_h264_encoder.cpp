@@ -205,6 +205,21 @@ HRESULT transform_h264_encoder::set_encoder_parameters()
     v.vt = VT_UI4;
     v.ullVal = this->avg_bitrate;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonMeanBitRate, &v));
+
+
+
+    /*{
+        VARIANT max_bitrate = {0};
+        max_bitrate.vt = VT_UI4;
+        max_bitrate.ullVal = this->avg_bitrate;
+        CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonMaxBitRate, &max_bitrate));
+
+        max_bitrate = {0};
+        max_bitrate.vt = VT_UI4;
+        max_bitrate.ullVal = this->avg_bitrate * 8;
+        CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncCommonBufferSize, &max_bitrate));
+    }*/
+
     /*v.vt = VT_UI4;
     v.ullVal = 1;
     CHECK_HR(hr = codec->SetValue(&CODECAPI_AVEncVideoForceKeyFrame, &v));*/

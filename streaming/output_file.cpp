@@ -65,8 +65,7 @@ void output_file::initialize(
         this->stopped = true;
 }
 
-void output_file::write_sample(bool video, frame_unit, frame_unit,
-    const CComPtr<IMFSample>& sample)
+void output_file::write_sample(bool video, const CComPtr<IMFSample>& sample)
 {
     if(this->stopped)
         return;
@@ -102,7 +101,7 @@ done:
     /*
     A common programming error is to assume that the PostMessage function always posts a message.
     */
-    this->recording_initiator.SendNotifyMessageW(RECORDING_STOPPED_MESSAGE);
+    this->recording_initiator.SendNotifyMessageW(RECORDING_STOPPED_MESSAGE, 1);
 
     if(FAILED(hr))
         throw HR_EXCEPTION(hr);

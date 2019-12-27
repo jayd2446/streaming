@@ -63,10 +63,7 @@ LRESULT gui_settingsdlg::OnBnClickedOk(WORD /*wNotifyCode*/, WORD /*wID*/, HWND 
     {
         for(auto&& item : this->settings_pages)
             if(item.second->should_update_settings())
-            {
                 this->should_update_settings_flag = true;
-                break;
-            }
 
         this->EndDialog(IDOK);
     }

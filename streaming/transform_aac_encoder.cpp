@@ -298,6 +298,8 @@ void transform_aac_encoder::initialize(bitrate_t bitrate, UINT32 profile_level_i
     CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, bitrate));
     CHECK_HR(hr = this->output_type->SetUINT32(
         MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, profile_level_indication));
+    // raw_data_block elements only
+    CHECK_HR(hr = this->output_type->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE, 0));
 
     // get streams
     DWORD input_stream_count, output_stream_count;

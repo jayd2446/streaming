@@ -156,7 +156,7 @@ class control_pipeline final : public control_class
 private:
     bool graphics_initialized;
     UINT adapter_ordinal;
-    bool recording;
+    bool recording, streaming;
     ATL::CWindow recording_initiator_wnd;
     gui_threadwnd wnd_thread;
 
@@ -230,6 +230,7 @@ public:
     const std::vector<control_class*>& get_selected_controls() const { return this->selected_controls; }
 
     bool is_recording() const { return this->recording; }
+    bool is_streaming() const { return this->recording && this->streaming; }
 
     UINT get_adapter_ordinal() const
     {
@@ -257,9 +258,12 @@ public:
     //// TODO: this should return control preview instead of the component
     //const sink_preview2_t& get_preview_window() const {return this->preview_sink;}
 
+    // TODO: add separate start_streaming function that takes arguments relevant to that
+
     // message is sent to the initiator window when the recording has been stopped;
     // might throw control_pipeline_recording_state_transition_exception
-    void start_recording(const std::wstring& filename, ATL::CWindow initiator);
+    void start_recording(const std::wstring& filename, ATL::CWindow initiator, bool streaming = false);
+    void start_streaming(const std::wstring& url, const std::wstring& key, ATL::CWindow initiator);
     void stop_recording();
 
     // releases all circular dependencies
