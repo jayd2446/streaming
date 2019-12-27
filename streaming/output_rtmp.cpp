@@ -626,6 +626,7 @@ void output_rtmp::send_rtmp_video_packets(
 #pragma pack(pop)
 
     // TODO: padding nalus could be used to stabilize the output bitrate
+    // TODO: currently a 4 byte start code prefix is assumed
 
     std::string payload;
 
@@ -633,8 +634,9 @@ void output_rtmp::send_rtmp_video_packets(
     while(nalu_start != std::string_view::npos)
     {
         data_chunk = data_chunk.substr(nalu_start);
-        for(int i = 0; !data_chunk.at(0); i++)
-            data_chunk = data_chunk.substr(i + 1);
+        while(!data_chunk.at(0))
+            data_chunk = data_chunk.substr(1);
+        data_chunk = data_chunk.substr(1);
 
         int next_start_code_prefix_len;
         const std::size_t next_nalu_start = 
@@ -711,9 +713,7 @@ void output_rtmp::send_rtmp_video_packets(
 
         if(nalu_type <= 5 || nalu_type == 6)
         {
-            const uint32_t size = (uint32_t)payload.size();
             const uint32_t nalu_size = _byteswap_ulong((uint32_t)nalu.size());
-
             payload.append((const char*)&nalu_size, sizeof(uint32_t));
             payload += nalu;
         }
