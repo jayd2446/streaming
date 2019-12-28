@@ -797,7 +797,7 @@ void output_rtmp::send_rtmp_packets()
             UINT32 key_frame;
             LONGLONG dts;
 
-            CHECK_HR(hr = video_sample->GetUINT32(MFSampleExtension_CleanPoint, &key_frame));
+            key_frame = MFGetAttributeUINT32(video_sample, MFSampleExtension_CleanPoint, FALSE);
             dts = MFGetAttributeUINT64(
                 video_sample, MFSampleExtension_DecodeTimestamp, video_ts);
 
