@@ -427,25 +427,30 @@ bool transform_h264_encoder::on_serve(request_queue::request_t& request)
         }
 
     back:
+        if(!this->software)
+            this->encoder_requests--;
+
         hr = this->feed_encoder(video_frame);
 
         if(timestamp >= 0)
             this->last_time_stamp = timestamp;
 
-        if(!this->software)
-            this->encoder_requests--;
-        else if(hr == MF_E_NOTACCEPTING)
+        if(this->software)
         {
-            this->process_output_cb(NULL);
-            goto back;
-        }
-        else if(SUCCEEDED(hr))
-        {
-            DWORD status;
-            CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
-            if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
+            if(hr == MF_E_NOTACCEPTING)
+            {
                 this->process_output_cb(NULL);
+                goto back;
+            }
+            else if(SUCCEEDED(hr))
+            {
+                DWORD status;
+                CHECK_HR(hr = this->encoder->GetOutputStatus(&status));
+                if(status & MFT_OUTPUT_STATUS_SAMPLE_READY)
+                    this->process_output_cb(NULL);
+            }
         }
+
         CHECK_HR(hr);
         assert_(this->encoder_requests >= 0);
     }
