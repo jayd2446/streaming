@@ -9,6 +9,7 @@
 #include <atlbase.h>
 #include <memory>
 #include <mutex>
+#include <string_view>
 
 #define RECORDING_STOPPED_MESSAGE (WM_APP + 1)
 
@@ -33,6 +34,8 @@ public:
 
     void initialize(
         bool null_file,
+        bool overwrite,
+        const std::wstring_view& path,
         ATL::CWindow recording_initiator,
         const CComPtr<IMFMediaType>& video_type,
         const CComPtr<IMFMediaType>& audio_type);

@@ -1,6 +1,10 @@
 #include "gui_configdlgs.h"
 #include <mfapi.h>
+#include <ShlObj.h>
+#include <ShlObj_core.h>
 #include <string>
+
+#pragma comment(lib, "Shell32.lib")
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
@@ -17,6 +21,12 @@ void gui_configdlg::set_splitter(CStatic& wnd_static)
     wnd_static.SetWindowLongW(GWL_STYLE, style | SS_ETCHEDHORZ);
 }
 
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
 LRESULT gui_configdlg_general::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
 {
     if(this->ctrl_pipeline->is_recording())
@@ -29,7 +39,13 @@ LRESULT gui_configdlg_general::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LP
     return 0;
 }
 
-bool gui_configdlg_video::should_update_settings() const
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+bool gui_configdlg_video::should_update_settings()
 {
     static_assert(std::is_same_v<decltype(config_video), control_video_config>);
     static_assert(std::is_same_v<
@@ -353,7 +369,13 @@ done:
     return 0;
 }
 
-bool gui_configdlg_audio::should_update_settings() const
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+bool gui_configdlg_audio::should_update_settings()
 {
     static_assert(std::is_same_v<
         decltype(config_audio),
@@ -521,4 +543,148 @@ LRESULT gui_configdlg_audio::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPAR
             }, 0);
 
     return 0;
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+LRESULT gui_configdlg_output::OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/)
+{
+    this->wnd_output_folder.Attach(this->GetDlgItem(IDC_EDIT3));
+    this->wnd_output_file_name.Attach(this->GetDlgItem(IDC_EDIT4));
+    this->wnd_output_ingest_server.Attach(this->GetDlgItem(IDC_EDIT6));
+    this->wnd_output_stream_key.Attach(this->GetDlgItem(IDC_EDIT1));
+    this->wnd_overwrite_old_file.Attach(this->GetDlgItem(IDC_CHECK1));
+    this->wnd_showkey.Attach(this->GetDlgItem(IDC_SHOWKEY));
+    this->wnd_static_splitter.Attach(this->GetDlgItem(IDC_STATIC1));
+
+    this->password_char = this->wnd_output_stream_key.SendMessageW(EM_GETPASSWORDCHAR);
+
+    this->set_splitter(this->wnd_static_splitter);
+
+    const control_pipeline_config& config = this->ctrl_pipeline->get_current_config();
+    this->wnd_output_folder.SetWindowTextW(config.config_output.output_folder);
+    this->wnd_output_file_name.SetWindowTextW(config.config_output.output_filename);
+    this->wnd_overwrite_old_file.SetCheck(config.config_output.overwrite_old_file);
+    ::SetWindowTextA(this->wnd_output_ingest_server, config.config_output.ingest_server);
+    ::SetWindowTextA(this->wnd_output_stream_key, config.config_output.stream_key);
+
+    if(this->ctrl_pipeline->is_recording())
+        EnumChildWindows(*this, [](HWND hwnd, LPARAM) -> BOOL
+            {
+                ::EnableWindow(hwnd, FALSE);
+                return TRUE;
+            }, 0);
+
+    return 0;
+}
+
+LRESULT gui_configdlg_output::OnBnClickedShowkey(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
+{
+    const DWORD style = this->wnd_output_stream_key.GetStyle();
+
+    if(style & ES_PASSWORD)
+    {
+        this->wnd_output_stream_key.SendMessageW(EM_SETPASSWORDCHAR, 0);
+        this->wnd_output_stream_key.Invalidate();
+        this->wnd_showkey.SetWindowTextW(L"Hide Key");
+    }
+    else
+    {
+        this->wnd_output_stream_key.SendMessageW(EM_SETPASSWORDCHAR, this->password_char);
+        this->wnd_output_stream_key.Invalidate();
+        this->wnd_showkey.SetWindowTextW(L"Show Key");
+    }
+
+    return 0;
+}
+
+LRESULT gui_configdlg_output::OnBnClickedOpenfolder(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/)
+{
+    HRESULT hr = S_OK;
+    CComPtr<IFileDialog> dialog;
+    FILEOPENDIALOGOPTIONS opts;
+
+    CHECK_HR(hr = CoCreateInstance(
+        CLSID_FileOpenDialog, 
+        nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)));
+    CHECK_HR(hr = dialog->GetOptions(&opts));
+    CHECK_HR(hr = dialog->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM));
+    CHECK_HR(hr = dialog->Show(*this));
+
+    {
+        CComPtr<IShellItem> result;
+        PWSTR file_path;
+
+        CHECK_HR(hr = dialog->GetResult(&result));
+        CHECK_HR(hr = result->GetDisplayName(SIGDN_FILESYSPATH, &file_path));
+
+        if(wcslen(file_path) > MAX_PATH)
+            this->MessageBoxW(L"Path is too long. Please pick another one.", nullptr, MB_ICONERROR);
+        else
+            this->wnd_output_folder.SetWindowTextW(file_path);
+
+        CoTaskMemFree(file_path);
+    }
+
+done:
+    if(FAILED(hr) && hr != HRESULT_FROM_WIN32(ERROR_CANCELLED))
+        throw HR_EXCEPTION(hr);
+
+    return 0;
+}
+
+bool gui_configdlg_output::should_update_settings()
+{
+    static_assert(std::is_same_v<decltype(this->config_output), control_output_config>);
+    static_assert(std::is_same_v<
+        decltype(this->config_output),
+        decltype(control_pipeline_config::config_output)>);
+    static_assert(std::is_same_v<
+        std::decay_t<decltype(this->config_output.output_folder)>, WCHAR*>);
+    static_assert(std::is_same_v<
+        std::decay_t<decltype(this->config_output.output_filename)>, WCHAR*>);
+    static_assert(std::is_same_v<
+        std::decay_t<decltype(this->config_output.ingest_server)>, CHAR*>);
+    static_assert(std::is_same_v<
+        std::decay_t<decltype(this->config_output.stream_key)>, CHAR*>);
+
+    // read the dialog and update the local output config
+
+    // output folder
+    memset(this->config_output.output_folder, 0, MAX_PATH * sizeof(WCHAR));
+    this->wnd_output_folder.GetWindowTextW(this->config_output.output_folder, MAX_PATH);
+
+    // output file name
+    memset(this->config_output.output_filename, 0, MAX_PATH * sizeof(WCHAR));
+    this->wnd_output_file_name.GetWindowTextW(this->config_output.output_filename, MAX_PATH);
+
+    // overwrite file
+    this->config_output.overwrite_old_file =
+        (this->wnd_overwrite_old_file.GetState() == BST_CHECKED);
+
+    // ingest server
+    memset(this->config_output.ingest_server, 0, MAX_PATH * sizeof(CHAR));
+    ::GetWindowTextA(this->wnd_output_ingest_server, this->config_output.ingest_server, MAX_PATH);
+
+    // stream key
+    memset(this->config_output.stream_key, 0, MAX_PATH * sizeof(CHAR));
+    ::GetWindowTextA(this->wnd_output_stream_key, this->config_output.stream_key, MAX_PATH);
+
+    return std::memcmp(
+        &this->config_output,
+        &this->ctrl_pipeline->get_current_config().config_output,
+        sizeof(control_output_config)) != 0;
+}
+
+void gui_configdlg_output::update_settings(control_pipeline_config& config)
+{
+    static_assert(std::is_same_v<
+        std::decay_t<decltype(config.config_output)>,
+        std::decay_t<decltype(this->config_output)>>);
+
+    std::memcpy(&config.config_output, &this->config_output, sizeof(this->config_output));
 }

@@ -372,6 +372,7 @@ LRESULT gui_mainwnd::OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndC
     /*gui_configdlg_general config_general(this->ctrl_pipeline);*/
     gui_configdlg_video config_video(this->ctrl_pipeline);
     gui_configdlg_audio config_audio(this->ctrl_pipeline);
+    gui_configdlg_output config_output(this->ctrl_pipeline);
 
     gui_settingsdlg dlg(this->ctrl_pipeline);
 
@@ -379,7 +380,8 @@ LRESULT gui_mainwnd::OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndC
         {
             /*{L"General", &config_general},*/
             {L"Video", &config_video},
-            {L"Audio", &config_audio}
+            {L"Audio", &config_audio},
+            {L"Output", &config_output}
         });
 
     const INT_PTR res = dlg.DoModal(*this);

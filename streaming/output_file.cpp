@@ -8,7 +8,7 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-output_file::output_file() : stopped(false)
+output_file::output_file() : stopped(true)
 {
 }
 
@@ -20,13 +20,18 @@ output_file::~output_file()
 
 void output_file::initialize(
     bool null_file,
+    bool overwrite,
+    const std::wstring_view& path,
     ATL::CWindow recording_initiator,
     const CComPtr<IMFMediaType>& video_type,
     const CComPtr<IMFMediaType>& audio_type)
 {
+    assert_(this->stopped);
+
+    HRESULT hr = S_OK;
+
     if(!null_file)
     {
-        HRESULT hr = S_OK;
         CComPtr<IMFAttributes> sink_writer_attributes;
 
         this->recording_initiator = recording_initiator;
@@ -34,9 +39,11 @@ void output_file::initialize(
         this->audio_type = audio_type;
 
         // create file
-        CHECK_HR(hr = MFCreateFile(
-            MF_ACCESSMODE_READWRITE, MF_OPENMODE_DELETE_IF_EXIST, MF_FILEFLAGS_NONE, 
-            L"test.mp4", &this->byte_stream));
+        const MF_FILE_OPENMODE mode = overwrite ?
+            MF_OPENMODE_DELETE_IF_EXIST : MF_OPENMODE_FAIL_IF_EXIST;
+
+        CHECK_HR(hr = MFCreateFile(MF_ACCESSMODE_READWRITE, mode, MF_FILEFLAGS_NONE,
+            path.data(), &this->byte_stream));
 
         // create mpeg 4 media sink
         CHECK_HR(hr = MFCreateMPEG4MediaSink(
@@ -56,13 +63,20 @@ void output_file::initialize(
 
         // start accepting data
         CHECK_HR(hr = this->writer->BeginWriting());
-    
-    done:
-        if(FAILED(hr))
-            throw HR_EXCEPTION(hr);
+
+        this->stopped = false;
     }
-    else
-        this->stopped = true;
+
+done:
+    if(FAILED(hr))
+    {
+        this->writer.Release();
+
+        if(this->mpeg_media_sink)
+            this->mpeg_media_sink->Shutdown();
+
+        throw HR_EXCEPTION(hr);
+    }
 }
 
 void output_file::write_sample(bool video, const CComPtr<IMFSample>& sample)

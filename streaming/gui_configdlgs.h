@@ -19,11 +19,11 @@ public:
 
     virtual void create(HWND parent) = 0;
     virtual CWindow& get_wnd() = 0;
-    // might throw logic_error
+    // throws logic_error
     // TODO: this function should take reference settings as an argument so that
     // applying a new config and saving a config to disk could be separately
     // compared
-    virtual bool should_update_settings() const = 0;
+    virtual bool should_update_settings() = 0;
     // updates the settings relevant to this config dlg in the full config
     virtual void update_settings(control_pipeline_config&) = 0;
 
@@ -43,7 +43,7 @@ public:
 
     void create(HWND parent) override { this->Create(parent); }
     CWindow& get_wnd() override { return *this; }
-    bool should_update_settings() const override { return false; }
+    bool should_update_settings() override { return false; }
     void update_settings(control_pipeline_config&) override {}
 
     BEGIN_MSG_MAP(gui_configdlgs)
@@ -58,7 +58,7 @@ class gui_configdlg_video final :
     public gui_configdlg
 {
 private:
-    mutable control_video_config config_video;
+    control_video_config config_video;
 
     CEdit wnd_fps_num, wnd_fps_den;
     CComboBox wnd_video_resolution, wnd_mpeg2_profile;
@@ -77,7 +77,7 @@ public:
 
     void create(HWND parent) override { this->Create(parent); }
     CWindow& get_wnd() override { return *this; }
-    bool should_update_settings() const override;
+    bool should_update_settings() override;
     void update_settings(control_pipeline_config& config) override
     { config.config_video = this->config_video; }
 
@@ -93,7 +93,7 @@ class gui_configdlg_audio final :
     public gui_configdlg
 {
 private:
-    mutable control_audio_config config_audio;
+    control_audio_config config_audio;
 
     CComboBox wnd_sample_rate, wnd_channels, wnd_bitrate, wnd_aac_profile;
     CStatic wnd_static_splitter;
@@ -104,7 +104,7 @@ public:
 
     void create(HWND parent) override { this->Create(parent); }
     CWindow& get_wnd() override { return *this; }
-    bool should_update_settings() const override;
+    bool should_update_settings() override;
     void update_settings(control_pipeline_config& config) override
     { config.config_audio = this->config_audio; }
 
@@ -113,4 +113,37 @@ public:
     END_MSG_MAP()
 
     LRESULT OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
+};
+
+class gui_configdlg_output final :
+    public CDialogImpl<gui_configdlg_output>,
+    public gui_configdlg
+{
+private:
+    control_output_config config_output;
+
+    CEdit wnd_output_folder, wnd_output_file_name;
+    CEdit wnd_output_ingest_server, wnd_output_stream_key;
+    CButton wnd_overwrite_old_file, wnd_showkey;
+    CStatic wnd_static_splitter;
+    LRESULT password_char;
+public:
+    enum { IDD = IDD_OUTPUT_CONFIG };
+
+    using gui_configdlg::gui_configdlg;
+
+    void create(HWND parent) override { this->Create(parent); }
+    CWindow& get_wnd() override { return *this; }
+    bool should_update_settings() override;
+    void update_settings(control_pipeline_config& config) override;
+
+    BEGIN_MSG_MAP(gui_configdlg_output)
+        MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
+        COMMAND_HANDLER(IDC_SHOWKEY, BN_CLICKED, OnBnClickedShowkey)
+        COMMAND_HANDLER(IDC_OPENFOLDER, BN_CLICKED, OnBnClickedOpenfolder)
+    END_MSG_MAP()
+
+    LRESULT OnInitDialog(UINT /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL& /*bHandled*/);
+    LRESULT OnBnClickedShowkey(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+    LRESULT OnBnClickedOpenfolder(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };

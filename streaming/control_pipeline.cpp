@@ -5,6 +5,7 @@
 #include "output_rtmp.h"
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include <d3d11_4.h>
 #include <d2d1_2.h>
 
@@ -18,7 +19,45 @@
 
 #define CHECK_HR(hr_) {if(FAILED(hr_)) {goto done;}}
 
-// if using intel encoder, the adapter must be set to intel aswell
+std::wstring control_output_config::create_file_path() const
+{
+    try
+    {
+        std::filesystem::path path = this->output_folder;
+        constexpr std::string_view extension = ".mp4";
+
+        // add a directory separator
+        path /= L"";
+        path.replace_filename(this->output_filename);
+        path.replace_extension(extension);
+
+        if(!this->overwrite_old_file)
+        {
+            std::filesystem::path new_path = path;
+            for(int index = 2; std::filesystem::exists(new_path); index++)
+            {
+                std::wstring stem = path.stem();
+                stem += L" (" + std::to_wstring(index) + L")";
+                new_path.replace_filename(stem);
+                new_path.replace_extension(extension);
+            }
+
+            path = new_path;
+        }
+
+        return path;
+    }
+    catch(std::filesystem::filesystem_error)
+    {
+        throw HR_EXCEPTION(E_UNEXPECTED);
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
 
 control_pipeline::control_pipeline() :
     control_class(controls, event_provider),
@@ -269,8 +308,8 @@ void control_pipeline::activate_components()
         {
             output_rtmp_t rtmp_output(new output_rtmp);
             rtmp_output->initialize(
-                "rtmp://",
-                "",
+                this->get_current_config().config_output.ingest_server,
+                this->get_current_config().config_output.stream_key,
                 this->recording_initiator_wnd,
                 this->h264_encoder_transform->output_type,
                 this->aac_encoder_transform->output_type);
@@ -282,6 +321,8 @@ void control_pipeline::activate_components()
             output_file_t file_output(new output_file);
             file_output->initialize(
                 false,
+                (bool)this->get_current_config().config_output.overwrite_old_file,
+                this->get_current_config().config_output.create_file_path(),
                 this->recording_initiator_wnd,
                 this->h264_encoder_transform->output_type,
                 this->aac_encoder_transform->output_type);

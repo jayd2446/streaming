@@ -89,7 +89,11 @@ int main()
         HRESULT hr = S_OK;
         WSADATA wsa_data = {0};
 
-        CHECK_HR(hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY | COINIT_MULTITHREADED));
+        // apartment threading is needed for com gui features;
+        // even though most of the com objects are initialized in this apartment, com does
+        // no synchronization if the pointer is not marshalled between apartments;
+        // marshalling pointers creates a proxy that will do the synchronization
+        CHECK_HR(hr = CoInitializeEx(NULL, COINIT_SPEED_OVER_MEMORY | COINIT_APARTMENTTHREADED));
         AtlInitCommonControls(ICC_COOL_CLASSES | ICC_BAR_CLASSES | ICC_WIN95_CLASSES);
 
         const int wsa_init_res = WSAStartup(MAKEWORD(2, 2), &wsa_data);

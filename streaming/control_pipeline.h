@@ -72,53 +72,42 @@ typedef std::pair<sink_output_video_t, sink_output_audio_t> sink_output_t;
 // TODO: these configs need to be refactored
 struct control_video_config
 {
-    int fps_num, fps_den;
+    int fps_num = 60, fps_den = 1;
 
-    bool adapter_use_default;
-    UINT adapter; // device id, dx 9 hardware adapters are 0
+    bool adapter_use_default = true;
+    UINT adapter = 0; // device id, dx 9 hardware adapters are 0
 
     // by default, control pipeline treats these as hardware encoders,
     // and falls back to software encoders if activation fails
-    bool encoder_use_default;
-    CLSID encoder;
+    bool encoder_use_default = true;
+    CLSID encoder = {0};
 
-    UINT32 width_frame, height_frame;
-    UINT32 bitrate; // avg bitrate (in kbps)
-    UINT32 quality_vs_speed;
-    eAVEncH264VProfile h264_video_profile;
-
-    control_video_config() :
-        fps_num(60),
-        fps_den(1),
-        adapter_use_default(true),
-        adapter(0),
-        encoder_use_default(true),
-        encoder{0},
-        width_frame(1920),
-        height_frame(1080),
-        bitrate(6000),
-        quality_vs_speed(100),
-        h264_video_profile(eAVEncH264VProfile_Main)
-    {
-    }
+    UINT32 width_frame = 1920, height_frame = 1080;
+    UINT32 bitrate = 6000; // avg bitrate (in kbps)
+    UINT32 quality_vs_speed = 100;
+    eAVEncH264VProfile h264_video_profile = eAVEncH264VProfile_Main;
 };
 
 struct control_audio_config
 {
-    // allowed values: 44100 and 48000
-    int sample_rate;
+    int sample_rate = 44100; // allowed values: 44100 and 48000
+    UINT32 channels = 2; // must be 1, 2 or 6
+    transform_aac_encoder::bitrate_t bitrate = transform_aac_encoder::rate_128;
+    UINT32 profile_level_indication = 0x29; // default
+};
 
-    UINT32 channels; // must be 1, 2 or 6
-    transform_aac_encoder::bitrate_t bitrate;
-    UINT32 profile_level_indication;
+struct control_output_config
+{
+    // strs include the null character;
+    // note: all of the strs must be MAX_PATH length
 
-    control_audio_config() :
-        sample_rate(44100),
-        channels(2),
-        bitrate(transform_aac_encoder::rate_128),
-        profile_level_indication(0x29) // default
-    {
-    }
+    WCHAR output_folder[MAX_PATH] = {};
+    WCHAR output_filename[MAX_PATH] = L"test.mp4";
+    BOOL overwrite_old_file = FALSE;
+    CHAR ingest_server[MAX_PATH] = {};
+    CHAR stream_key[MAX_PATH] = {};
+
+    std::wstring create_file_path() const;
 };
 
 struct control_pipeline_config
@@ -127,20 +116,14 @@ struct control_pipeline_config
     // version must be increased every time the config struct is changed;
     // new config versions are only allowed to extend the previous config versions,
     // which also means that only the control_pipeline_config struct can be altered
-    // (with padding it is not necessary)
     static constexpr int VERSION = 1;
     static constexpr int LATEST_VERSION = VERSION;
 
-    int magic_number;
-    int version;
+    int magic_number = MAGIC_NUMBER;
+    int version = LATEST_VERSION;
     control_video_config config_video;
     control_audio_config config_audio;
-
-    control_pipeline_config() :
-        magic_number(MAGIC_NUMBER),
-        version(LATEST_VERSION)
-    {
-    }
+    control_output_config config_output;
 };
 #pragma pack(pop)
 

@@ -13,6 +13,7 @@
 #define IDD_SETTINGSDLG                 126
 #define IDD_VIDEO_CONFIG                127
 #define IDD_AUDIO_CONFIG                128
+#define IDD_OUTPUT_CONFIG               129
 #define IDC_BUTTON1                     1005
 #define IDC_START_RECORDING             1005
 #define IDC_REMOVESRC                   1006
@@ -39,8 +40,13 @@
 #define IDC_EDIT5                       1041
 #define IDC_COMBO2                      1045
 #define IDC_LIST1                       1046
-#define IDC_BUTTON2                     1047
 #define IDC_START_STREAMING             1047
+#define IDC_CHECK1                      1048
+#define IDC_EDIT1                       1049
+#define IDC_SHOWKEY                     1050
+#define IDC_BUTTON3                     1051
+#define IDC_OPENFOLDER                  1051
+#define IDC_EDIT6                       1052
 #define ID_ABOUT                        40001
 #define ID_FILE                         40002
 #define ID_DEBUG                        40003
@@ -50,9 +56,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        128
+#define _APS_NEXT_RESOURCE_VALUE        131
 #define _APS_NEXT_COMMAND_VALUE         40005
-#define _APS_NEXT_CONTROL_VALUE         1048
+#define _APS_NEXT_CONTROL_VALUE         1052
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
