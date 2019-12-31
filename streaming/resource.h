@@ -44,20 +44,22 @@
 #define IDC_CHECK1                      1048
 #define IDC_EDIT1                       1049
 #define IDC_SHOWKEY                     1050
-#define IDC_BUTTON3                     1051
 #define IDC_OPENFOLDER                  1051
 #define IDC_EDIT6                       1052
 #define ID_ABOUT                        40001
 #define ID_FILE                         40002
 #define ID_DEBUG                        40003
 #define ID_SETTINGS                     40004
+#define ID_FILE_SETTINGS                40005
+#define ID_FILE_EXIT                    40006
+#define ID_HELP_ABOUT                   40007
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         40005
+#define _APS_NEXT_COMMAND_VALUE         40008
 #define _APS_NEXT_CONTROL_VALUE         1052
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

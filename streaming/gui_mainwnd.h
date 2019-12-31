@@ -82,9 +82,10 @@ public:
         MSG_WM_ACTIVATE(OnActivate)
         MESSAGE_HANDLER(GUI_MAINWND_SHOW_MESSAGE, OnMainWndShowMessage)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
-        COMMAND_ID_HANDLER(ID_ABOUT, OnAbout)
+        COMMAND_ID_HANDLER(ID_HELP_ABOUT, OnAbout)
         COMMAND_ID_HANDLER(ID_DEBUG, OnDebug)
-        COMMAND_ID_HANDLER(ID_SETTINGS, OnSettings)
+        COMMAND_ID_HANDLER(ID_FILE_SETTINGS, OnSettings)
+        COMMAND_ID_HANDLER(ID_FILE_EXIT, OnExit)
 
         CHAIN_MSG_MAP(CFrameWindowImpl<gui_mainwnd>)
 
@@ -105,4 +106,5 @@ public:
     LRESULT OnAbout(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnDebug(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
     LRESULT OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
+    LRESULT OnExit(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndCtl*/, BOOL& /*bHandled*/);
 };

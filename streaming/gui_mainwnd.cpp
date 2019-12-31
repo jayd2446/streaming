@@ -404,3 +404,9 @@ LRESULT gui_mainwnd::OnSettings(WORD /*wNotifyCode*/, WORD /*wID*/, HWND /*hWndC
 
     return 0;
 }
+
+LRESULT gui_mainwnd::OnExit(WORD, WORD, HWND, BOOL&)
+{
+    PostQuitMessage(0);
+    return 0;
+}
